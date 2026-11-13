@@ -2,6 +2,10 @@ name: CI
 on:
   push:
   pull_request:
+# A newer push to the same branch cancels the older run (two sessions push often).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
