@@ -135,6 +135,20 @@ class Season:
     def active_attacks(self, t, d):
         return sum(1 for c in self.contests if t in c["attackers"])
 
+    def attack_cost_full(self, t, d, target_is_leader):
+        """v1.0.2：(30 + 15×进行中的进攻 + 10×持地) × 流亡令 × 讨伐令，叠加相乘后向上取整"""
+        p = self.p
+        held = (self.owner == t).sum()
+        raw = (p.A + p.D * self.active_attacks(t, d) + p.R * held) * (p.exile if held == 0 else 1.0)
+        return self.gcost(raw * ((1 - p.bounty) if target_is_leader else 1.0))
+
+    def grain_points(self, grain):
+        """终局粮草折算（v1.0.2：保留 1 位小数，向下取整）"""
+        conv = grain * self.p.grain_to_pts
+        if self.p.v102:
+            conv = np.floor(np.maximum(conv, 0) * 10 + 1e-9) / 10
+        return conv
+
     def attack_cost(self, t, d):
         n = self.active_attacks(t, d) + 1
         held = (self.owner == t).sum()
@@ -297,10 +311,8 @@ class Season:
                         best, bs = r, sc
                 if best is None:
                     break
-                if p.v102:   # 讨伐令和流亡令叠加相乘后再向上取整
-                    held = (self.owner == t).sum()
-                    raw = (p.A + p.D * self.active_attacks(t, d) + p.R * held) * (p.exile if held == 0 else 1.0)
-                    cost = self.gcost(raw * ((1 - p.bounty) if self.owner[best] == leader else 1.0))
+                if p.v102:
+                    cost = self.attack_cost_full(t, d, self.owner[best] == leader)
                 elif self.owner[best] == leader and p.bounty > 0:
                     cost = cost * (1 - p.bounty)
                 if p.last_land == "backwater" and (self.owner == self.owner[best]).sum() <= 1:
@@ -503,9 +515,7 @@ class Season:
             self.rng = np.random.default_rng([self.crn_seed, 999])
         self.big_battle()
         if p.grain_to_pts > 0:
-            conv = self.grain * p.grain_to_pts
-            if p.v102:   # 保留 1 位小数，向下取整（PRD 第 3 部分第 15 节）
-                conv = np.floor(np.maximum(conv, 0) * 10 + 1e-9) / 10
+            conv = self.grain_points(self.grain)
             self.pts += conv
             self.pts_src.setdefault("grain", np.zeros(p.n_teams))
             self.pts_src["grain"] += conv
