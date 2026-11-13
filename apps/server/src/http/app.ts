@@ -43,6 +43,7 @@ import { Debates } from "../season/debates.js";
 import { Operations } from "../season/operations.js";
 import { opsRoutes } from "./opsRoutes.js";
 import { Survey } from "../accounts/survey.js";
+import { Dashboard } from "../season/dashboard.js";
 import { surveySubmit } from "@zhiyouji/shared";
 import { DailyTasks } from "../daily/daily.js";
 import { dailyRoutes } from "./dailyRoutes.js";
@@ -99,6 +100,7 @@ export interface Services {
   debates: Debates;
   ops: Operations;
   survey: Survey;
+  dashboard: Dashboard;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -144,6 +146,7 @@ export function buildServices(d: AppDeps): Services {
     works: new Works(d.db, d.clock, d.cfg, store, storage, debates, ops),
     ops,
     survey,
+    dashboard: new Dashboard(d.db, d.clock, store),
     debates,
     store,
     scheduler,
@@ -192,6 +195,10 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   dataRoutes(app, d.db, services.dataRights, services.familyAuth, services.adminAuth);
   bankRoutes(app, services.bank, services.adminAuth);
   opsRoutes(app, services.ops, services.play, services.familyAuth, services.adminAuth);
+  app.get("/v1/admin/dashboard", async (req) => {
+    const { user } = await services.adminAuth.user(req);
+    return services.dashboard.view(user.id, user.role);
+  });
   app.get("/v1/survey", async (req) => services.survey.latest((await services.familyAuth.child(req)).child.id));
   app.post("/v1/survey", async (req) => services.survey.submit((await services.familyAuth.child(req)).child, surveySubmit.parse(req.body)));
   dailyRoutes(app, services.daily, services.admin, services.familyAuth, services.adminAuth);

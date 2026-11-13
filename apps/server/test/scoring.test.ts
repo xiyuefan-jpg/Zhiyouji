@@ -150,3 +150,27 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
     await t.close();
   });
 });
+
+describe("看板 (part 7 §1)", () => {
+  it("today's numbers, what needs handling, live servers", async () => {
+    const { contestSetup: cs } = await import("./seasonHelpers.js");
+    const t = await cs();
+    const boss = await t.adminUser("boss@example.com", "admin");
+    const r = await t.adminUser("r@example.com", "reviewer");
+    await t.a1api("POST", `/v1/season/works/contest:${t.contestId}`, { mediaKind: "text", text: "作品", members: [t.a1] });
+    const d = (await t.call("GET", "/v1/admin/dashboard", undefined, boss.token)).json();
+    expect(d.today.worksSubmitted).toBe(1);
+    expect(d.today.activeChildren).toBeGreaterThan(0);
+    expect(d.servers).toHaveLength(1);
+    expect(d.servers[0]).toMatchObject({ day: 2, activeContests: 1, paused: false });
+    expect(d.servers[0].top).toHaveLength(3);
+    // the reviewer sees only their own queue and no servers
+    t.clock.set(bj("2027-02-12", 21, 1));
+    await t.services.scoring.runDue(t.serverId);
+    const rd = (await t.call("GET", "/v1/admin/dashboard", undefined, await r.relogin())).json();
+    expect(rd.servers).toEqual([]);
+    expect(rd.attention.reviewsPending).toBe(1);
+    expect(rd.attention.reviewsDueSoon).toBe(0);
+    await t.close();
+  });
+});
