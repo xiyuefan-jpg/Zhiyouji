@@ -81,44 +81,87 @@ export class SeasonStore {
     const params = i.params ?? DEFAULT_PARAMS;
     const calendar = await this.calendar();
     return this.db.transaction(async (tx) => {
-      const [season] = await tx.insert(seasons).values({ name: i.name, openingDate: i.opening, seed: i.seed, status: "grouped" }).returning();
-      await tx.insert(paramVersions).values({ seasonId: season!.id, version: 1, params, createdBy: i.createdBy, note: "初始参数" });
-      const [server] = await tx.insert(servers).values({ seasonId: season!.id, name: i.serverName ?? "一服" }).returning();
-      const teamRows = await tx
-        .insert(teams)
-        .values(i.teams.map((t) => ({ serverId: server!.id, name: t.name })))
+      const [season] = await tx
+        .insert(seasons)
+        .values({ name: i.name, openingDate: i.opening, seed: i.seed, status: "grouped", groupingLockedAt: i.at })
         .returning();
-      const members = i.teams.flatMap((t, k) => t.members.map((m) => ({ teamId: teamRows[k]!.id, childId: m.childId, grade: m.grade, enabledBy: i.createdBy })));
-      if (members.length) await tx.insert(teamMembers).values(members);
-      const map = standardLands(i.teams.length);
-      await tx.insert(lands).values(map.map((l) => ({ serverId: server!.id, code: l.id, kind: l.kind, name: i.landNames?.[l.id] ?? l.id })));
-      const state = createSeasonState({
+      await tx.insert(paramVersions).values({ seasonId: season!.id, version: 1, params, createdBy: i.createdBy, note: "初始参数" });
+      const r = await this.createServerIn(tx as unknown as Db, {
         seasonId: season!.id,
-        seed: i.seed,
+        name: i.serverName ?? "一服",
         opening: i.opening,
+        seed: i.seed,
         params,
+        paramVersion: 1,
         calendar,
-        teams: i.teams.map((t, k) => ({ id: teamRows[k]!.id, name: t.name, members: t.members })),
-        lands: map,
+        teams: i.teams,
+        landNames: i.landNames,
         prompts: i.prompts,
-        at: +i.at,
+        createdBy: i.createdBy,
+        at: i.at,
       });
-      await tx.insert(seasonSnapshots).values({ serverId: server!.id, seq: 0, state });
-      await this.writeLedger(tx as unknown as Db, server!.id, state, 0, 0, 1);
-      const plan = planSeason(i.opening, params, calendar);
-      await tx.insert(plannedEvents).values(
-        plan.map((r) => ({
-          serverId: server!.id,
-          key: r.key,
-          kind: r.kind,
-          runAt: new Date(r.at),
-          params: { ...r.data, engineEvent: r.engineEvent, day: r.day },
-          shiftable: r.shiftable,
-        })),
-      );
-      this.cache.set(server!.id, { state, seq: 0, paramVersion: 1 });
-      return { seasonId: season!.id, serverId: server!.id, teamIds: teamRows.map((t) => t.id) };
+      return { seasonId: season!.id, ...r };
     });
+  }
+
+  /**
+   * One server of a season (inside the caller's transaction): teams, members,
+   * lands, the initial engine state (opening grain) and the planned events.
+   */
+  async createServerIn(
+    tx: Db,
+    i: {
+      seasonId: string;
+      name: string;
+      opening: string;
+      seed: number;
+      params: SeasonParams;
+      paramVersion: number;
+      calendar: DayKindOverrides;
+      teams: { name: string; members: { childId: string; grade: number }[] }[];
+      landNames?: Record<string, string>;
+      prompts?: Record<string, string[]>;
+      createdBy: string;
+      at: Date;
+    },
+  ): Promise<{ serverId: string; teamIds: string[] }> {
+    const [server] = await tx.insert(servers).values({ seasonId: i.seasonId, name: i.name }).returning();
+    const teamRows = await tx
+      .insert(teams)
+      .values(i.teams.map((t) => ({ serverId: server!.id, name: t.name })))
+      .returning();
+    const members = i.teams.flatMap((t, k) =>
+      t.members.map((m) => ({ teamId: teamRows[k]!.id, childId: m.childId, grade: m.grade, enabledBy: i.createdBy, enabledAt: i.at })),
+    );
+    if (members.length) await tx.insert(teamMembers).values(members);
+    const map = standardLands(i.teams.length);
+    await tx.insert(lands).values(map.map((l) => ({ serverId: server!.id, code: l.id, kind: l.kind, name: i.landNames?.[l.id] ?? l.id })));
+    const state = createSeasonState({
+      seasonId: i.seasonId,
+      seed: i.seed,
+      opening: i.opening,
+      params: i.params,
+      calendar: i.calendar,
+      teams: i.teams.map((t, k) => ({ id: teamRows[k]!.id, name: t.name, members: t.members })),
+      lands: map,
+      prompts: i.prompts,
+      at: +i.at,
+    });
+    await tx.insert(seasonSnapshots).values({ serverId: server!.id, seq: 0, state });
+    await this.writeLedger(tx, server!.id, state, 0, 0, i.paramVersion);
+    const plan = planSeason(i.opening, i.params, i.calendar);
+    await tx.insert(plannedEvents).values(
+      plan.map((r) => ({
+        serverId: server!.id,
+        key: r.key,
+        kind: r.kind,
+        runAt: new Date(r.at),
+        params: { ...r.data, engineEvent: r.engineEvent, day: r.day },
+        shiftable: r.shiftable,
+      })),
+    );
+    this.cache.set(server!.id, { state, seq: 0, paramVersion: i.paramVersion });
+    return { serverId: server!.id, teamIds: teamRows.map((t) => t.id) };
   }
 
   /** Current state of a server (from memory, or rebuilt from the database). */

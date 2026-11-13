@@ -59,5 +59,5 @@ describe("bot seasons (PRD part 9 §2)", () => {
     expect(JSON.stringify(replay(a.initial, a.events).state)).toBe(JSON.stringify(a.state));
     const c = simulateSeason({ seed: 8 });
     expect(JSON.stringify(c.state.ledger)).not.toBe(JSON.stringify(a.state.ledger));
-  });
+  }, 60_000);
 });

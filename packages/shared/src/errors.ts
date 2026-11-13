@@ -33,6 +33,15 @@ export const ERROR_TEXT = {
   password_short: "密码至少 10 位",
   email_taken: "这个邮箱已经有账号了",
   cannot_disable_self: "不能停用自己的账号",
+  season_not_found: "找不到这个赛季",
+  wrong_season_status: "赛季现在的状态不能做这个操作",
+  not_sunday: "开营日必须是周日",
+  grouping_locked: "分组已经确认锁定，不能再改",
+  no_grouping: "还没有生成分组",
+  too_few_players: "赛季玩家太少，不够分组",
+  team_empty: "有的小组没有成员，请先调整分组",
+  not_enrolled: "这个孩子没有开通本赛季",
+  bad_position: "没有这个服或这个组",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_TEXT;

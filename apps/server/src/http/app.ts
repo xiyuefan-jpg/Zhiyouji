@@ -19,6 +19,10 @@ import { AdminAuth, adminRoutes } from "./adminRoutes.js";
 import { HttpError } from "./errors.js";
 import { FamilyAuth, familyRoutes } from "./familyRoutes.js";
 import { messageRoutes } from "./messageRoutes.js";
+import { seasonAdminRoutes } from "./seasonAdminRoutes.js";
+import { SeasonAdmin } from "../season/seasons.js";
+import { SeasonStore } from "../seasonStore.js";
+import { Scheduler } from "../scheduler.js";
 
 export interface AppDeps {
   db: Db;
@@ -38,13 +42,21 @@ export interface Services {
   smsDispatcher: SmsDispatcher;
   familyAuth: FamilyAuth;
   adminAuth: AdminAuth;
+  /** One season store per process: it caches the engine state of every server. */
+  store: SeasonStore;
+  scheduler: Scheduler;
+  seasons: SeasonAdmin;
 }
 
 export function buildServices(d: AppDeps): Services {
   const sessions = new Sessions(d.db, d.clock, d.cfg);
   const family = new FamilyAccounts(d.db, d.clock, d.cfg, sessions, d.sms, d.captcha);
   const admin = new AdminAccounts(d.db, d.clock, d.cfg, sessions);
+  const store = new SeasonStore(d.db);
   return {
+    store,
+    scheduler: new Scheduler(d.db, store, d.clock),
+    seasons: new SeasonAdmin(d.db, d.clock, store),
     sessions,
     family,
     admin,
@@ -74,5 +86,6 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   familyRoutes(app, d.cfg, services.family, services.sessions, services.familyAuth);
   adminRoutes(app, d.cfg, services.admin, services.sessions, services.adminAuth);
   messageRoutes(app, services.notifier, services.familyAuth, services.adminAuth);
+  seasonAdminRoutes(app, services.seasons, services.adminAuth);
   return { app, services };
 }

@@ -15,6 +15,13 @@
       "when": 1794584859149,
       "tag": "0001_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794587757417,
+      "tag": "0002_enrollment",
+      "breakpoints": true
     }
   ]
 }

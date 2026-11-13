@@ -12,3 +12,4 @@ export * from "./notify/quiet.js";
 export * from "./notify/notifier.js";
 export * from "./http/app.js";
 export * from "./http/errors.js";
+export * from "./season/seasons.js";

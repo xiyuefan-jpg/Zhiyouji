@@ -9,8 +9,6 @@ import { realClock } from "./clock.js";
 import { defaultConfig } from "./config.js";
 import { buildApp } from "./http/app.js";
 import { FakeCaptcha, FakeSms } from "./providers.js";
-import { Scheduler } from "./scheduler.js";
-import { SeasonStore } from "./seasonStore.js";
 import { Worker } from "./worker.js";
 
 async function main() {
@@ -23,8 +21,7 @@ async function main() {
   const sms = new FakeSms(env.NODE_ENV === "production" ? undefined : (line) => console.log(line));
   const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha(), logger: true, trustProxy: env.TRUST_PROXY === "1" });
 
-  const store = new SeasonStore(db);
-  const worker = new Worker(db, new Scheduler(db, store, clock), services.smsDispatcher, services.notifier);
+  const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier);
   const tickMs = Number(env.TICK_MS ?? 30_000);
   setInterval(() => {
     worker.tick().then(

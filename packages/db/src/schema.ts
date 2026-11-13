@@ -40,7 +40,39 @@ export const seasons = pgTable("seasons", {
   seed: integer("seed").notNull(),
   currentParamVersion: integer("current_param_version").notNull().default(1),
   createdAt: ts("created_at").notNull().defaultNow(),
+  /**
+   * Draft grouping (part 3 §4) between "生成分组" and "确认": servers → teams →
+   * child ids, plus the team names. Kept after confirmation for reference.
+   */
+  grouping: jsonb("grouping"),
+  /** Set when the admin confirms the grouping: servers, teams and the engine state exist from then on. */
+  groupingLockedAt: ts("grouping_locked_at"),
+  /** Enabled question-bank prompts per land code, passed to the engine at confirmation. */
+  prompts: jsonb("prompts"),
 });
+
+/**
+ * Season players (赛季玩家, part 4 §4): a child enabled for a season after
+ * paying outside the app. Before grouping only `status` matters; the team
+ * placement lives in `team_members` once the grouping is confirmed.
+ */
+export const seasonPlayers = pgTable(
+  "season_players",
+  {
+    id: id(),
+    seasonId: uuid("season_id").notNull().references(() => seasons.id),
+    childId: uuid("child_id").notNull().references(() => children.id),
+    /** enrolled | revoked (admin undid the enabling before grouping) | withdrawn (left during the season) */
+    status: text("status").notNull().default("enrolled"),
+    enabledBy: text("enabled_by").notNull(),
+    enabledAt: ts("enabled_at").notNull(),
+    /** Order number or amount, for reconciling with the payment outside the app. */
+    paymentNote: text("payment_note"),
+    revokedBy: text("revoked_by"),
+    revokedAt: ts("revoked_at"),
+  },
+  (t) => [uniqueIndex("season_players_season_child").on(t.seasonId, t.childId), index("season_players_child").on(t.childId)],
+);
 
 /** Every parameter change is a new version (part 4 §4). */
 export const paramVersions = pgTable(
@@ -287,6 +319,8 @@ export const children = pgTable(
     /** active | deleted */
     status: text("status").notNull().default("active"),
     createdAt: ts("created_at").notNull().defaultNow(),
+    /** Last request made as this child (leader take-over after 3 days away, part 3 §5). */
+    lastActiveAt: ts("last_active_at"),
   },
   (t) => [index("children_family").on(t.familyId)],
 );

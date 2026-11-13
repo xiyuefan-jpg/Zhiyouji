@@ -9,10 +9,15 @@
  */
 
 import { and, asc, eq, lte } from "drizzle-orm";
-import { plannedEvents, type Db } from "@zhiyouji/db";
+import { plannedEvents, seasons, servers, type Db } from "@zhiyouji/db";
 import type { AuctionBid, SeasonEvent } from "@zhiyouji/engine";
 import type { Clock } from "./clock.js";
 import type { SeasonStore } from "./seasonStore.js";
+
+const STATUS_STEPS: Record<string, { from: string; to: string }> = {
+  publish_groups: { from: "grouped", to: "running" },
+  form_big_battle: { from: "running", to: "big_battle" },
+};
 
 export interface RunReport {
   ran: { key: string; engineEvent: string | null; ok: boolean; refusal?: string }[];
@@ -35,6 +40,7 @@ export class Scheduler {
       .orderBy(asc(plannedEvents.runAt), asc(plannedEvents.key));
     const report: RunReport = { ran: [] };
     for (const row of due) {
+      await this.advanceSeasonStatus(serverId, row.kind);
       const engineEvent = (row.params as { engineEvent: string | null }).engineEvent;
       if (!engineEvent) {
         await this.db.update(plannedEvents).set({ status: "done", doneAt: now }).where(eq(plannedEvents.id, row.id));
@@ -52,6 +58,21 @@ export class Scheduler {
       }
     }
     return report;
+  }
+
+  /**
+   * Season states that follow the calendar (part 3 §2): D0 evening → 进行中,
+   * D29 forming the camps → 大团战. Only moves forward from the expected state.
+   */
+  private async advanceSeasonStatus(serverId: string, kind: string): Promise<void> {
+    const step = STATUS_STEPS[kind];
+    if (!step) return;
+    const [row] = await this.db.select({ seasonId: servers.seasonId }).from(servers).where(eq(servers.id, serverId));
+    if (!row) return;
+    await this.db
+      .update(seasons)
+      .set({ status: step.to })
+      .where(and(eq(seasons.id, row.seasonId), eq(seasons.status, step.from)));
   }
 
   /** Turn a planned row into the engine event, pulling in submissions and scores the row needs. */

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { createPgliteDb } from "@zhiyouji/db";
 import { beijingInstant } from "@zhiyouji/engine";
-import { buildApp, defaultConfig, FakeCaptcha, FakeSms, SimClock, type ServerConfig } from "../src/index.js";
+import { buildApp, defaultConfig, FakeCaptcha, FakeSms, SimClock, TOTP_STEP_MS, totpAt, type ServerConfig } from "../src/index.js";
 
 /** Beijing wall time → Date. */
 export const bj = (d: string, h: number, m = 0) => new Date(beijingInstant(d, h, m));
@@ -14,7 +14,7 @@ export async function setup(start = bj("2027-01-04", 10), cfgPatch: (c: ServerCo
   const sms = new FakeSms();
   const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha() });
   await app.ready();
-  const call = (method: "GET" | "POST" | "PATCH", url: string, body?: unknown, token?: string, headers: Record<string, string> = {}) =>
+  const call = (method: "GET" | "POST" | "PATCH" | "DELETE", url: string, body?: unknown, token?: string, headers: Record<string, string> = {}) =>
     app.inject({ method, url, payload: body as object | undefined, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers } });
 
   /** A logged-in family that agreed to the documents, with children created through the API. */
@@ -29,5 +29,15 @@ export async function setup(start = bj("2027-01-04", 10), cfgPatch: (c: ServerCo
     return { token, childIds, familyId: login.json().me.family.id as string };
   }
 
-  return { db, close: async () => { await app.close(); await close(); }, clock, cfg, sms, app: app as FastifyInstance, services, call, family };
+  /** An admin console user who accepted the invite and logged in (token for Bearer). */
+  async function adminUser(email = "boss@example.com", role: "admin" | "reviewer" = "admin") {
+    const inv = await services.admin.invite("cli", { email, name: email.split("@")[0]!, role });
+    const { secret } = (await call("POST", "/v1/admin/auth/invite/start", { token: inv.inviteToken, password: "a-long-password" })).json();
+    await call("POST", "/v1/admin/auth/invite/finish", { token: inv.inviteToken, code: totpAt(secret, +clock.now()) });
+    clock.advance(TOTP_STEP_MS);
+    const login = await call("POST", "/v1/admin/auth/login", { email, password: "a-long-password", totp: totpAt(secret, +clock.now()) });
+    return { token: login.json().token as string, id: login.json().me.id as string };
+  }
+
+  return { adminUser, db, close: async () => { await app.close(); await close(); }, clock, cfg, sms, app: app as FastifyInstance, services, call, family };
 }
