@@ -17,6 +17,7 @@ import { AboutPage, MeTab, PrivacyPage, Settings } from "./pages/Me";
 import { Shell } from "./pages/Shell";
 import { Home, ReportTab } from "./pages/Tabs";
 import { LandPage, LedgerPage, SeasonMap, SeasonTeam } from "./pages/season/SeasonPages";
+import { DailyHome, DailyNew, DailyResult } from "./pages/DailyPages";
 
 export function App() {
   const [privacyOk, setPrivacyOk] = useState(privacyAccepted);
@@ -85,6 +86,9 @@ function Gate() {
         <Route path="me" element={<MeTab />} />
       </Route>
       <Route path="map/:landId" element={<LandPage />} />
+      <Route path="daily" element={<DailyHome />} />
+      <Route path="daily/new/:templateId" element={<DailyNew />} />
+      <Route path="daily/:id" element={<DailyResult />} />
       <Route path="team/ledger" element={<LedgerPage />} />
       <Route path="choose" element={<ChooseChild />} />
       <Route path="children/new" element={<ChildForm />} />

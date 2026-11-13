@@ -7,6 +7,16 @@ import { createPgliteDb } from "@zhiyouji/db";
 import { beijingInstant } from "@zhiyouji/engine";
 import { buildApp, defaultConfig, FakeCaptcha, FakeSms, SimClock } from "@zhiyouji/server";
 
+/** jsdom's Blob has no arrayBuffer(); FileReader works. */
+function readBlob(b: Blob): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(Buffer.from(fr.result as ArrayBuffer));
+    fr.onerror = () => reject(fr.error);
+    fr.readAsArrayBuffer(b);
+  });
+}
+
 export async function startBackend() {
   const { db, close } = await createPgliteDb();
   const clock = new SimClock(new Date(beijingInstant("2027-01-04", 10, 0)));
@@ -17,10 +27,11 @@ export async function startBackend() {
   let cookie = "";
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = typeof input === "string" ? input : input.toString();
+    const body = init.body instanceof Blob ? await readBlob(init.body) : (init.body as string | undefined);
     const res = await app.inject({
       method: (init.method ?? "GET") as "GET",
       url,
-      payload: init.body as string | undefined,
+      payload: body,
       headers: { ...(init.headers as Record<string, string>), ...(cookie ? { cookie } : {}) },
     });
     const set = res.headers["set-cookie"];

@@ -37,6 +37,14 @@ export function Home() {
         </Link>
       )}
 
+      <Link to="/daily" className="panel row" style={{ marginTop: 18, textDecoration: "none", color: "inherit" }}>
+        <Seal text="修" size={40} tilt={-3} />
+        <span className="grow" style={{ fontWeight: 600 }}>
+          去修行
+        </span>
+        <RightOutline />
+      </Link>
+
       <h2 className="section-title">今天要做的事</h2>
       <div className="panel">
         <Empty title="今天还没有要做的事" icon={<Seal text="闲" size={48} tilt={3} outline />}>
