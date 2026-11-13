@@ -10,5 +10,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./test/setup.ts"],
+    // the tests start the real server (PGlite) and render full pages
+    testTimeout: 30_000,
   },
 });

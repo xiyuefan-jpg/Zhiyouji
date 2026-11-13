@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#F1E3CF"/>
+  <rect x="30" y="30" width="132" height="132" rx="14" fill="#A93A2A"/>
+  <rect x="40" y="40" width="112" height="112" rx="8" fill="none" stroke="#FBF4EA" stroke-width="4"/>
+  <text x="96" y="122" font-size="72" text-anchor="middle" fill="#FBF4EA" font-family="Songti SC, STSong, Noto Serif CJK SC, serif" font-weight="700">智</text>
+</svg>

@@ -9,7 +9,8 @@
     "packages/*",
     "tools/sim",
     "apps/server",
-    "apps/web"
+    "apps/web",
+    "apps/admin"
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
