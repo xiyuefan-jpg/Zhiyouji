@@ -18,3 +18,4 @@ export * from "./bigBattle.js";
 export * from "./final.js";
 export * from "./grouping.js";
 export * from "./leaders.js";
+export * from "./season/index.js";
