@@ -121,7 +121,7 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
           if (!c) continue;
           for (const slot of (await s.works.slots(c)).slots.filter((x) => x.open && !x.submitted)) {
             if (slot.kind === "contest" && st.contests[slot.slot.split(":")[1]!]?.defender === id && rng.next() < 0.3) continue; // some defenders do not answer
-            if (await quiet(() => s.works.submit(c, slot.slot, { mediaKind: "text", text: `${slot.slot} 的作品`, members: [c.childId] }))) stats.works++;
+            if (await quiet(() => s.works.submit(c, slot.slot, { mediaKind: "text", text: `${slot.slot} 的作品`, fileIds: [], members: [c.childId] }))) stats.works++;
           }
         }
       // gift-week cards (Thursday evening), supply tasks (members and summary)
