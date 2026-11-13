@@ -239,3 +239,204 @@ export const opLog = pgTable("op_log", {
   reason: text("reason"),
   at: ts("at").notNull().defaultNow(),
 });
+
+// ---- accounts and people (part 4 §2; part 8 §2.1, §3.1) ------------------------
+
+/** One family account per parent phone number (student side logs in with it). */
+export const families = pgTable("families", {
+  id: id(),
+  /** Mainland mobile number, 11 digits. */
+  phone: text("phone").notNull().unique(),
+  /** active | refused (parent pressed 不同意) | deleted */
+  status: text("status").notNull().default("active"),
+  /** Version of the three documents the parent last agreed to; null = not yet. */
+  consentVersion: text("consent_version"),
+  consentAt: ts("consent_at"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  /** For the "2 years without login" clean-up (part 8 §4). */
+  lastLoginAt: ts("last_login_at"),
+});
+
+/** Every agree / disagree the parent pressed (append-only). */
+export const consentRecords = pgTable(
+  "consent_records",
+  {
+    id: id(),
+    familyId: uuid("family_id").notNull().references(() => families.id),
+    /** agree | disagree */
+    choice: text("choice").notNull(),
+    policyVersion: text("policy_version").notNull(),
+    at: ts("at").notNull(),
+  },
+  (t) => [index("consent_records_family").on(t.familyId)],
+);
+
+/** The child is the subject of the data (daily tasks, journal, season player). */
+export const children = pgTable(
+  "children",
+  {
+    id: id(),
+    familyId: uuid("family_id").notNull().references(() => families.id),
+    nickname: text("nickname").notNull(),
+    /** Preset avatar id (no photos of the child). */
+    avatar: text("avatar").notNull().default("a1"),
+    /** 1–9 = 一年级…初三, 10 = 高中. */
+    grade: integer("grade").notNull(),
+    /** voice | text */
+    explainPref: text("explain_pref").notNull().default("voice"),
+    /** active | deleted */
+    status: text("status").notNull().default("active"),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("children_family").on(t.familyId)],
+);
+
+/** Grade history: the crossing score uses the grade on the day of the submission. */
+export const gradeChanges = pgTable("grade_changes", {
+  id: id(),
+  childId: uuid("child_id").notNull().references(() => children.id),
+  fromGrade: integer("from_grade"),
+  toGrade: integer("to_grade").notNull(),
+  /** auto | parent | admin | created */
+  source: text("source").notNull(),
+  at: ts("at").notNull(),
+});
+
+/** SMS login codes (only the hash is kept). */
+export const loginCodes = pgTable(
+  "login_codes",
+  {
+    id: id(),
+    phone: text("phone").notNull(),
+    codeHash: text("code_hash").notNull(),
+    ip: text("ip"),
+    createdAt: ts("created_at").notNull(),
+    expiresAt: ts("expires_at").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    usedAt: ts("used_at"),
+  },
+  (t) => [index("login_codes_phone").on(t.phone, t.createdAt)],
+);
+
+/** Login sessions of both sides; only the token hash is stored. */
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: id(),
+    tokenHash: text("token_hash").notNull().unique(),
+    /** family | admin */
+    kind: text("kind").notNull(),
+    familyId: uuid("family_id").references(() => families.id),
+    adminUserId: uuid("admin_user_id"),
+    /** The child chosen on "我是谁" (family sessions). */
+    childId: uuid("child_id").references(() => children.id),
+    createdAt: ts("created_at").notNull(),
+    lastSeenAt: ts("last_seen_at").notNull(),
+    expiresAt: ts("expires_at").notNull(),
+    revokedAt: ts("revoked_at"),
+  },
+  (t) => [index("sessions_family").on(t.familyId)],
+);
+
+/** Admin console users: admins and reviewers (part 7 §0). */
+export const adminUsers = pgTable("admin_users", {
+  id: id(),
+  email: text("email").notNull().unique(),
+  name: text("name").notNull(),
+  /** admin | reviewer */
+  role: text("role").notNull(),
+  passwordHash: text("password_hash"),
+  /** Base32 TOTP secret (two-step verification). */
+  totpSecret: text("totp_secret"),
+  /** IANA zone for showing local time next to Beijing time. */
+  timezone: text("timezone").notNull().default("Asia/Shanghai"),
+  /** invited | active | disabled */
+  status: text("status").notNull().default("invited"),
+  failedLogins: integer("failed_logins").notNull().default(0),
+  lockedUntil: ts("locked_until"),
+  /** Last TOTP time step accepted (a code works once). */
+  lastTotpStep: bigint("last_totp_step", { mode: "number" }),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  lastLoginAt: ts("last_login_at"),
+});
+
+/** One-time invitation links for new admin console users. */
+export const adminInvites = pgTable("admin_invites", {
+  id: id(),
+  adminUserId: uuid("admin_user_id").notNull().references(() => adminUsers.id),
+  tokenHash: text("token_hash").notNull().unique(),
+  createdBy: text("created_by").notNull(),
+  createdAt: ts("created_at").notNull(),
+  expiresAt: ts("expires_at").notNull(),
+  usedAt: ts("used_at"),
+});
+
+// ---- message center and SMS (part 4 §9; part 8 §1) ------------------------------
+
+/** In-site message center: every notification lands here. */
+export const messages = pgTable(
+  "messages",
+  {
+    id: id(),
+    /** child | family | admin */
+    recipientKind: text("recipient_kind").notNull(),
+    recipientId: uuid("recipient_id").notNull(),
+    serverId: uuid("server_id"),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    /** Where tapping the message goes in the site, e.g. "/contest/K12". */
+    link: text("link"),
+    /** Same notification never stored twice (e.g. "attacked:K12"). */
+    dedupeKey: text("dedupe_key"),
+    createdAt: ts("created_at").notNull(),
+    readAt: ts("read_at"),
+  },
+  (t) => [
+    index("messages_recipient").on(t.recipientKind, t.recipientId, t.createdAt),
+    uniqueIndex("messages_dedupe").on(t.recipientKind, t.recipientId, t.dedupeKey),
+  ],
+);
+
+/** Outgoing SMS (login codes are sent directly; reminders go through here). */
+export const smsOutbox = pgTable(
+  "sms_outbox",
+  {
+    id: id(),
+    phone: text("phone").notNull(),
+    /** Reminder kind = template, e.g. "attacked". */
+    kind: text("kind").notNull(),
+    params: jsonb("params").notNull().default({}),
+    /** Same reminder to the same phone is merged (e.g. two children in the attacked team). */
+    mergeKey: text("merge_key").notNull(),
+    /** Not before (quiet hours push it to 07:00 Beijing). */
+    sendAfter: ts("send_after").notNull(),
+    /** pending | sent | failed | dropped (over the daily cap) */
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
+    providerId: text("provider_id"),
+    createdAt: ts("created_at").notNull(),
+    sentAt: ts("sent_at"),
+  },
+  (t) => [uniqueIndex("sms_outbox_merge").on(t.phone, t.mergeKey), index("sms_outbox_due").on(t.status, t.sendAfter)],
+);
+
+// ---- view log (part 4 §10; part 8 §3.1) ------------------------------------------
+
+/** Every time an admin console user views or downloads a child's data (append-only). */
+export const viewLog = pgTable(
+  "view_log",
+  {
+    id: id(),
+    adminUserId: uuid("admin_user_id").notNull(),
+    childId: uuid("child_id"),
+    /** work | recording | daily_task | survey | child_profile … */
+    contentKind: text("content_kind").notNull(),
+    objectId: text("object_id"),
+    /** view | download */
+    action: text("action").notNull(),
+    at: ts("at").notNull(),
+  },
+  (t) => [index("view_log_admin").on(t.adminUserId, t.at), index("view_log_child").on(t.childId, t.at)],
+);

@@ -1,0 +1,15 @@
+{
+  "name": "@zhiyouji/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "学生端网站、管理端和服务器共用的类型、校验规则和常量",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.1.0"
+  }
+}

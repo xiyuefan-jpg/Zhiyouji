@@ -8,7 +8,7 @@
  * database first. Pauses shift every later shiftable event by the paused time.
  */
 
-import { and, asc, eq, lte, ne } from "drizzle-orm";
+import { and, asc, eq, lte } from "drizzle-orm";
 import { plannedEvents, type Db } from "@zhiyouji/db";
 import type { AuctionBid, SeasonEvent } from "@zhiyouji/engine";
 import type { Clock } from "./clock.js";
@@ -31,7 +31,7 @@ export class Scheduler {
     const due = await this.db
       .select()
       .from(plannedEvents)
-      .where(and(eq(plannedEvents.serverId, serverId), ne(plannedEvents.status, "done"), lte(plannedEvents.runAt, now)))
+      .where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.status, "pending"), lte(plannedEvents.runAt, now)))
       .orderBy(asc(plannedEvents.runAt), asc(plannedEvents.key));
     const report: RunReport = { ran: [] };
     for (const row of due) {
@@ -99,6 +99,15 @@ export class Scheduler {
   private async prefsByTeam(serverId: string, round: string): Promise<Record<string, string[]>> {
     const subs = await this.store.submissions(serverId, round);
     return Object.fromEntries(subs.map((s) => [s.teamId, s.prefs as string[]]));
+  }
+
+  /** Admin re-run of a failed event (idempotent): put it back in the queue and run what is due. */
+  async rerun(serverId: string, key: string): Promise<RunReport> {
+    await this.db
+      .update(plannedEvents)
+      .set({ status: "pending", error: null })
+      .where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.key, key), eq(plannedEvents.status, "failed")));
+    return this.runDue(serverId);
   }
 
   /** Push every later shiftable planned event back by `ms` (called on resume, §16). */
