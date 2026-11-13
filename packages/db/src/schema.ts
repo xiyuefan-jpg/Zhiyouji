@@ -1005,3 +1005,24 @@ export const surveyAnswers = pgTable(
   },
   (t) => [index("survey_answers_child").on(t.childId, t.completedAt)],
 );
+
+/** 内容安全队列 (part 6 §7; part 7 §8): what the safety service did not pass. */
+export const safetyQueue = pgTable(
+  "safety_queue",
+  {
+    id: id(),
+    /** work | daily_task | card */
+    objectKind: text("object_kind").notNull(),
+    objectId: uuid("object_id").notNull(),
+    labels: jsonb("labels").notNull().default([]),
+    /** pending | passed | removed */
+    status: text("status").notNull().default("pending"),
+    /** A reviewer's "转给管理员" note. */
+    forwardNote: text("forward_note"),
+    forwardedBy: text("forwarded_by"),
+    handledBy: text("handled_by"),
+    handledAt: ts("handled_at"),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [index("safety_queue_status").on(t.status), uniqueIndex("safety_queue_object").on(t.objectKind, t.objectId)],
+);

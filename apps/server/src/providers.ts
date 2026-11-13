@@ -60,3 +60,16 @@ export class FakeCaptcha implements CaptchaVerifier {
     return token !== "bad";
   }
 }
+
+/** Content safety (Aliyun content moderation later; PRD part 6 §7). */
+export interface ContentSafety {
+  check(i: { texts: string[]; files: { key: string; kind: string }[] }): Promise<{ pass: boolean; labels: string[] }>;
+}
+
+/** Passes everything except text containing "违规" (tests and local development). */
+export class FakeContentSafety implements ContentSafety {
+  async check(i: { texts: string[]; files: { key: string; kind: string }[] }) {
+    const bad = i.texts.some((t) => t.includes("违规"));
+    return { pass: !bad, labels: bad ? ["fake:违规"] : [] };
+  }
+}

@@ -44,6 +44,9 @@ import { Operations } from "../season/operations.js";
 import { opsRoutes } from "./opsRoutes.js";
 import { Survey } from "../accounts/survey.js";
 import { Dashboard } from "../season/dashboard.js";
+import { Showcase } from "../season/showcase.js";
+import { watchRoutes } from "./watchRoutes.js";
+import { FakeContentSafety, type ContentSafety } from "../providers.js";
 import { surveySubmit } from "@zhiyouji/shared";
 import { DailyTasks } from "../daily/daily.js";
 import { dailyRoutes } from "./dailyRoutes.js";
@@ -66,6 +69,8 @@ export interface AppDeps {
   aiDaily?: AiDailyReviewer;
   /** AI scoring of supply tasks (default: the fake). */
   aiSupply?: AiSupplyScorer;
+  /** Content safety (default: the fake). */
+  safety?: ContentSafety;
   logger?: boolean;
   trustProxy?: boolean;
 }
@@ -101,6 +106,7 @@ export interface Services {
   ops: Operations;
   survey: Survey;
   dashboard: Dashboard;
+  showcase: Showcase;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -135,7 +141,9 @@ export function buildServices(d: AppDeps): Services {
   const ai = d.ai ?? new FakeAiScorer();
   const aiDaily = d.aiDaily ?? new FakeAiDaily();
   const play = new SeasonPlay(d.db, d.clock, store);
+  const reports = new Reports(d.db, d.clock, store, notifier);
   return {
+    showcase: new Showcase(d.db, d.clock, store, d.safety ?? new FakeContentSafety(), notifier, storage, play, reports),
     supply: new Supply(d.db, d.clock, store, d.aiSupply ?? new FakeAiSupply(), notifier),
     aiDaily,
     daily: new DailyTasks(d.db, d.clock, d.cfg, storage, aiDaily, notifier, store, play),
@@ -153,7 +161,7 @@ export function buildServices(d: AppDeps): Services {
     seasons,
     control: new SeasonControl(d.db, d.clock, store, scheduler, seasons),
     play,
-    reports: new Reports(d.db, d.clock, store, notifier),
+    reports,
     reminders: new Reminders(d.db, d.clock, store, notifier, warWords, debates),
     warWords,
     bank,
@@ -195,6 +203,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   dataRoutes(app, d.db, services.dataRights, services.familyAuth, services.adminAuth);
   bankRoutes(app, services.bank, services.adminAuth);
   opsRoutes(app, services.ops, services.play, services.familyAuth, services.adminAuth);
+  watchRoutes(app, services.showcase, services.familyAuth, services.adminAuth);
   app.get("/v1/admin/dashboard", async (req) => {
     const { user } = await services.adminAuth.user(req);
     return services.dashboard.view(user.id, user.role);

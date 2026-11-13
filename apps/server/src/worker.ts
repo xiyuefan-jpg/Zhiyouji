@@ -17,6 +17,7 @@ import type { DailyTasks } from "./daily/daily.js";
 import type { Supply } from "./season/supply.js";
 import type { Debates } from "./season/debates.js";
 import type { Operations } from "./season/operations.js";
+import type { Showcase } from "./season/showcase.js";
 
 /** Season states in which planned events run (part 4 §4). */
 export const LIVE_SEASON_STATES = ["grouped", "running", "big_battle", "final_pending"];
@@ -54,6 +55,7 @@ export class Worker {
     private readonly supply?: Supply,
     private readonly debates?: Debates,
     private readonly ops?: Operations,
+    private readonly showcase?: Showcase,
   ) {}
 
   /** One pass. Skips if the previous pass is still running. */
@@ -90,6 +92,7 @@ export class Worker {
           if (sc) report.scoring = { closed: report.scoring.closed + sc.closed, settled: report.scoring.settled + sc.settled, timeouts: report.scoring.timeouts + sc.timeouts };
           const sp = await this.supply?.runDue(serverId);
           if (sp) report.reminders += sp.reminded;
+          await this.showcase?.runDue(serverId);
           report.reports += (await this.reports?.runDue(serverId)) ?? 0;
           report.reminders += (await this.reminders?.runDue(serverId)) ?? 0;
         } catch (err) {
