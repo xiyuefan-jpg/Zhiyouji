@@ -39,6 +39,17 @@ export interface ServerConfig {
     lockMinutes: number;
     inviteDays: number;
   };
+  /**
+   * Upload limits (PRD part 3 §20.6): hard limits are looser than the content
+   * rules (videos and audio ≤ 5 minutes, ≤ 10 pages); the submit page warns but
+   * does not refuse within these.
+   */
+  uploads: {
+    maxBytes: Record<"video" | "audio" | "image" | "pdf", number>;
+    /** Images per work. */
+    maxImages: number;
+    allowedTypes: Record<"video" | "audio" | "image" | "pdf", string[]>;
+  };
   /** Session cookie names; cookies are httpOnly, SameSite=Lax, Secure in production. */
   cookies: { family: string; admin: string; secure: boolean };
 }
@@ -63,6 +74,16 @@ export function defaultConfig(env: Record<string, string | undefined> = {}): Ser
     },
     family: { sessionDays: 365, maxChildren: 6 },
     admin: { idleMinutes: 30, maxSessionHours: 12, maxFailedLogins: 5, lockMinutes: 15, inviteDays: 7 },
+    uploads: {
+      maxBytes: { video: 500 * 1024 * 1024, audio: 100 * 1024 * 1024, image: 20 * 1024 * 1024, pdf: 50 * 1024 * 1024 },
+      maxImages: 9,
+      allowedTypes: {
+        video: ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "video/3gpp"],
+        audio: ["audio/mpeg", "audio/mp4", "audio/aac", "audio/webm", "audio/ogg", "audio/wav", "audio/x-m4a", "audio/amr"],
+        image: ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif"],
+        pdf: ["application/pdf"],
+      },
+    },
     cookies: { family: "zyj_s", admin: "zyj_a", secure: env.NODE_ENV === "production" },
   };
 }

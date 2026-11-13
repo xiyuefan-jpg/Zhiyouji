@@ -36,3 +36,33 @@ export const roundSubmission = z.object({
 export const linesRequest = z.object({ lines: z.array(z.uuid()).min(1).max(10) });
 
 export const ledgerQuery = z.object({ currency: z.enum(["grain", "points"]).default("points") });
+
+// ---- 作品工坊 (part 5 E4, §3.3) -------------------------------------------------------------
+
+export const FILE_KINDS = ["video", "audio", "image", "pdf"] as const;
+export const MEDIA_KINDS = ["video", "audio", "images", "text"] as const;
+
+export const uploadRequest = z.object({
+  kind: z.enum(FILE_KINDS),
+  contentType: z.string().min(1).max(100),
+  size: z.number().int().positive(),
+  filename: z.string().trim().max(200).optional(),
+});
+
+export const slotParam = z.object({ slot: z.string().regex(/^(contest:[A-Za-z0-9]+|war:\d+|line|main:[ab])$/) });
+
+export const materialRequest = z.object({
+  fileId: z.uuid().optional(),
+  text: z.string().max(5000).optional(),
+});
+
+export const workSubmit = z.object({
+  mediaKind: z.enum(MEDIA_KINDS),
+  fileIds: z.array(z.uuid()).max(20).default([]),
+  /** Written explanation (and the whole work when mediaKind is "text"). */
+  text: z.string().max(10000).optional(),
+  /** 人机协作说明 */
+  aiNote: z.string().max(1000).optional(),
+  /** Members who took part (signature). */
+  members: z.array(z.uuid()).min(1).max(20),
+});

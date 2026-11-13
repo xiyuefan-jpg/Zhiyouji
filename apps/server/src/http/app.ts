@@ -26,6 +26,9 @@ import { Reports } from "../season/reports.js";
 import { SeasonNotices } from "../notify/seasonNotices.js";
 import { SeasonControl } from "../season/control.js";
 import { Reminders } from "../notify/reminders.js";
+import { Works } from "../season/works.js";
+import { LocalStorage, type ObjectStorage } from "../storage.js";
+import { devStorageRoutes, workRoutes } from "./workRoutes.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
 import { SeasonAdmin } from "../season/seasons.js";
 import { SeasonStore } from "../seasonStore.js";
@@ -37,6 +40,8 @@ export interface AppDeps {
   cfg: ServerConfig;
   sms: SmsProvider;
   captcha: CaptchaVerifier;
+  /** Object storage for works (default: LocalStorage in memory). */
+  storage?: ObjectStorage;
   logger?: boolean;
   trustProxy?: boolean;
 }
@@ -58,6 +63,8 @@ export interface Services {
   seasonNotices: SeasonNotices;
   control: SeasonControl;
   reminders: Reminders;
+  storage: ObjectStorage;
+  works: Works;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -74,7 +81,10 @@ export function buildServices(d: AppDeps): Services {
     if (kind === "publish_groups") await seasonNotices.groupsPublished(serverId, await store.state(serverId));
   });
   const seasons = new SeasonAdmin(d.db, d.clock, store, notifier);
+  const storage = d.storage ?? new LocalStorage(d.cfg.secret);
   return {
+    storage,
+    works: new Works(d.db, d.clock, d.cfg, store, storage),
     store,
     scheduler,
     seasons,
@@ -115,5 +125,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   seasonAdminRoutes(app, services.seasons, services.adminAuth);
   playRoutes(app, services.play, services.reports, services.familyAuth);
   seasonControlRoutes(app, services.control, services.adminAuth);
+  workRoutes(app, services.works, services.play, services.familyAuth);
+  devStorageRoutes(app, services.storage, d.clock, Math.max(...Object.values(d.cfg.uploads.maxBytes)));
   return { app, services };
 }

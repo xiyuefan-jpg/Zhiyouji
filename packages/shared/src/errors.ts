@@ -50,6 +50,15 @@ export const ERROR_TEXT = {
   not_pending: "这个计划事件已经执行过了，不能再改时间",
   not_failed: "只有失败的计划事件可以重跑",
   not_final: "还没有终局结算",
+  file_type: "不支持这种文件格式",
+  file_too_big: "文件太大了",
+  upload_missing: "文件还没传完，请稍等或重新上传",
+  upload_size: "文件没传完整，请重新上传",
+  no_slot: "找不到这份作品",
+  media_mismatch: "选的文件和作品类型对不上",
+  work_empty: "作品还是空的",
+  too_many_images: "图片最多 9 张",
+  bad_members: "请勾选参与的组员",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_TEXT;

@@ -1,55 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { children, families } from "@zhiyouji/db";
-import { bj, setup } from "./helpers.js";
-
-const ADMIN = "admin:test";
-const LANDS = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "C1", "C2", "C3", "C4"];
-
-/**
- * A confirmed season with 16 players: family A (two siblings) and family B
- * log in through the API; 13 more children are put in the database. Child a1
- * and b1 share a team.
- */
-async function playSetup() {
-  const t = await setup(bj("2027-02-01", 10));
-  const A = await t.family("13800000001", [
-    { nickname: "大毛", grade: 6 },
-    { nickname: "二毛", grade: 4 },
-  ]);
-  const B = await t.family("13800000002", [{ nickname: "小明", grade: 6 }]);
-  const others: string[] = [];
-  for (let i = 0; i < 13; i++) {
-    const [f] = await t.db.insert(families).values({ phone: `1390000${String(1000 + i)}`, consentVersion: t.cfg.policyVersion, consentAt: new Date() }).returning();
-    const [c] = await t.db.insert(children).values({ familyId: f!.id, nickname: `组员${i}`, grade: 1 + (i % 9) }).returning();
-    others.push(c!.id);
-  }
-  const [a1, a2] = A.childIds as [string, string];
-  const [b1] = B.childIds as [string];
-
-  const season = await t.services.seasons.create({ name: "S3", opening: "2027-02-07", seed: 11 }, ADMIN);
-  await t.services.seasons.openEnrollment(season.id, ADMIN);
-  await t.services.seasons.enroll(season.id, [a1, a2, b1, ...others].map((childId) => ({ childId })), ADMIN);
-  let g = await t.services.seasons.generateGrouping(season.id, ADMIN);
-  const where = (c: string) => {
-    for (const [si, sv] of g.servers.entries()) for (const [ti, tm] of sv.teams.entries()) if (tm.members.some((m) => m.childId === c)) return [si, ti] as const;
-    throw new Error("not placed");
-  };
-  const [, ta] = where(a1);
-  if (where(b1)[1] !== ta) g = await t.services.seasons.movePlayer(season.id, b1, 0, ta, ADMIN);
-  const prompts = Object.fromEntries(LANDS.map((l) => [l, [`${l}-q1`, `${l}-q2`]]));
-  const conf = await t.services.seasons.confirmGrouping(season.id, { prompts, landNames: { E1: "火焰山" } }, ADMIN);
-  const serverId = conf.servers[0]!.serverId;
-
-  /** Log in again and choose a child: one session per child. */
-  async function as(phone: string, childId: string) {
-    t.clock.advance(61_000);
-    await t.call("POST", "/v1/auth/sms-code", { phone });
-    const token = (await t.call("POST", "/v1/auth/login", { phone, code: t.sms.lastCode(phone) })).json().token as string;
-    await t.call("POST", "/v1/session/child", { childId }, token);
-    return (m: "GET" | "POST", url: string, body?: unknown) => t.call(m, url, body, token);
-  }
-  return { ...t, seasonId: season.id, serverId, a1, a2, b1, as, A, B };
-}
+import { bj } from "./helpers.js";
+import { playSetup } from "./seasonHelpers.js";
 
 describe("season play on the student website (part 5 D–E)", () => {
   it("before D0 evening the child waits; afterwards sees the season, the map and the team", async () => {

@@ -516,3 +516,179 @@ export const roleTransfers = pgTable(
   },
   (t) => [index("role_transfers_team").on(t.teamId, t.status)],
 );
+
+// ---- works and scoring (part 4 §6) -----------------------------------------------------
+
+/**
+ * Uploaded files. The website asks for an upload ticket, sends the bytes
+ * straight to object storage (OSS; a local fake in development), then
+ * confirms. Originals are kept while the child's account exists.
+ */
+export const files = pgTable(
+  "files",
+  {
+    id: id(),
+    /** Who owns it: the team's work materials or a child's daily task. */
+    serverId: uuid("server_id").references(() => servers.id),
+    teamId: uuid("team_id").references(() => teams.id),
+    childId: uuid("child_id").notNull(),
+    /** video | audio | image | pdf */
+    kind: text("kind").notNull(),
+    contentType: text("content_type").notNull(),
+    filename: text("filename"),
+    /** Size the website announced; checked against storage on completion. */
+    size: bigint("size", { mode: "number" }).notNull(),
+    storageKey: text("storage_key").notNull().unique(),
+    /** uploading | uploaded | processed | failed */
+    status: text("status").notNull().default("uploading"),
+    durationSec: integer("duration_sec"),
+    transcript: text("transcript"),
+    createdAt: ts("created_at").notNull(),
+    uploadedAt: ts("uploaded_at"),
+  },
+  (t) => [index("files_team").on(t.teamId)],
+);
+
+/** 素材箱 (part 5 §3.3): what any team member puts in for one work slot, files or text. */
+export const materials = pgTable(
+  "materials",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    teamId: uuid("team_id").notNull().references(() => teams.id),
+    /** The work slot, e.g. "contest:K1a2b", "war:2", "line", "main". */
+    slot: text("slot").notNull(),
+    fileId: uuid("file_id").references(() => files.id),
+    text: text("text"),
+    addedBy: uuid("added_by").notNull(),
+    createdAt: ts("created_at").notNull(),
+    removedAt: ts("removed_at"),
+  },
+  (t) => [index("materials_slot").on(t.serverId, t.teamId, t.slot)],
+);
+
+/**
+ * A submitted work: every submission before the deadline is a new version;
+ * the last one counts (part 3 §10.3).
+ */
+export const works = pgTable(
+  "works",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    teamId: uuid("team_id").notNull().references(() => teams.id),
+    /** contest | war | line | main (big battle main field) | supply_member | supply_summary */
+    kind: text("kind").notNull(),
+    /** The work slot (see materials.slot). */
+    slot: text("slot").notNull(),
+    /** Prompt the work answers (question bank id). */
+    promptId: text("prompt_id"),
+    version: integer("version").notNull(),
+    submittedBy: uuid("submitted_by").notNull(),
+    submittedAt: ts("submitted_at").notNull(),
+    /** video | audio | images | text */
+    mediaKind: text("media_kind").notNull(),
+    fileIds: jsonb("file_ids").notNull().default([]),
+    text: text("text"),
+    /** 人机协作说明 */
+    aiNote: text("ai_note"),
+    /** Members who took part (signature). */
+    members: jsonb("members").notNull().default([]),
+    /** pending | pass | block (part 2 §4.7) */
+    safety: text("safety").notNull().default("pending"),
+    /** Knowledge tags from the AI (part 4 v0.3). */
+    tags: jsonb("tags"),
+  },
+  (t) => [uniqueIndex("works_slot_version").on(t.serverId, t.teamId, t.slot, t.version), index("works_slot").on(t.serverId, t.slot)],
+);
+
+/** AI scores (append-only; one is official per work). */
+export const aiScores = pgTable(
+  "ai_scores",
+  {
+    id: id(),
+    workId: uuid("work_id").notNull().references(() => works.id),
+    /** Rubric family (A–E) and version used. */
+    rubric: text("rubric").notNull(),
+    model: text("model").notNull(),
+    total: integer("total").notNull(),
+    dims: jsonb("dims").notNull(),
+    comment: text("comment").notNull(),
+    flags: jsonb("flags").notNull().default([]),
+    official: boolean("official").notNull().default(true),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [index("ai_scores_work").on(t.workId)],
+);
+
+/** Each work has a responsible reviewer (part 3 §10.5); 10 % get a second one. */
+export const reviewAssignments = pgTable(
+  "review_assignments",
+  {
+    id: id(),
+    workId: uuid("work_id").notNull().references(() => works.id),
+    reviewerId: uuid("reviewer_id").notNull().references(() => adminUsers.id),
+    second: boolean("second").notNull().default(false),
+    assignedAt: ts("assigned_at").notNull(),
+    dueAt: ts("due_at").notNull(),
+    /** pending | done | timeout | reassigned */
+    status: text("status").notNull().default("pending"),
+    remindedAt: ts("reminded_at"),
+    doneAt: ts("done_at"),
+  },
+  (t) => [index("review_assignments_reviewer").on(t.reviewerId, t.status), index("review_assignments_work").on(t.workId)],
+);
+
+/** Human scores (append-only). */
+export const humanScores = pgTable("human_scores", {
+  id: id(),
+  assignmentId: uuid("assignment_id").notNull().references(() => reviewAssignments.id),
+  workId: uuid("work_id").notNull().references(() => works.id),
+  reviewerId: uuid("reviewer_id").notNull(),
+  total: integer("total").notNull(),
+  dims: jsonb("dims").notNull(),
+  comment: text("comment").notNull(),
+  flags: jsonb("flags").notNull().default([]),
+  at: ts("at").notNull(),
+});
+
+/** The score a settlement uses, and why (part 4 §6: human / AI after timeout / admin). */
+export const settledScores = pgTable(
+  "settled_scores",
+  {
+    id: id(),
+    workId: uuid("work_id").notNull().references(() => works.id),
+    score: integer("score").notNull(),
+    /** human | ai_timeout | admin */
+    basis: text("basis").notNull(),
+    decidedAt: ts("decided_at").notNull(),
+    decidedBy: text("decided_by").notNull(),
+    note: text("note"),
+  },
+  (t) => [index("settled_scores_work").on(t.workId)],
+);
+
+/** Reviewer leave (part 4 §2): no new works are assigned on these days. */
+export const reviewerLeaves = pgTable("reviewer_leaves", {
+  id: id(),
+  reviewerId: uuid("reviewer_id").notNull().references(() => adminUsers.id),
+  fromDay: date("from_day").notNull(),
+  toDay: date("to_day").notNull(),
+  createdAt: ts("created_at").notNull(),
+});
+
+/** Slots closed for scoring: works frozen, AI scored, reviewers assigned (idempotency of the pipeline). */
+export const scoringRounds = pgTable(
+  "scoring_rounds",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    /** e.g. "contest:K1a2b", "war:2", "battle" */
+    key: text("key").notNull(),
+    closedAt: ts("closed_at").notNull(),
+    /** open (waiting for reviews) | settled */
+    status: text("status").notNull().default("open"),
+    settledAt: ts("settled_at"),
+  },
+  (t) => [uniqueIndex("scoring_rounds_key").on(t.serverId, t.key)],
+);

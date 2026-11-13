@@ -9,6 +9,7 @@ import { realClock } from "./clock.js";
 import { defaultConfig } from "./config.js";
 import { buildApp } from "./http/app.js";
 import { FakeCaptcha, FakeSms } from "./providers.js";
+import { LocalStorage } from "./storage.js";
 import { Worker } from "./worker.js";
 
 async function main() {
@@ -19,7 +20,9 @@ async function main() {
   const clock = realClock;
   // TODO(Aliyun SMS): replace once the signature and templates are approved.
   const sms = new FakeSms(env.NODE_ENV === "production" ? undefined : (line) => console.log(line));
-  const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha(), logger: true, trustProxy: env.TRUST_PROXY === "1" });
+  // TODO(Aliyun OSS): replace with presigned OSS uploads; until then files live under STORAGE_DIR.
+  const storage = new LocalStorage(cfg.secret, env.STORAGE_DIR ?? ".storage");
+  const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha(), storage, logger: true, trustProxy: env.TRUST_PROXY === "1" });
 
   const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier, services.reports, services.reminders);
   const tickMs = Number(env.TICK_MS ?? 30_000);
