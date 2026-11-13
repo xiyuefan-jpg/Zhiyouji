@@ -844,3 +844,24 @@ export const supplyResults = pgTable(
   },
   (t) => [uniqueIndex("supply_results_team").on(t.serverId, t.supplyId, t.teamId)],
 );
+
+/** Weekly-war constraint cards (part 3 §11): what each team was offered, sent and received. */
+export const warCards = pgTable(
+  "war_cards",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    week: integer("week").notNull(),
+    teamId: uuid("team_id").notNull().references(() => teams.id),
+    /** Gift weeks: the 3 cards shown to this team. */
+    offered: jsonb("offered").notNull().default([]),
+    /** The card this team sends to its opponent (null until chosen; random at the deadline). */
+    chosen: text("chosen"),
+    chosenBy: text("chosen_by"),
+    chosenAt: ts("chosen_at"),
+    /** The card this team must follow (fixed card on fixed weeks; the opponent's choice on gift weeks). */
+    received: text("received"),
+    revealedAt: ts("revealed_at"),
+  },
+  (t) => [uniqueIndex("war_cards_team").on(t.serverId, t.week, t.teamId)],
+);

@@ -64,6 +64,13 @@
       "when": 1794592376057,
       "tag": "0008_supply",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794592730208,
+      "tag": "0009_war_cards",
+      "breakpoints": true
     }
   ]
 }

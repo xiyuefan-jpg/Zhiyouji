@@ -71,6 +71,8 @@ export const ERROR_TEXT = {
   no_ai_not_allowed: "这个模板要用到 AI，请说一句你是怎么用的",
   retries_used: "今天重交的次数用完了，明天再来吧",
   not_reviewing: "这条已经有结果了",
+  not_gift_week: "这一周没有互赠词条",
+  bad_card: "只能从给你们的 3 张词条里选",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_TEXT;

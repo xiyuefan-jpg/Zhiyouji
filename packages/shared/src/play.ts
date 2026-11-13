@@ -102,3 +102,50 @@ export const supplyEntryRequest = z.object({
   text: z.string().trim().min(1).max(2000),
   fileIds: z.array(z.uuid()).max(9).default([]),
 });
+
+// ---- 周战争：主题和约束词条 (part 3 §11; content library §5, 【待补 · AI 草案】) ------------------
+
+export const WAR_THEMES: Readonly<Record<number, { title: string; task: string; fixedCard: string | null }>> = {
+  1: {
+    title: "家里的一个小麻烦",
+    task: "找一个家里真实存在的小麻烦，设计一个解决方案，并做出一个能用的原型，至少在一个家里试用一次。",
+    fixedCard: "预算 ≤30 元，只能用家里已有的东西加上买得到的小物件",
+  },
+  2: { title: "校园里的一个系统", task: "从午餐排队、失物招领、群消息混乱、课间秩序、图书角借还中选一个，设计一套完整的规则、流程或工具，并说明怎么判断它有没有改善。", fixedCard: null },
+  3: {
+    title: "为一个具体的人设计",
+    task: "采访一位真实的人，找到他生活中的一个具体困难，为他设计一个方案。",
+    fixedCard: "方案必须经过被采访者本人的一次反馈，并据此修改一次",
+  },
+  4: { title: "设计一个教人知识的小游戏", task: "设计一个 10–15 分钟能玩完的小游戏，玩完之后一个比你们小的孩子能学会一个知识点。必须真实试玩一次。", fixedCard: null },
+};
+
+/** The 24 constraint cards with the weeks they are allowed in (content library 5.4). */
+export const WAR_CARDS: readonly { id: string; kind: string; text: string; weeks: readonly number[] }[] = [
+  { id: "S1", kind: "情境", text: "停电：方案在没有电的情况下也要能运行", weeks: [2, 4] },
+  { id: "S2", kind: "情境", text: "没有老师和家长：执行过程中不能有任何老师或家长参与", weeks: [2, 4] },
+  { id: "S3", kind: "情境", text: "只有 10 分钟：整个流程或游戏必须在 10 分钟内完成", weeks: [2, 4] },
+  { id: "S4", kind: "情境", text: "下雨天：只能在室内一个很小的空间里进行", weeks: [2, 4] },
+  { id: "S5", kind: "情境", text: "回到一百年前：只能用 100 年前就有的东西", weeks: [2, 4] },
+  { id: "S6", kind: "情境", text: "使用者是刚转来、谁也不认识的新同学", weeks: [2, 4] },
+  { id: "S7", kind: "情境", text: "500 个人同时参与", weeks: [2] },
+  { id: "S8", kind: "情境", text: "使用者从 6 岁到 60 岁都有", weeks: [4] },
+  { id: "R1", kind: "资源", text: "预算 ≤50 元", weeks: [2, 4] },
+  { id: "R2", kind: "资源", text: "只能用纸和笔", weeks: [2, 4] },
+  { id: "R3", kind: "资源", text: "只有 2 个人负责执行或主持", weeks: [2, 4] },
+  { id: "R4", kind: "资源", text: "不能用文字，只能用图、声音和动作", weeks: [2, 4] },
+  { id: "R5", kind: "资源", text: "全部说明必须放进一张 A4 纸", weeks: [2, 4] },
+  { id: "R6", kind: "资源", text: "不能用任何 App 或屏幕", weeks: [2, 4] },
+  { id: "U1", kind: "对象", text: "使用者是 6 岁的小朋友", weeks: [2, 4] },
+  { id: "U2", kind: "对象", text: "使用者是 70 岁的老人", weeks: [4] },
+  { id: "U3", kind: "对象", text: "使用者看不见", weeks: [2, 4] },
+  { id: "U4", kind: "对象", text: "使用者不会说中文", weeks: [2, 4] },
+  { id: "U5", kind: "对象", text: "使用者非常忙，每天只能给你 1 分钟", weeks: [2] },
+  { id: "U6", kind: "对象", text: "使用者一开始就不想参加", weeks: [2, 4] },
+  { id: "T1", kind: "技术", text: "必须用到一次 AI，并说明 AI 在方案里做什么、可能出什么错", weeks: [2, 4] },
+  { id: "T2", kind: "技术", text: "必须有一个可以拍照验证的实物", weeks: [2, 4] },
+  { id: "X1", kind: "规则改变", text: "先写失败：先列出方案最可能失败的 3 种方式，再说明怎么防住", weeks: [2, 4] },
+  { id: "X2", kind: "规则改变", text: "对手视角：作品里必须有一段“如果我是对手，我会怎么挑这个方案的毛病”，并回应", weeks: [2, 4] },
+];
+
+export const chooseCardRequest = z.object({ card: z.string().regex(/^[A-Z]\d$/) });

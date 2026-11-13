@@ -3,19 +3,25 @@
  * - Preference rounds (D1 blind auction, D2 starter items, D8 center lands, D15
  *   rare items) and the big-battle line-up: leader and deputy of every team
  *   that has not submitted, 3 hours before (message center only).
- * Work and supply reminders follow once works are stored.
+ * - Team works (contest, weekly war, big-battle line, main field) not handed in
+ *   6 hours (message + SMS) and 2 hours (message) before the deadline: leader
+ *   and deputy.
+ * - Gift-week cards not chosen, 3 hours before Friday morning: leader and deputy.
+ * (Supply tasks remind each member themselves, see season/supply.ts.)
  *
  * The worker calls `runDue` every tick; each reminder is sent once (dedupe key).
  */
 
 import { and, eq, inArray } from "drizzle-orm";
-import { plannedEvents, type Db } from "@zhiyouji/db";
+import { plannedEvents, works, type Db } from "@zhiyouji/db";
 import { campOf, type SeasonState } from "@zhiyouji/engine";
 import { formatBeijing } from "@zhiyouji/shared";
 import type { Clock } from "../clock.js";
 import type { SeasonStore } from "../seasonStore.js";
 import type { Notifier } from "./notifier.js";
 import { ROUNDS, type RoundName } from "../season/play.js";
+import { teamSlots } from "../season/works.js";
+import type { WarWords } from "../season/warWords.js";
 
 const HOUR = 3_600_000;
 export const SUBMIT_REMINDER_HOURS = 3;
@@ -33,6 +39,7 @@ export class Reminders {
     private readonly clock: Clock,
     private readonly store: SeasonStore,
     private readonly notifier: Notifier,
+    private readonly warWords?: WarWords,
   ) {}
 
   private leaders(st: SeasonState, teamId: string): string[] {
@@ -46,7 +53,8 @@ export class Reminders {
     const now = +this.clock.now();
     const st = await this.store.state(serverId);
     let sent = 0;
-    const keys = [...Object.values(ROUNDS).map((r) => r.deadline), "lines_deadline"];
+    sent += await this.workReminders(serverId, st, now);
+    const keys = [...Object.values(ROUNDS).map((r) => r.deadline), "lines_deadline", ...[1, 2, 3, 4, 5].map((w) => `gift_deadline:${w}`)];
     const rows = await this.db
       .select()
       .from(plannedEvents)
@@ -56,6 +64,22 @@ export class Reminders {
       if (now < due - SUBMIT_REMINDER_HOURS * HOUR || now >= due) continue;
       if (row.key === "lines_deadline") {
         sent += await this.linesReminder(serverId, st, due);
+        continue;
+      }
+      if (row.key.startsWith("gift_deadline:")) {
+        const week = Number(row.key.slice("gift_deadline:".length));
+        for (const teamId of (await this.warWords?.unchosen(serverId, week)) ?? []) {
+          const r = await this.notifier.notify({
+            kind: "submit_due",
+            childIds: this.leaders(st, teamId),
+            serverId,
+            title: "还没选送给对手的词条",
+            body: `第 ${week} 周的词条还没选，${formatBeijing(due)} 截止，没选的由系统随机选。`,
+            link: `/season/wars/${week}`,
+            dedupeKey: `submit_due:${serverId}:gift:${week}`,
+          });
+          sent += r.messages;
+        }
         continue;
       }
       const round = (Object.keys(ROUNDS) as RoundName[]).find((r) => ROUNDS[r].deadline === row.key)!;
@@ -76,6 +100,40 @@ export class Reminders {
           body: `本组还没提交${ROUND_TEXT[round]}，${formatBeijing(due)} 截止。`,
           link: `/season/rounds/${round}`,
           dedupeKey: `submit_due:${serverId}:${round}`,
+        });
+        sent += r.messages;
+      }
+    }
+    return sent;
+  }
+
+  /** 本组的作品还没交: 6 hours before (with SMS) and 2 hours before. */
+  private async workReminders(serverId: string, st: SeasonState, now: number): Promise<number> {
+    let sent = 0;
+    for (const teamId of st.teamOrder) {
+      const due = teamSlots(st, teamId, now).filter((s) => s.open && s.deadline - now <= 6 * HOUR);
+      if (due.length === 0) continue;
+      const handed = await this.db
+        .select({ slot: works.slot })
+        .from(works)
+        .where(and(eq(works.serverId, serverId), eq(works.teamId, teamId), inArray(works.slot, due.map((s) => s.slot))));
+      const done = new Set(handed.map((h) => h.slot));
+      for (const s of due) {
+        if (done.has(s.slot)) continue;
+        // The main field is one work per camp: any team of the camp handing it in is enough.
+        if (s.kind === "main") {
+          const camp = await this.db.select({ id: works.id }).from(works).where(and(eq(works.serverId, serverId), eq(works.slot, s.slot)));
+          if (camp.length > 0) continue;
+        }
+        const two = s.deadline - now <= 2 * HOUR;
+        const r = await this.notifier.notify({
+          kind: two ? "work_due_2h" : "work_due_6h",
+          childIds: this.leaders(st, teamId),
+          serverId,
+          title: "本组的作品还没交",
+          body: `离截止不到 ${two ? 2 : 6} 小时（${formatBeijing(s.deadline)}），本组的作品还没交。`,
+          link: `/season/works`,
+          dedupeKey: `${two ? "work_due_2h" : "work_due_6h"}:${serverId}:${s.slot}`,
         });
         sent += r.messages;
       }

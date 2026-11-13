@@ -36,6 +36,7 @@ import { DataRights } from "../accounts/dataRights.js";
 import { dataRoutes } from "./dataRoutes.js";
 import { FakeAiDaily, FakeAiSupply, type AiDailyReviewer, type AiSupplyScorer } from "../ai.js";
 import { Supply } from "../season/supply.js";
+import { WarWords } from "../season/warWords.js";
 import { DailyTasks } from "../daily/daily.js";
 import { dailyRoutes } from "./dailyRoutes.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
@@ -86,6 +87,7 @@ export interface Services {
   aiDaily: AiDailyReviewer;
   daily: DailyTasks;
   supply: Supply;
+  warWords: WarWords;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -96,10 +98,13 @@ export function buildServices(d: AppDeps): Services {
   const notifier = new Notifier(d.db, d.clock, d.cfg);
   const scheduler = new Scheduler(d.db, store, d.clock);
   const seasonNotices = new SeasonNotices(d.db, notifier);
+  const warWords = new WarWords(d.db, d.clock, store, notifier);
   // Engine notices → message center and SMS; D0 evening → "分组公布".
   store.onApplied((serverId, seq, notices, state) => seasonNotices.dispatch(serverId, seq, notices, state));
-  scheduler.onRowDone(async (serverId, kind) => {
+  scheduler.onRowDone(async (serverId, kind, key) => {
     if (kind === "publish_groups") await seasonNotices.groupsPublished(serverId, await store.state(serverId));
+    if (kind === "war_pairing") await warWords.onPaired(serverId, Number(key.split(":")[1]));
+    if (kind === "gift_deadline") await warWords.reveal(serverId, Number(key.split(":")[1]));
   });
   const seasons = new SeasonAdmin(d.db, d.clock, store, notifier);
   const storage = d.storage ?? new LocalStorage(d.cfg.secret);
@@ -121,7 +126,8 @@ export function buildServices(d: AppDeps): Services {
     control: new SeasonControl(d.db, d.clock, store, scheduler, seasons),
     play,
     reports: new Reports(d.db, d.clock, store, notifier),
-    reminders: new Reminders(d.db, d.clock, store, notifier),
+    reminders: new Reminders(d.db, d.clock, store, notifier, warWords),
+    warWords,
     seasonNotices,
     sessions,
     family,
@@ -153,7 +159,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   adminRoutes(app, d.cfg, services.admin, services.sessions, services.adminAuth);
   messageRoutes(app, services.notifier, services.familyAuth, services.adminAuth);
   seasonAdminRoutes(app, services.seasons, services.adminAuth);
-  playRoutes(app, services.play, services.reports, services.supply, services.familyAuth);
+  playRoutes(app, services.play, services.reports, services.supply, services.warWords, services.familyAuth);
   seasonControlRoutes(app, services.control, services.adminAuth);
   workRoutes(app, services.works, services.play, services.scoring, services.familyAuth);
   reviewRoutes(app, services.scoring, services.admin, services.adminAuth);
