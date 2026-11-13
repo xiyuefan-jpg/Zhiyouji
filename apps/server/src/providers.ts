@@ -31,15 +31,20 @@ export class FakeSms implements SmsProvider {
   fail = false;
   private n = 0;
 
+  /** `log` prints what would be sent (local development: read the login code from the server log). */
+  constructor(private readonly log?: (line: string) => void) {}
+
   async sendCode(phone: string, code: string): Promise<SmsResult> {
     if (this.fail) return { ok: false, error: "fake failure" };
     this.sent.push({ phone, kind: "code", code, at: Date.now() });
+    this.log?.(`[fake sms] ${phone} login code ${code}`);
     return { ok: true, id: `fake-${++this.n}` };
   }
 
   async sendReminder(phone: string, template: SmsTemplate): Promise<SmsResult> {
     if (this.fail) return { ok: false, error: "fake failure" };
     this.sent.push({ phone, kind: template, at: Date.now() });
+    this.log?.(`[fake sms] ${phone} reminder ${template}`);
     return { ok: true, id: `fake-${++this.n}` };
   }
 

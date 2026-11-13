@@ -4,6 +4,9 @@
   "private": true,
   "description": "API 服务 + 后台任务（PRD 第 2 部分）：赛季时钟、计划事件、账本、各玩法接口",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",

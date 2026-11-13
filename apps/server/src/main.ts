@@ -19,7 +19,8 @@ async function main() {
   if (env.NODE_ENV === "production" && cfg.secret === "dev-secret-change-me") throw new Error("SERVER_SECRET must be set in production");
   const { db } = env.DATABASE_URL ? await createPgDb(env.DATABASE_URL) : await createPgliteDb(env.PGLITE_DIR);
   const clock = realClock;
-  const sms = new FakeSms(); // TODO(Aliyun SMS): replace once the signature and templates are approved
+  // TODO(Aliyun SMS): replace once the signature and templates are approved.
+  const sms = new FakeSms(env.NODE_ENV === "production" ? undefined : (line) => console.log(line));
   const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha(), logger: true, trustProxy: env.TRUST_PROXY === "1" });
 
   const store = new SeasonStore(db);

@@ -1,0 +1,259 @@
+/*
+ * 智游记 visual tokens (PRD part 5 §7): warm, low-saturation colours between
+ * red and yellow (apricot paper, ochre, earth yellow, pale cinnabar), ink for
+ * text, one sober vermilion for primary buttons and urgent things only.
+ * Fonts are the phone's own (no web fonts: nothing is loaded from elsewhere).
+ */
+
+:root {
+  --paper: #f1e3cf;
+  --paper-light: #fbf4ea;
+  --ochre: #9c6b43;
+  --earth: #c8a26b;
+  --blush: #ecc7b4;
+  --vermilion: #a93a2a;
+  --vermilion-dark: #8c2e21;
+  --ink: #2a211c;
+  --ink-2: #6b5a4c;
+  --line: #e2cdb0;
+
+  --serif: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+  --sans: -apple-system, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+
+  --tabbar-h: 58px;
+
+  /* antd-mobile theme */
+  --adm-color-primary: var(--vermilion);
+  --adm-color-danger: var(--vermilion);
+  --adm-color-text: var(--ink);
+  --adm-color-text-secondary: var(--ink-2);
+  --adm-color-weak: var(--ink-2);
+  --adm-color-light: #a8968a;
+  --adm-color-border: var(--line);
+  --adm-color-box: var(--paper-light);
+  --adm-color-background: var(--paper-light);
+  --adm-font-family: var(--sans);
+  --adm-font-size-main: 16px;
+  --adm-border-color: var(--line);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--ochre);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ochre);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* One column, phone width; on a computer the page sits in the middle. */
+.page {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px 18px 32px;
+  min-height: 100vh;
+}
+
+.page.with-tabbar {
+  padding-bottom: calc(var(--tabbar-h) + 28px + env(safe-area-inset-bottom));
+}
+
+.title {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1.3;
+  margin: 8px 0 6px;
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  color: var(--ink-2);
+  margin: 0 0 20px;
+}
+
+.section-title {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 19px;
+  margin: 26px 0 10px;
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+/* Paper panel: no drop shadow, a thin earth-coloured edge. */
+.panel {
+  background: var(--paper-light);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.panel + .panel {
+  margin-top: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.big-button.adm-button {
+  height: 50px;
+  border-radius: 25px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.quiet-button.adm-button {
+  --text-color: var(--ink-2);
+  --background-color: transparent;
+  --border-color: var(--line);
+}
+
+/* Forms */
+.field-label {
+  font-weight: 600;
+  margin: 18px 0 8px;
+}
+
+.text-input {
+  background: var(--paper-light);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  --font-size: 18px;
+}
+
+.text-input:focus-within {
+  border-color: var(--ochre);
+}
+
+.adm-selector .adm-selector-item {
+  background: var(--paper-light);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+}
+
+.adm-selector .adm-selector-item-active {
+  background: var(--blush);
+  border-color: var(--ochre);
+  color: var(--ink);
+}
+
+/* Bottom tab bar */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--paper-light);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 10;
+}
+
+.tabbar .adm-tab-bar {
+  max-width: 480px;
+  margin: 0 auto;
+  height: var(--tabbar-h);
+}
+
+.tabbar .adm-tab-bar-item {
+  color: var(--ink-2);
+}
+
+.tabbar .adm-tab-bar-item-active {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Lists sit on paper panels */
+.adm-list {
+  --adm-color-background: var(--paper-light);
+  --border-top: none;
+  --border-bottom: none;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.adm-list-item-content-main {
+  padding: 14px 0;
+}
+
+/* Empty state */
+.empty {
+  text-align: center;
+  padding: 36px 16px;
+  color: var(--ink-2);
+}
+
+.empty .empty-title {
+  font-family: var(--serif);
+  font-size: 19px;
+  color: var(--ink);
+  margin: 14px 0 6px;
+}
+
+/* Legal text on the consent screens */
+.doc-text p {
+  margin: 0 0 10px;
+}
+
+.doc-text ul {
+  margin: 0 0 10px;
+  padding-left: 1.2em;
+}
+
+.doc-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 8px 0 18px;
+}
+
+.unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--vermilion);
+  flex: none;
+}

@@ -18,13 +18,19 @@ export * from "./schema.js";
 
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 
-const MIGRATIONS = fileURLToPath(new URL("../migrations", import.meta.url));
+function migrationsDir(): string {
+  const u = new URL("../migrations", import.meta.url);
+  if (u.protocol === "file:") return fileURLToPath(u);
+  // Test runners in a browser-like environment (the website tests) serve files as http://…/@fs/<absolute path>.
+  const i = u.pathname.indexOf("/@fs/");
+  return decodeURIComponent(i >= 0 ? u.pathname.slice(i + 4) : u.pathname);
+}
 
 /** In-process PostgreSQL (PGlite) with all migrations applied. `dataDir` omitted = in memory. */
 export async function createPgliteDb(dataDir?: string): Promise<{ db: Db; close: () => Promise<void> }> {
   const client = new PGlite(dataDir);
   const db = drizzlePglite(client, { schema });
-  await migratePglite(db, { migrationsFolder: MIGRATIONS });
+  await migratePglite(db, { migrationsFolder: migrationsDir() });
   return { db: db as unknown as Db, close: () => client.close() };
 }
 
@@ -32,6 +38,6 @@ export async function createPgliteDb(dataDir?: string): Promise<{ db: Db; close:
 export async function createPgDb(connectionString: string): Promise<{ db: Db; close: () => Promise<void> }> {
   const pool = new pg.Pool({ connectionString });
   const db = drizzlePg(pool, { schema });
-  await migratePg(db, { migrationsFolder: MIGRATIONS });
+  await migratePg(db, { migrationsFolder: migrationsDir() });
   return { db: db as unknown as Db, close: () => pool.end() };
 }

@@ -8,7 +8,8 @@
   "workspaces": [
     "packages/*",
     "tools/sim",
-    "apps/server"
+    "apps/server",
+    "apps/web"
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
