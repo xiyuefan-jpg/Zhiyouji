@@ -9,6 +9,7 @@ import { reversalOf, type Currency } from "../ledger.js";
 import { grainConversion } from "../final.js";
 import { computeScholarship } from "../scholarship.js";
 import { dateOfSeasonDay, publicationTime, type Instant } from "../time.js";
+import type { SeasonParams } from "../params.js";
 import {
   addGrain,
   addPoints,
@@ -142,6 +143,18 @@ export function resumeSeason(input: SeasonState, e: { at: Instant }): Result<Adm
   const open = s.pauses[s.pauses.length - 1]!;
   open.until = e.at;
   return { ok: true, state: s, notices: [notice("season_resumed", e.at, true, { pausedFor: e.at - open.from })] };
+}
+
+/**
+ * New parameters from the admin console (§2: changes only affect later
+ * events). The planned calendar is not re-planned here; moving a planned
+ * event is a separate admin action.
+ */
+export function setParams(input: SeasonState, e: { params: SeasonParams; version: number; at: Instant; by: string; reason?: string }): Result<AdminRefusal> {
+  if (!Number.isInteger(e.version) || e.version < 1) return { ok: false, refusal: "not_integer" };
+  const s = cloneState(input);
+  s.params = structuredClone(e.params);
+  return { ok: true, state: s, notices: [notice("params_changed", e.at, false, { version: e.version, by: e.by, reason: e.reason ?? null })] };
 }
 
 /** Total paused time before `t`: scheduled times after a pause shift by this much (§16, §18). */

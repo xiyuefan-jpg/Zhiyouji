@@ -24,6 +24,8 @@ import { playRoutes } from "./playRoutes.js";
 import { SeasonPlay } from "../season/play.js";
 import { Reports } from "../season/reports.js";
 import { SeasonNotices } from "../notify/seasonNotices.js";
+import { SeasonControl } from "../season/control.js";
+import { seasonControlRoutes } from "./seasonControlRoutes.js";
 import { SeasonAdmin } from "../season/seasons.js";
 import { SeasonStore } from "../seasonStore.js";
 import { Scheduler } from "../scheduler.js";
@@ -53,6 +55,7 @@ export interface Services {
   play: SeasonPlay;
   reports: Reports;
   seasonNotices: SeasonNotices;
+  control: SeasonControl;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -68,10 +71,12 @@ export function buildServices(d: AppDeps): Services {
   scheduler.onRowDone(async (serverId, kind) => {
     if (kind === "publish_groups") await seasonNotices.groupsPublished(serverId, await store.state(serverId));
   });
+  const seasons = new SeasonAdmin(d.db, d.clock, store, notifier);
   return {
     store,
     scheduler,
-    seasons: new SeasonAdmin(d.db, d.clock, store, notifier),
+    seasons,
+    control: new SeasonControl(d.db, d.clock, store, scheduler, seasons),
     play: new SeasonPlay(d.db, d.clock, store),
     reports: new Reports(d.db, d.clock, store, notifier),
     seasonNotices,
@@ -106,5 +111,6 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   messageRoutes(app, services.notifier, services.familyAuth, services.adminAuth);
   seasonAdminRoutes(app, services.seasons, services.adminAuth);
   playRoutes(app, services.play, services.reports, services.familyAuth);
+  seasonControlRoutes(app, services.control, services.adminAuth);
   return { app, services };
 }

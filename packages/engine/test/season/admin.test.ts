@@ -19,6 +19,7 @@ import {
   pointsOf,
   resumeSeason,
   reverseEntry,
+  setParams,
   settleBigBattle,
   settleDay,
   startContest,
@@ -118,5 +119,19 @@ describe("end of season (§15)", () => {
     expect(s.final!.scholarship.reduce((a, b) => a + b.yuan, 0)).toBe(10000);
     expect(grainOf(s, "T1")).toBe(60);
     expect(finalizeSeason(s, { at: at(35, 10), poolYuan: 10000 })).toMatchObject({ refusal: "already_done" });
+  });
+});
+
+describe("parameter changes (§2)", () => {
+  it("replaces the parameters for later events only", async () => {
+    const { withParams } = await import("../../src/index.js");
+    const s = newSeason();
+    const next = withParams({ dailyTask: { grainPerTask: 5 } }, s.params);
+    const r = setParams(s, { params: next, version: 2, at: at(3, 10), by: "admin:x" });
+    if (!r.ok) throw new Error(r.refusal);
+    expect(ok(r).params.dailyTask.grainPerTask).toBe(5);
+    expect(s.params.dailyTask.grainPerTask).toBe(3);
+    expect(r.notices[0]).toMatchObject({ kind: "params_changed", data: { version: 2 } });
+    expect(setParams(s, { params: next, version: 0, at: at(3, 10), by: "a" })).toMatchObject({ ok: false });
   });
 });

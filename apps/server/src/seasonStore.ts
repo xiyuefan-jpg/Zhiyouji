@@ -239,17 +239,19 @@ export class SeasonStore {
       const r = applyEvent(cur.state, event);
       if (!r.ok) return { ok: false, refusal: r.refusal, detail: r.detail };
       const seq = cur.seq + 1;
+      // Ledger entries record the parameter version they were made under (part 4 §7).
+      const pv = event.type === "set_params" ? event.version : cur.paramVersion;
       const prevLedger = cur.state.ledger.length;
       await this.db.transaction(async (tx) => {
-        await tx.insert(seasonEvents).values({ serverId, seq, type: event.type, payload: event, actor, paramVersion: cur.paramVersion });
-        await this.writeLedger(tx as unknown as Db, serverId, r.state, prevLedger, seq, cur.paramVersion);
+        await tx.insert(seasonEvents).values({ serverId, seq, type: event.type, payload: event, actor, paramVersion: pv });
+        await this.writeLedger(tx as unknown as Db, serverId, r.state, prevLedger, seq, pv);
         if (r.notices.length)
           await tx.insert(feed).values(
             r.notices.map((n) => ({ serverId, eventSeq: seq, kind: n.kind, broadcast: n.broadcast, data: n.data, at: new Date(n.at) })),
           );
         if (seq % SNAPSHOT_EVERY === 0) await tx.insert(seasonSnapshots).values({ serverId, seq, state: r.state });
       });
-      this.cache.set(serverId, { state: r.state, seq, paramVersion: cur.paramVersion });
+      this.cache.set(serverId, { state: r.state, seq, paramVersion: pv });
       return { ok: true, seq, state: r.state, notices: r.notices };
     });
   }

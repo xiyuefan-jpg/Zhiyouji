@@ -46,6 +46,10 @@ export const ERROR_TEXT = {
   season_not_active: "赛季现在不能进行这个操作",
   withdrawn: "你已经退赛了，只能查看",
   bad_prefs: "选择的内容不对，请重新选",
+  needs_reason: "请填写原因",
+  not_pending: "这个计划事件已经执行过了，不能再改时间",
+  not_failed: "只有失败的计划事件可以重跑",
+  not_final: "还没有终局结算",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_TEXT;

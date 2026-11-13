@@ -101,3 +101,41 @@ export const confirmGroupingRequest = z.object({
 export const childSearchQuery = z.object({
   q: z.string().trim().min(1).max(40),
 });
+
+// ---- running a season (part 7 §2, §7, §9) ----------------------------------------------------
+
+const reason = z.string().trim().min(1).max(300);
+
+export const paramsUpdate = z.object({
+  /** Only the parameters that change, in the shape of SeasonParams (PRD part 3 §17). */
+  patch: z.record(z.string(), z.unknown()),
+  note: reason,
+});
+
+export const calendarQuery = z.object({ from: isoDate, to: isoDate });
+export const calendarSet = z.object({ kind: z.enum(["school", "rest"]).nullable(), note: z.string().trim().max(100).nullable().optional() });
+
+export const rescheduleRequest = z.object({ runAt: z.coerce.date(), reason });
+export const pauseRequest = z.object({ reason });
+export const finalizeRequest = z.object({ poolYuan: z.number().int().min(0).max(10_000_000) });
+export const hideFeedRequest = z.object({ reason });
+
+export const interventionRequest = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("adjust_ledger"), teamId: z.uuid(), currency: z.enum(["grain", "points"]), amount: z.number().int(), reason }),
+  z.object({ action: z.literal("reverse_entry"), entryId: z.string().min(1).max(40), reason }),
+  z.object({ action: z.literal("set_land_owner"), landId: z.string().min(1).max(10), teamId: z.uuid().nullable(), reason }),
+  z.object({ action: z.literal("give_item"), teamId: z.uuid(), itemId: z.string().min(1).max(20), reason }),
+  z.object({ action: z.literal("remove_item"), teamId: z.uuid(), uid: z.string().min(1).max(40), reason }),
+  z.object({ action: z.literal("cancel_contest"), contestId: z.string().min(1).max(40), refund: z.boolean(), reason }),
+  z.object({ action: z.literal("set_role"), teamId: z.uuid(), role: z.enum(["leader", "deputy"]), childId: z.uuid().nullable(), reason }),
+  z.object({ action: z.literal("withdraw"), childId: z.uuid(), reason }),
+]);
+
+export const opLogQuery = z.object({
+  actor: z.string().max(80).optional(),
+  action: z.string().max(80).optional(),
+  object: z.string().max(200).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
