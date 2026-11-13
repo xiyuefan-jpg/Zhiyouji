@@ -163,3 +163,76 @@ describe("season play on the student website (part 5 D–E)", () => {
     await t.close();
   });
 });
+
+describe("notifications, reports and feeds (part 8 §1.2; part 5 F1, F2, E1)", () => {
+  it("enabled → grouped → attacked (with SMS) → reports three times a day, items kept secret", async () => {
+    const { smsOutbox } = await import("@zhiyouji/db");
+    const t = await playSetup();
+    const a1 = await t.as("13800000001", t.a1);
+    const msgs = async (f: typeof a1) => (await f("GET", "/v1/messages")).json().messages as { type: string; title: string; body: string; link: string }[];
+    expect((await msgs(a1)).map((m) => m.type)).toEqual(["season_enabled"]);
+
+    t.clock.set(bj("2027-02-07", 19, 1));
+    await t.services.scheduler.runDue(t.serverId);
+    const grouped = (await msgs(a1)).find((m) => m.type === "grouped")!;
+    expect(grouped.body).toContain("组");
+    await a1("POST", "/v1/season/roles/claim", { role: "leader" });
+    await a1("POST", "/v1/season/rounds/blind_auction", { bid: 20, prefs: ["E1"] });
+    t.clock.set(bj("2027-02-08", 21, 1));
+    await t.services.scheduler.runDue(t.serverId);
+
+    t.clock.set(bj("2027-02-09", 10));
+    const st = await t.services.store.state(t.serverId);
+    const myTeam = (await a1("GET", "/v1/season/me")).json().team.id as string;
+    const target = st.landOrder.find((l) => st.lands[l]!.kind === "edge" && st.lands[l]!.owner && st.lands[l]!.owner !== myTeam)!;
+    const defender = st.lands[target]!.owner!;
+    const c = (await a1("POST", "/v1/season/contests", { landId: target })).json().contest;
+    // the defenders got a message and their parents an SMS (queued, quiet hours aside)
+    const defenders = st.teams[defender]!.members.map((m) => m.childId);
+    const { messages } = await import("@zhiyouji/db");
+    const { eq, and } = await import("drizzle-orm");
+    const got = await t.db.select().from(messages).where(and(eq(messages.type, "attacked"), eq(messages.dedupeKey, `attacked:${t.serverId}:${c.id}`)));
+    expect(got.map((m) => m.recipientId).sort()).toEqual([...defenders].sort());
+    expect(got[0]!.body).toContain("截止 2月12日 21:00");
+    expect((await t.db.select().from(smsOutbox)).filter((r) => r.kind === "attack").length).toBeGreaterThan(0);
+    // the attacker's own team got nothing
+    expect((await msgs(a1)).some((m) => m.type === "attacked")).toBe(false);
+
+    // reports: D0 evening … D2 noon
+    t.clock.set(bj("2027-02-09", 12, 1));
+    const made = await t.services.reports.runDue(t.serverId);
+    expect(made).toBe(6);
+    expect(await t.services.reports.runDue(t.serverId)).toBe(0); // idempotent
+    const list = (await a1("GET", "/v1/season/reports")).json().reports;
+    expect(list).toHaveLength(6);
+    expect(list[0].title).toBe("战报 · 2月9日 12:00");
+    const latest = (await a1("GET", `/v1/season/reports/${list[0].id}`)).json();
+    expect(latest.lines.map((l: { text: string }) => l.text).join("|")).toContain("发起了进攻");
+    expect(latest.ranking).toHaveLength(8);
+    const morning2 = (await a1("GET", `/v1/season/reports/${list[1].id}`)).json();
+    expect(morning2.lines.map((l: { text: string }) => l.text)).toContain("第 1 批选地（盲拍）结果公布了");
+    expect((await msgs(a1)).some((m) => m.type === "report")).toBe(true);
+
+    // broadcasts are visible at once; the team feed holds the role change
+    const a2 = await t.as("13800000001", t.a2);
+    const bc = (await a2("GET", "/v1/season/broadcasts")).json().lines;
+    expect(bc[0].text).toContain("发起了进攻");
+    const tf = (await a1("GET", "/v1/season/team-feed")).json().lines;
+    expect(tf.some((l: { text: string }) => l.text.startsWith("组长变动（认领）"))).toBe(true);
+    const tf2 = (await a2("GET", "/v1/season/team-feed")).json().lines as { text: string }[];
+    expect(tf2.some((l) => l.text.startsWith("组长变动"))).toBe(false);
+    expect(tf2.some((l) => l.text.startsWith("没有人认领组长，系统指定"))).toBe(true);
+
+    // D2 21:00 starter items: each team sees only its own picks
+    t.clock.set(bj("2027-02-10", 7, 1));
+    await t.services.scheduler.runDue(t.serverId);
+    await t.services.reports.runDue(t.serverId);
+    const r2 = (await a2("GET", "/v1/season/reports")).json().reports[0];
+    const lines2 = (await a2("GET", `/v1/season/reports/${r2.id}`)).json().lines as { kind: string; data: { allocations: { teamId: string }[] } }[];
+    const starter = lines2.filter((l) => l.kind === "starter_items");
+    const a2Team = (await a2("GET", "/v1/season/me")).json().team.id;
+    expect(starter).toHaveLength(1);
+    expect(starter[0]!.data.allocations.every((a) => a.teamId === a2Team)).toBe(true);
+    await t.close();
+  });
+});

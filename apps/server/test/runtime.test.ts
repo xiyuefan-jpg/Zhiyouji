@@ -92,6 +92,41 @@ describe("scheduler", () => {
   });
 });
 
+describe("epic auctions close one by one (§13.3 anti-sniping)", () => {
+  it("closes the ended auctions, keeps the row for an extended one, then finishes", async () => {
+    const { db, close, store, serverId, T } = await setup();
+    const clock = new SimClock(at(15, 19, 1));
+    const sched = new Scheduler(db, store, clock);
+    await sched.runDue(serverId); // everything up to the D15 evening opening of the auctions
+    const s = await store.state(serverId);
+    const items = s.shop.auctions.map((a) => a.itemId);
+    expect(items.length).toBeGreaterThanOrEqual(2);
+    const end = s.shop.auctions[0]!.endAt;
+    for (const t of [1, 2]) await store.apply(serverId, { type: "adjust_ledger", teamId: T(t), currency: "grain", amount: 500, at: +at(15, 19, 2), by: "admin", reason: "测试" }, "admin");
+    expect((await store.apply(serverId, { type: "bid_epic", teamId: T(1), itemId: items[0]!, amount: 150, at: +at(15, 20) }, "child")).ok).toBe(true);
+    // a bid in the last 10 minutes of the second auction extends it
+    const late = end - 5 * 60_000;
+    expect((await store.apply(serverId, { type: "bid_epic", teamId: T(2), itemId: items[1]!, amount: 150, at: late }, "child")).ok).toBe(true);
+    clock.set(end + 60_000);
+    const r1 = await sched.runDue(serverId);
+    expect(r1.ran.find((x) => x.key === "epic_close")).toMatchObject({ ok: true });
+    let st = await store.state(serverId);
+    expect(st.shop.auctions.find((a) => a.itemId === items[0])!.winner).toBe(T(1));
+    expect(st.shop.auctions.find((a) => a.itemId === items[1])!.closed).toBe(false);
+    const [row] = await db.select().from(plannedEvents).where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.key, "epic_close")));
+    expect(row!.status).toBe("pending");
+    expect(+row!.runAt).toBe(st.shop.auctions.find((a) => a.itemId === items[1])!.endAt);
+    clock.set(+row!.runAt + 60_000);
+    await sched.runDue(serverId);
+    st = await store.state(serverId);
+    expect(st.shop.auctions.every((a) => a.closed)).toBe(true);
+    expect(st.shop.auctions.find((a) => a.itemId === items[1])!.winner).toBe(T(2));
+    const [done] = await db.select().from(plannedEvents).where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.key, "epic_close")));
+    expect(done!.status).toBe("done");
+    await close();
+  });
+});
+
 describe("pause shift (§16)", () => {
   it("resuming pushes later shiftable planned events back by the paused time", async () => {
     const { createPgliteDb: fresh } = await import("@zhiyouji/db");

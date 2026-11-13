@@ -23,7 +23,26 @@ export interface RunReport {
   ran: { key: string; engineEvent: string | null; ok: boolean; refusal?: string }[];
 }
 
+export type RowDoneListener = (serverId: string, kind: string, key: string) => Promise<void>;
+
 export class Scheduler {
+  private listeners: RowDoneListener[] = [];
+
+  /** Called after a planned row is done (e.g. "publish_groups" → notify every player). */
+  onRowDone(fn: RowDoneListener): void {
+    this.listeners.push(fn);
+  }
+
+  private async rowDone(serverId: string, kind: string, key: string): Promise<void> {
+    for (const fn of this.listeners) {
+      try {
+        await fn(serverId, kind, key);
+      } catch (err) {
+        console.error("planned-row listener failed", err);
+      }
+    }
+  }
+
   constructor(
     private readonly db: Db,
     private readonly store: SeasonStore,
@@ -45,19 +64,52 @@ export class Scheduler {
       if (!engineEvent) {
         await this.db.update(plannedEvents).set({ status: "done", doneAt: now }).where(eq(plannedEvents.id, row.id));
         report.ran.push({ key: row.key, engineEvent: null, ok: true });
+        await this.rowDone(serverId, row.kind, row.key);
         continue;
       }
-      const event = await this.buildEvent(serverId, engineEvent, row.params as Record<string, unknown>);
+      if (engineEvent === "close_epic_auction") {
+        report.ran.push(await this.closeEpicAuctions(serverId, row));
+        continue;
+      }
+      const event = await this.buildEvent(serverId, engineEvent, row.params as Record<string, unknown>, +row.runAt);
       const res = await this.store.apply(serverId, event, "system");
       if (res.ok || res.refusal === "already_settled" || res.refusal === "already_done") {
         await this.db.update(plannedEvents).set({ status: "done", doneAt: now, attempts: row.attempts + 1 }).where(eq(plannedEvents.id, row.id));
         report.ran.push({ key: row.key, engineEvent, ok: true });
+        await this.rowDone(serverId, row.kind, row.key);
       } else {
         await this.db.update(plannedEvents).set({ status: "failed", attempts: row.attempts + 1, error: res.refusal }).where(eq(plannedEvents.id, row.id));
         report.ran.push({ key: row.key, engineEvent, ok: false, refusal: res.refusal });
       }
     }
     return report;
+  }
+
+  /**
+   * Epic auctions all start together but anti-sniping extends each on its own
+   * (§13.3): close every auction that has ended; if some are still running,
+   * keep the row pending and move it to the earliest remaining end.
+   */
+  private async closeEpicAuctions(serverId: string, row: typeof plannedEvents.$inferSelect): Promise<RunReport["ran"][number]> {
+    const now = +this.clock.now();
+    let state = await this.store.state(serverId);
+    for (const a of state.shop.auctions.filter((x) => !x.closed && x.endAt <= now)) {
+      const res = await this.store.apply(serverId, { type: "close_epic_auction", itemId: a.itemId, at: Math.max(a.endAt, Math.min(+row.runAt, now)) }, "system");
+      if (!res.ok && res.refusal !== "already_done") {
+        await this.db.update(plannedEvents).set({ status: "failed", attempts: row.attempts + 1, error: res.refusal }).where(eq(plannedEvents.id, row.id));
+        return { key: row.key, engineEvent: "close_epic_auction", ok: false, refusal: res.refusal };
+      }
+    }
+    state = await this.store.state(serverId);
+    const open = state.shop.auctions.filter((x) => !x.closed);
+    if (open.length > 0) {
+      const next = Math.min(...open.map((x) => x.endAt));
+      await this.db.update(plannedEvents).set({ runAt: new Date(next), attempts: row.attempts + 1 }).where(eq(plannedEvents.id, row.id));
+      return { key: row.key, engineEvent: "close_epic_auction", ok: true };
+    }
+    await this.db.update(plannedEvents).set({ status: "done", doneAt: new Date(now), attempts: row.attempts + 1 }).where(eq(plannedEvents.id, row.id));
+    await this.rowDone(serverId, row.kind, row.key);
+    return { key: row.key, engineEvent: "close_epic_auction", ok: true };
   }
 
   /**
@@ -76,8 +128,9 @@ export class Scheduler {
   }
 
   /** Turn a planned row into the engine event, pulling in submissions and scores the row needs. */
-  private async buildEvent(serverId: string, engineEvent: string, params: Record<string, unknown>): Promise<SeasonEvent> {
-    const at = +this.clock.now();
+  private async buildEvent(serverId: string, engineEvent: string, params: Record<string, unknown>, runAt: number): Promise<SeasonEvent> {
+    // The event happens at its planned time (a late worker does not move results into a later report).
+    const at = Math.min(runAt, +this.clock.now());
     switch (engineEvent) {
       case "settle_day":
         return { type: "settle_day", day: params.day as number };
@@ -98,12 +151,6 @@ export class Scheduler {
         return { type: "rare_round", at, prefs: await this.prefsByTeam(serverId, "rare_round") };
       case "open_epic_auctions":
         return { type: "open_epic_auctions", at };
-      case "close_epic_auction": {
-        // Close whichever epic auction has ended.
-        const state = await this.store.state(serverId);
-        const a = state.shop.auctions.find((x) => !x.closed && x.endAt <= at);
-        return { type: "close_epic_auction", itemId: a?.itemId ?? "", at };
-      }
       case "pair_war":
         return { type: "pair_war", week: params.week as number, at };
       case "form_big_battle":

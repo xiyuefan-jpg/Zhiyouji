@@ -64,9 +64,13 @@ export type ApplyResult =
 
 const SNAPSHOT_EVERY = 50;
 
+/** Called after an event was stored (notifications). Errors are logged, never fail the event. */
+export type AppliedListener = (serverId: string, seq: number, notices: Notice[], state: SeasonState) => Promise<void>;
+
 export class SeasonStore {
   private cache = new Map<string, { state: SeasonState; seq: number; paramVersion: number }>();
   private locks = new Map<string, Promise<unknown>>();
+  private listeners: AppliedListener[] = [];
 
   constructor(private readonly db: Db) {}
 
@@ -211,8 +215,25 @@ export class SeasonStore {
     this.cache.delete(serverId);
   }
 
-  /** Apply one engine event for a server; serialised per server. */
-  apply(serverId: string, event: SeasonEvent, actor: string): Promise<ApplyResult> {
+  onApplied(fn: AppliedListener): void {
+    this.listeners.push(fn);
+  }
+
+  /** Apply one engine event for a server; serialised per server. Listeners run after it is stored. */
+  async apply(serverId: string, event: SeasonEvent, actor: string): Promise<ApplyResult> {
+    const r = await this.applyLocked(serverId, event, actor);
+    if (r.ok && r.notices.length)
+      for (const fn of this.listeners) {
+        try {
+          await fn(serverId, r.seq, r.notices, r.state);
+        } catch (err) {
+          console.error("season listener failed", err);
+        }
+      }
+    return r;
+  }
+
+  private applyLocked(serverId: string, event: SeasonEvent, actor: string): Promise<ApplyResult> {
     return this.withLock(serverId, async () => {
       const cur = await this.load(serverId);
       const r = applyEvent(cur.state, event);

@@ -22,6 +22,8 @@ import { messageRoutes } from "./messageRoutes.js";
 import { seasonAdminRoutes } from "./seasonAdminRoutes.js";
 import { playRoutes } from "./playRoutes.js";
 import { SeasonPlay } from "../season/play.js";
+import { Reports } from "../season/reports.js";
+import { SeasonNotices } from "../notify/seasonNotices.js";
 import { SeasonAdmin } from "../season/seasons.js";
 import { SeasonStore } from "../seasonStore.js";
 import { Scheduler } from "../scheduler.js";
@@ -49,6 +51,8 @@ export interface Services {
   scheduler: Scheduler;
   seasons: SeasonAdmin;
   play: SeasonPlay;
+  reports: Reports;
+  seasonNotices: SeasonNotices;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -56,15 +60,25 @@ export function buildServices(d: AppDeps): Services {
   const family = new FamilyAccounts(d.db, d.clock, d.cfg, sessions, d.sms, d.captcha);
   const admin = new AdminAccounts(d.db, d.clock, d.cfg, sessions);
   const store = new SeasonStore(d.db);
+  const notifier = new Notifier(d.db, d.clock, d.cfg);
+  const scheduler = new Scheduler(d.db, store, d.clock);
+  const seasonNotices = new SeasonNotices(d.db, notifier);
+  // Engine notices → message center and SMS; D0 evening → "分组公布".
+  store.onApplied((serverId, seq, notices, state) => seasonNotices.dispatch(serverId, seq, notices, state));
+  scheduler.onRowDone(async (serverId, kind) => {
+    if (kind === "publish_groups") await seasonNotices.groupsPublished(serverId, await store.state(serverId));
+  });
   return {
     store,
-    scheduler: new Scheduler(d.db, store, d.clock),
-    seasons: new SeasonAdmin(d.db, d.clock, store),
+    scheduler,
+    seasons: new SeasonAdmin(d.db, d.clock, store, notifier),
     play: new SeasonPlay(d.db, d.clock, store),
+    reports: new Reports(d.db, d.clock, store, notifier),
+    seasonNotices,
     sessions,
     family,
     admin,
-    notifier: new Notifier(d.db, d.clock, d.cfg),
+    notifier,
     smsDispatcher: new SmsDispatcher(d.db, d.clock, d.cfg, d.sms),
     familyAuth: new FamilyAuth(d.cfg, sessions, family),
     adminAuth: new AdminAuth(d.cfg, sessions, admin),
@@ -91,6 +105,6 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   adminRoutes(app, d.cfg, services.admin, services.sessions, services.adminAuth);
   messageRoutes(app, services.notifier, services.familyAuth, services.adminAuth);
   seasonAdminRoutes(app, services.seasons, services.adminAuth);
-  playRoutes(app, services.play, services.familyAuth);
+  playRoutes(app, services.play, services.reports, services.familyAuth);
   return { app, services };
 }

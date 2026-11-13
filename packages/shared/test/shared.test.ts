@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { childCreate, errorText, isMainlandMobile, loginRequest, maskPhone, SMS_TEMPLATE_OF, SMS_TEMPLATE_TEXT } from "../src/index.js";
+import { childCreate, errorText, formatBeijing, isMainlandMobile, loginRequest, maskPhone, SMS_TEMPLATE_OF, SMS_TEMPLATE_TEXT } from "../src/index.js";
 
 describe("shared", () => {
   it("checks mainland mobile numbers", () => {
@@ -23,5 +23,10 @@ describe("shared", () => {
     for (const t of Object.values(SMS_TEMPLATE_TEXT)) expect(t).not.toContain("游戏");
     expect(Object.keys(SMS_TEMPLATE_OF).sort()).toEqual(["attacked", "joined_attack", "outbid", "supply_due", "work_due_6h"]);
     expect(errorText("nope")).toBe(errorText("bad_request"));
+  });
+
+  it("formats Beijing time", () => {
+    expect(formatBeijing(Date.UTC(2027, 1, 9, 13, 0))).toBe("2月9日 21:00");
+    expect(formatBeijing(Date.UTC(2027, 1, 9, 16, 5))).toBe("2月10日 00:05");
   });
 });

@@ -257,8 +257,26 @@ export const feed = pgTable(
     broadcast: boolean("broadcast").notNull(),
     data: jsonb("data").notNull(),
     at: ts("at").notNull(),
+    /** Admin hid this line from the report (part 7 §8 战报预览); the row itself stays. */
+    hiddenAt: ts("hidden_at"),
+    hiddenBy: text("hidden_by"),
   },
   (t) => [index("feed_server_at").on(t.serverId, t.at)],
+);
+
+/** 战报 (part 4 §9): one per publication time; the lines are the feed rows in (fromAt, publishAt]. */
+export const reports = pgTable(
+  "reports",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    fromAt: ts("from_at").notNull(),
+    publishAt: ts("publish_at").notNull(),
+    /** Ranking at the publication time: [{ teamId, rank, points }]. */
+    ranking: jsonb("ranking").notNull(),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("reports_server_publish").on(t.serverId, t.publishAt)],
 );
 
 export const opLog = pgTable("op_log", {

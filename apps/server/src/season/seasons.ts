@@ -16,6 +16,7 @@ import { GRADE_LABELS, SERVER_NAMES, TEAM_NAME_POOL, maskPhone, type SeasonCreat
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
 import type { SeasonStore } from "../seasonStore.js";
+import type { Notifier } from "../notify/notifier.js";
 
 export type SeasonRow = typeof seasons.$inferSelect;
 
@@ -50,6 +51,7 @@ export class SeasonAdmin {
     private readonly db: Db,
     private readonly clock: Clock,
     private readonly store: SeasonStore,
+    private readonly notifier?: Notifier,
   ) {}
 
   private async log(actor: string, action: string, object: string, before: unknown, after: unknown, reason?: string): Promise<void> {
@@ -198,6 +200,14 @@ export class SeasonAdmin {
       }
       byChild.set(p.childId, { ...(row ?? ({} as typeof existing[number])), status: "enrolled" });
       out.enrolled.push(p.childId);
+      await this.notifier?.notify({
+        kind: "season_enabled",
+        childIds: [p.childId],
+        title: "赛季资格开通了",
+        body: `你已经是「${s.name}」的赛季玩家。开营日 ${+s.openingDate.slice(5, 7)}月${+s.openingDate.slice(8)}日晚上公布分组。`,
+        link: "/season",
+        dedupeKey: `season_enabled:${seasonId}`,
+      });
       await this.log(by, "season_enroll", `season:${seasonId}/child:${p.childId}`, row ? { status: row.status } : null, { status: "enrolled", paymentNote: p.paymentNote ?? null });
     }
     return out;

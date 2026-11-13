@@ -56,3 +56,11 @@ export interface MessageView {
   /** Which child it is for (null = the whole family). */
   childId: string | null;
 }
+
+/** "2月9日 21:00" in Beijing time (UTC+8, no daylight saving). */
+export function formatBeijing(ms: number): string {
+  const d = new Date(ms + 8 * 3_600_000);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${d.getUTCMonth() + 1}月${d.getUTCDate()}日 ${hh}:${mm}`;
+}

@@ -19,11 +19,14 @@ import {
   useItemRequest,
 } from "@zhiyouji/shared";
 import type { SeasonPlay } from "../season/play.js";
+import type { Reports } from "../season/reports.js";
 import type { FamilyAuth } from "./familyRoutes.js";
 
 const idParam = z.object({ id: z.string().min(1).max(40) });
 
-export function playRoutes(app: FastifyInstance, play: SeasonPlay, auth: FamilyAuth): void {
+const beforeQuery = z.object({ before: z.coerce.date().optional() });
+
+export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Reports, auth: FamilyAuth): void {
   const ctx = async (req: FastifyRequest) => play.ctx((await auth.child(req)).child.id);
 
   app.get("/v1/season/me", async (req) => play.me((await auth.child(req)).child.id));
@@ -69,4 +72,10 @@ export function playRoutes(app: FastifyInstance, play: SeasonPlay, auth: FamilyA
   app.get("/v1/season/wars", async (req) => play.wars(await ctx(req)));
   app.get("/v1/season/big-battle", async (req) => play.bigBattle(await ctx(req)));
   app.post("/v1/season/big-battle/lines", async (req) => play.submitLines(await ctx(req), linesRequest.parse(req.body).lines));
+
+  // 战报 (F1), 全服广播 (F2), 组内动态 (E1)
+  app.get("/v1/season/reports", async (req) => reports.list(await ctx(req)));
+  app.get("/v1/season/reports/:id", async (req) => reports.get(await ctx(req), z.uuid().parse((req.params as { id: string }).id)));
+  app.get("/v1/season/broadcasts", async (req) => reports.broadcasts(await ctx(req), beforeQuery.parse(req.query).before));
+  app.get("/v1/season/team-feed", async (req) => reports.teamFeed(await ctx(req)));
 }

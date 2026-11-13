@@ -15,3 +15,6 @@ export * from "./http/errors.js";
 export * from "./season/seasons.js";
 export * from "./season/play.js";
 export * from "./season/refusals.js";
+export * from "./season/reports.js";
+export * from "./season/feedView.js";
+export * from "./notify/seasonNotices.js";

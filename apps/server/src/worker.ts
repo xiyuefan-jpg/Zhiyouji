@@ -9,6 +9,7 @@ import { eq, inArray } from "drizzle-orm";
 import { seasons, servers, type Db } from "@zhiyouji/db";
 import type { Notifier, SmsDispatcher } from "./notify/notifier.js";
 import type { Scheduler } from "./scheduler.js";
+import type { Reports } from "./season/reports.js";
 
 /** Season states in which planned events run (part 4 §4). */
 export const LIVE_SEASON_STATES = ["grouped", "running", "big_battle", "final_pending"];
@@ -17,6 +18,8 @@ export interface TickReport {
   servers: number;
   ran: number;
   failed: string[];
+  /** 战报 created this tick. */
+  reports: number;
   sms: { sent: number; dropped: number; failed: number; deferred: number };
 }
 
@@ -28,6 +31,7 @@ export class Worker {
     private readonly scheduler: Scheduler,
     private readonly sms: SmsDispatcher,
     private readonly notifier: Notifier,
+    private readonly reports?: Reports,
   ) {}
 
   /** One pass. Skips if the previous pass is still running. */
@@ -41,7 +45,7 @@ export class Worker {
         .innerJoin(seasons, eq(servers.seasonId, seasons.id))
         .where(inArray(seasons.status, LIVE_SEASON_STATES));
       const ids = live.map((s) => s.id);
-      const report: TickReport = { servers: ids.length, ran: 0, failed: [], sms: { sent: 0, dropped: 0, failed: 0, deferred: 0 } };
+      const report: TickReport = { servers: ids.length, ran: 0, failed: [], reports: 0, sms: { sent: 0, dropped: 0, failed: 0, deferred: 0 } };
       for (const serverId of ids) {
         const r = await this.scheduler.runDue(serverId);
         report.ran += r.ran.length;
@@ -55,6 +59,13 @@ export class Worker {
             dedupeKey: `planned_failed:${serverId}:${x.key}`,
             roles: ["admin"],
           });
+        }
+      }
+      for (const serverId of ids) {
+        try {
+          report.reports += (await this.reports?.runDue(serverId)) ?? 0;
+        } catch (err) {
+          console.error("report failed", serverId, err);
         }
       }
       report.sms = await this.sms.runDue();
