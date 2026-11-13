@@ -159,4 +159,21 @@ describe("每日任务 and 修行日志 (part 5 C1–C7; part 6 T4)", () => {
     expect((await k.call("GET", "/v1/messages")).json().messages[0].title).toBe("你的月报告来了");
     await t.close();
   });
+
+  it("admins export the daily tasks as CSV (in the view log)", async () => {
+    const t = await setup(bj("2027-03-10", 16));
+    const k = await kid(t);
+    const pic = await picture(t, k.call);
+    await k.call("POST", "/v1/daily/submissions", { templateId: 1, evidenceFileIds: [pic], explain: { kind: "text", text: TEXT }, aiNote: "问了 AI" });
+    const boss = await t.adminUser();
+    const csv = await t.call("GET", "/v1/admin/exports/daily.csv", undefined, boss.token);
+    expect(csv.headers["content-type"]).toContain("text/csv");
+    const lines = csv.body.split("\r\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain("物理与天文/力与运动");
+    for (const kind of ["works", "ledger", "survey"]) expect((await t.call("GET", `/v1/admin/exports/${kind}.csv`, undefined, boss.token)).statusCode).toBe(200);
+    const log = (await t.call("GET", "/v1/admin/view-log", undefined, boss.token)).json().entries;
+    expect(log.map((e: { contentKind: string }) => e.contentKind)).toContain("export:daily");
+    await t.close();
+  });
 });

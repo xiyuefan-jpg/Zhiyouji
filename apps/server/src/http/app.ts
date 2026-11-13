@@ -50,6 +50,7 @@ import { Summaries } from "../daily/summaries.js";
 import { FakeAiSummarizer, type AiSummarizer } from "../ai.js";
 import { AiGateway } from "../aiGateway.js";
 import { aiRoutes } from "./aiRoutes.js";
+import { exportRoutes } from "./exportRoutes.js";
 import { FakeContentSafety, type ContentSafety } from "../providers.js";
 import { surveySubmit } from "@zhiyouji/shared";
 import { DailyTasks } from "../daily/daily.js";
@@ -217,6 +218,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   opsRoutes(app, services.ops, services.play, services.familyAuth, services.adminAuth);
   watchRoutes(app, services.showcase, services.familyAuth, services.adminAuth);
   aiRoutes(app, services.gateway, services.scoring, services.adminAuth);
+  exportRoutes(app, d.db, services.admin, services.adminAuth);
   app.get("/v1/journal/summaries", async (req) => services.summaries.list((await services.familyAuth.child(req)).child.id));
   app.get("/v1/season-reviews", async (req) => services.summaries.seasonReviewsOf((await services.familyAuth.child(req)).child.id));
   const seasonIdParam = z.object({ id: z.uuid() });
