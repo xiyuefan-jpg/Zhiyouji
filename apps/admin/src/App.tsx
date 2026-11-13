@@ -7,8 +7,9 @@ import { InvitePage, LoginPage } from "./pages/Auth";
 import { ConsoleLayout, NAV } from "./pages/Layout";
 import { ComingPage, DashboardPage, NotificationsPage, UsersPage, ViewLogPage } from "./pages/Pages";
 import { ReviewersPage, ReviewPage, ReviewWorkPage } from "./pages/ReviewPages";
+import { MonitorPage } from "./pages/MonitorPages";
 
-const BUILT = new Set(["/", "/users", "/view-log", "/review", "/reviewers"]);
+const BUILT = new Set(["/", "/users", "/view-log", "/review", "/reviewers", "/monitor"]);
 
 export function App() {
   return (
@@ -45,6 +46,9 @@ function Console() {
         <Route path="review/:id" element={<ReviewWorkPage />} />
         <Route path="reviews/:id" element={<ReviewWorkPage />} />
         {me.role === "admin" && <Route path="reviewers" element={<ReviewersPage />} />}
+        {me.role === "admin" && <Route path="monitor" element={<MonitorPage />} />}
+        {me.role === "admin" && <Route path="monitor/:serverId" element={<MonitorPage />} />}
+        {me.role === "admin" && <Route path="servers/:serverId" element={<MonitorPage />} />}
         {allowed
           .filter((n) => !BUILT.has(n.key))
           .map((n) => (

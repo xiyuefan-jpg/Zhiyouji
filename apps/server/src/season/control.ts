@@ -30,6 +30,7 @@ import { fail, HttpError } from "../http/errors.js";
 import type { Scheduler } from "../scheduler.js";
 import type { SeasonStore } from "../seasonStore.js";
 import { refusalText } from "./refusals.js";
+import { describe, type FeedNames } from "./feedView.js";
 import type { SeasonAdmin } from "./seasons.js";
 
 export type Intervention =
@@ -345,7 +346,28 @@ export class SeasonControl {
   /** Lines for the next report of a server (preview), with their ids so one can be hidden. */
   async feedSince(serverId: string, since: Date) {
     const rows = await this.db.select().from(feed).where(and(eq(feed.serverId, serverId), gte(feed.at, since))).orderBy(asc(feed.at), asc(feed.eventSeq));
-    return { lines: rows.map((r) => ({ id: r.id, kind: r.kind, broadcast: r.broadcast, at: r.at.toISOString(), data: r.data, hidden: !!r.hiddenAt })) };
+    // The text as the whole server would read it (no team's own view), for the preview.
+    const st = await this.store.state(serverId);
+    const land = new Map((await this.db.select().from(landRows).where(eq(landRows.serverId, serverId))).map((l) => [l.code, l.name]));
+    const kidIds = st.teamOrder.flatMap((t) => st.teams[t]!.members.map((m) => m.childId));
+    const kids = kidIds.length ? await this.db.select({ id: children.id, nickname: children.nickname }).from(children).where(inArray(children.id, kidIds)) : [];
+    const kid = new Map(kids.map((k) => [k.id, k.nickname]));
+    const names = {
+      team: (id: string | null | undefined) => (id ? (st.teams[id]?.name ?? "") : ""),
+      land: (id: string | null | undefined) => (id ? (land.get(id) ?? id) : ""),
+      child: (id: string | null | undefined) => (id ? (kid.get(id) ?? "一位组员") : ""),
+    };
+    return {
+      lines: rows.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        broadcast: r.broadcast,
+        at: r.at.toISOString(),
+        data: r.data,
+        text: describe(r.kind, r.data as Record<string, unknown>, names as FeedNames, ""),
+        hidden: !!r.hiddenAt,
+      })),
+    };
   }
 
   async opLog(f: { actor?: string; action?: string; object?: string; from?: Date; to?: Date; limit?: number }) {
