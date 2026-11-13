@@ -32,6 +32,8 @@ import { devStorageRoutes, workRoutes } from "./workRoutes.js";
 import { FakeAiScorer, type AiScorer } from "../ai.js";
 import { Scoring } from "../season/scoring.js";
 import { reviewRoutes } from "./reviewRoutes.js";
+import { DataRights } from "../accounts/dataRights.js";
+import { dataRoutes } from "./dataRoutes.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
 import { SeasonAdmin } from "../season/seasons.js";
 import { SeasonStore } from "../seasonStore.js";
@@ -72,6 +74,7 @@ export interface Services {
   works: Works;
   ai: AiScorer;
   scoring: Scoring;
+  dataRights: DataRights;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -92,6 +95,7 @@ export function buildServices(d: AppDeps): Services {
   const ai = d.ai ?? new FakeAiScorer();
   return {
     ai,
+    dataRights: new DataRights(d.db, d.clock, storage, notifier),
     scoring: new Scoring(d.db, d.clock, store, ai, notifier, storage),
     storage,
     works: new Works(d.db, d.clock, d.cfg, store, storage),
@@ -137,6 +141,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   seasonControlRoutes(app, services.control, services.adminAuth);
   workRoutes(app, services.works, services.play, services.scoring, services.familyAuth);
   reviewRoutes(app, services.scoring, services.admin, services.adminAuth);
+  dataRoutes(app, d.db, services.dataRights, services.familyAuth, services.adminAuth);
   devStorageRoutes(app, services.storage, d.clock, Math.max(...Object.values(d.cfg.uploads.maxBytes)));
   return { app, services };
 }

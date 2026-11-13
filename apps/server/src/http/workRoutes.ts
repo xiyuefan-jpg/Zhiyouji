@@ -10,7 +10,7 @@ import type { Clock } from "../clock.js";
 import type { SeasonPlay } from "../season/play.js";
 import type { Works } from "../season/works.js";
 import type { Scoring } from "../season/scoring.js";
-import type { LocalStorage, ObjectStorage } from "../storage.js";
+import { LocalStorage, type ObjectStorage } from "../storage.js";
 import { fail } from "./errors.js";
 import type { FamilyAuth } from "./familyRoutes.js";
 
@@ -37,8 +37,8 @@ export function workRoutes(app: FastifyInstance, works: Works, play: SeasonPlay,
 
 /** PUT / GET for LocalStorage's signed URLs (development and tests only; production uses OSS). */
 export function devStorageRoutes(app: FastifyInstance, storage: ObjectStorage, clock: Clock, maxBytes: number): void {
-  if (!("put" in storage)) return;
-  const local = storage as LocalStorage;
+  if (!(storage instanceof LocalStorage)) return;
+  const local = storage;
   const q = z.object({ op: z.enum(["put", "get"]), exp: z.coerce.number(), sig: z.string() });
   app.register(async (sub) => {
     sub.addContentTypeParser("*", { parseAs: "buffer", bodyLimit: maxBytes }, (_req, body, done) => done(null, body));

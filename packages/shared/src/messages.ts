@@ -32,7 +32,7 @@ export const SMS_TEMPLATE_OF: Partial<Record<NotifyKind, SmsTemplate>> = {
   outbid: "outbid",
 };
 
-export type SmsTemplate = "attack" | "work_due" | "supply_due" | "outbid";
+export type SmsTemplate = "attack" | "work_due" | "supply_due" | "outbid" | "inactive";
 
 /** Fixed texts to submit for approval (the signature 【智游记】 is added by the SMS service). */
 export const SMS_TEMPLATE_TEXT: Readonly<Record<SmsTemplate, string>> = {
@@ -40,6 +40,7 @@ export const SMS_TEMPLATE_TEXT: Readonly<Record<SmsTemplate, string>> = {
   work_due: "你们组的作品还没交，离截止不到 6 小时，请打开智游记网站查看。",
   supply_due: "军需任务你自己的那份还没交，离截止不到 3 小时，请打开智游记网站查看。",
   outbid: "你们组的仙品出价被超过了，请打开智游记网站查看。",
+  inactive: "你的智游记账号已经两年没有登录，30 天后将删除账号和孩子的学习档案。如需保留，请登录一次智游记网站。",
 };
 
 /** Text of the login code SMS (template with one variable). */

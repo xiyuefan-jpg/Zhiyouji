@@ -305,6 +305,8 @@ export const families = pgTable("families", {
   createdAt: ts("created_at").notNull().defaultNow(),
   /** For the "2 years without login" clean-up (part 8 §4). */
   lastLoginAt: ts("last_login_at"),
+  /** When the parent was told by SMS that the account will be deleted in 30 days. */
+  inactiveNoticeAt: ts("inactive_notice_at"),
 });
 
 /** Every agree / disagree the parent pressed (append-only). */
@@ -691,4 +693,28 @@ export const scoringRounds = pgTable(
     settledAt: ts("settled_at"),
   },
   (t) => [uniqueIndex("scoring_rounds_key").on(t.serverId, t.key)],
+);
+
+// ---- data rights (part 5 G4; part 8 §4) ------------------------------------------------
+
+/** A parent's request to export or delete a child's (or the whole family's) data. */
+export const dataRequests = pgTable(
+  "data_requests",
+  {
+    id: id(),
+    familyId: uuid("family_id").notNull().references(() => families.id),
+    /** null = the whole family account. */
+    childId: uuid("child_id"),
+    /** export | delete */
+    kind: text("kind").notNull(),
+    /** pending | done | cancelled */
+    status: text("status").notNull().default("pending"),
+    requestedAt: ts("requested_at").notNull(),
+    /** Deletions wait a few days so the parent can change their mind. */
+    dueAt: ts("due_at").notNull(),
+    doneAt: ts("done_at"),
+    /** Export: where the file is (object storage key). */
+    resultKey: text("result_key"),
+  },
+  (t) => [index("data_requests_family").on(t.familyId), index("data_requests_due").on(t.status, t.dueAt)],
 );

@@ -12,6 +12,7 @@ import type { Scheduler } from "./scheduler.js";
 import type { Reports } from "./season/reports.js";
 import type { Reminders } from "./notify/reminders.js";
 import type { Scoring } from "./season/scoring.js";
+import type { DataRights } from "./accounts/dataRights.js";
 
 /** Season states in which planned events run (part 4 §4). */
 export const LIVE_SEASON_STATES = ["grouped", "running", "big_battle", "final_pending"];
@@ -26,6 +27,8 @@ export interface TickReport {
   reminders: number;
   /** Scoring rounds closed / settled and reviews timed out this tick. */
   scoring: { closed: number; settled: number; timeouts: number };
+  /** Accounts deleted (requests and 2-year clean-up) and inactivity notices sent. */
+  dataRights: { deleted: number; noticed: number };
   sms: { sent: number; dropped: number; failed: number; deferred: number };
 }
 
@@ -40,6 +43,7 @@ export class Worker {
     private readonly reports?: Reports,
     private readonly reminders?: Reminders,
     private readonly scoring?: Scoring,
+    private readonly dataRights?: DataRights,
   ) {}
 
   /** One pass. Skips if the previous pass is still running. */
@@ -53,7 +57,7 @@ export class Worker {
         .innerJoin(seasons, eq(servers.seasonId, seasons.id))
         .where(inArray(seasons.status, LIVE_SEASON_STATES));
       const ids = live.map((s) => s.id);
-      const report: TickReport = { servers: ids.length, ran: 0, failed: [], reports: 0, reminders: 0, scoring: { closed: 0, settled: 0, timeouts: 0 }, sms: { sent: 0, dropped: 0, failed: 0, deferred: 0 } };
+      const report: TickReport = { servers: ids.length, ran: 0, failed: [], reports: 0, reminders: 0, scoring: { closed: 0, settled: 0, timeouts: 0 }, dataRights: { deleted: 0, noticed: 0 }, sms: { sent: 0, dropped: 0, failed: 0, deferred: 0 } };
       for (const serverId of ids) {
         const r = await this.scheduler.runDue(serverId);
         report.ran += r.ran.length;
@@ -78,6 +82,11 @@ export class Worker {
         } catch (err) {
           console.error("report failed", serverId, err);
         }
+      }
+      try {
+        report.dataRights = (await this.dataRights?.runDue()) ?? report.dataRights;
+      } catch (err) {
+        console.error("data rights failed", err);
       }
       report.sms = await this.sms.runDue();
       return report;

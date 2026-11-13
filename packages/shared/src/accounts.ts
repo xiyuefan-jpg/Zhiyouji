@@ -142,3 +142,9 @@ export interface AdminMe {
   role: AdminRole;
   timezone: string;
 }
+
+/** 申请导出或删除我的数据 (PRD part 5 G4). Delete without a child = the whole family account. */
+export const dataRequestCreate = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("export"), childId: z.uuid() }),
+  z.object({ kind: z.literal("delete"), childId: z.uuid().nullable() }),
+]);

@@ -114,6 +114,11 @@ export class Notifier {
     return rows.map((r) => r.phone);
   }
 
+  /** An SMS straight to a parent phone (account notices, not tied to a child's message). */
+  async smsToPhone(phone: string, template: SmsTemplate, dedupeKey: string): Promise<boolean> {
+    return this.queueSms(phone, template, dedupeKey, +this.clock.now());
+  }
+
   /** Queue one reminder unless one of the same template is already waiting for this phone. */
   private async queueSms(phone: string, template: SmsTemplate, dedupeKey: string, now: number): Promise<boolean> {
     const [waiting] = await this.db

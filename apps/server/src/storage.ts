@@ -23,6 +23,10 @@ export interface ObjectStorage {
   head(key: string): Promise<{ size: number; contentType: string } | null>;
   /** A short-lived URL to read the object (players, reviewers). */
   downloadUrl(key: string, now: number): Promise<string>;
+  /** Server-side write (data exports). */
+  put(key: string, bytes: Buffer, contentType: string): Promise<void>;
+  /** Remove an object (account deletion). Missing objects are fine. */
+  delete(key: string): Promise<void>;
 }
 
 const TICKET_MS = 60 * 60_000;
@@ -89,6 +93,14 @@ export class LocalStorage implements ObjectStorage {
     }
     const o = this.mem.get(key);
     return o ? { size: o.bytes.length, contentType: o.contentType } : null;
+  }
+
+  async delete(key: string): Promise<void> {
+    if (this.dir) {
+      const { rm } = await import("node:fs/promises");
+      await rm(join(this.dir, key), { force: true });
+      await rm(`${join(this.dir, key)}.type`, { force: true });
+    } else this.mem.delete(key);
   }
 
   async downloadUrl(key: string, now: number): Promise<string> {
