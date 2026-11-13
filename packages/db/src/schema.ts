@@ -909,3 +909,24 @@ export const prompts = pgTable(
   },
   (t) => [index("prompts_land").on(t.landTemplateId, t.status)],
 );
+
+/** 异步辩论 on debate lands (朱紫国、车迟国; part 3 §10.4): sides and the two stages. */
+export const debates = pgTable(
+  "debates",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    contestId: text("contest_id").notNull(),
+    /** The defender's side: pro | con (attackers take the other). */
+    defenderSide: text("defender_side"),
+    /** defender | system (not chosen within 12 hours) */
+    sideBy: text("side_by"),
+    sideAt: ts("side_at"),
+    sideDeadline: ts("side_deadline").notNull(),
+    openingDeadline: ts("opening_deadline").notNull(),
+    /** The defender handed in no opening: attackers rebut the 2 strongest arguments they imagine (part 3 §10.4). */
+    noDefender: boolean("no_defender").notNull().default(false),
+    openingsSharedAt: ts("openings_shared_at"),
+  },
+  (t) => [uniqueIndex("debates_contest").on(t.serverId, t.contestId)],
+);

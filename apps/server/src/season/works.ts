@@ -20,6 +20,7 @@ import { fail } from "../http/errors.js";
 import type { SeasonStore } from "../seasonStore.js";
 import type { ObjectStorage } from "../storage.js";
 import { refuse, type PlayCtx } from "./play.js";
+import type { Debates } from "./debates.js";
 
 export type FileKind = "video" | "audio" | "image" | "pdf";
 export type MediaKind = "video" | "audio" | "images" | "text";
@@ -32,16 +33,25 @@ export interface SlotInfo {
   deadline: number;
   open: boolean;
   role?: "attacker" | "defender";
+  /** Debate lands: the opening (立论) and the rebuttal (驳论, the slot that is scored). */
+  stage?: "opening" | "rebuttal";
 }
 
+export type DebateDeadlines = ReadonlyMap<string, { openingDeadline: number }>;
+
 /** Every slot the team has (open or closed), from the season state. */
-export function teamSlots(st: SeasonState, teamId: string, now: number): SlotInfo[] {
+export function teamSlots(st: SeasonState, teamId: string, now: number, debates: DebateDeadlines = new Map()): SlotInfo[] {
   const out: SlotInfo[] = [];
   for (const id of st.contestOrder) {
     const c = st.contests[id]!;
     const role = c.defender === teamId ? "defender" : c.attackers.some((a) => a.teamId === teamId) ? "attacker" : null;
     if (!role || c.status === "cancelled") continue;
-    out.push({ slot: `contest:${id}`, kind: "contest", promptId: c.promptId, deadline: c.deadline, open: c.status === "active" && now < c.deadline, role });
+    const active = c.status === "active";
+    const d = debates.get(id);
+    if (d) {
+      out.push({ slot: `contest:${id}:open`, kind: "contest", promptId: c.promptId, deadline: d.openingDeadline, open: active && now < d.openingDeadline, role, stage: "opening" });
+      out.push({ slot: `contest:${id}`, kind: "contest", promptId: c.promptId, deadline: c.deadline, open: active && now >= d.openingDeadline && now < c.deadline, role, stage: "rebuttal" });
+    } else out.push({ slot: `contest:${id}`, kind: "contest", promptId: c.promptId, deadline: c.deadline, open: active && now < c.deadline, role });
   }
   for (const w of Object.values(st.wars).sort((a, b) => a.week - b.week)) {
     if (!w.pairs.some((p) => p.includes(teamId))) continue;
@@ -66,10 +76,16 @@ export class Works {
     private readonly cfg: ServerConfig,
     private readonly store: SeasonStore,
     private readonly storage: ObjectStorage,
+    private readonly debates?: Debates,
   ) {}
 
   private now(): number {
     return +this.clock.now();
+  }
+
+  private async slotsOf(serverId: string, st: SeasonState, teamId: string): Promise<SlotInfo[]> {
+    const d = this.debates ? await this.debates.openingDeadlines(serverId) : new Map();
+    return teamSlots(st, teamId, this.now(), d);
   }
 
   // ---- uploads ------------------------------------------------------------------------------
@@ -114,7 +130,7 @@ export class Works {
 
   async slots(ctx: PlayCtx) {
     const st = await this.store.state(ctx.serverId);
-    const slots = teamSlots(st, ctx.teamId, this.now());
+    const slots = await this.slotsOf(ctx.serverId, st, ctx.teamId);
     const latest = await this.latestVersions(ctx.serverId, ctx.teamId, slots.map((s) => s.slot));
     return { slots: slots.map((s) => ({ ...s, submitted: latest.get(s.slot) ?? null })) };
   }
@@ -133,7 +149,7 @@ export class Works {
 
   private async slotOf(ctx: PlayCtx, slot: string): Promise<SlotInfo> {
     const st = await this.store.state(ctx.serverId);
-    const s = teamSlots(st, ctx.teamId, this.now()).find((x) => x.slot === slot);
+    const s = (await this.slotsOf(ctx.serverId, st, ctx.teamId)).find((x) => x.slot === slot);
     if (!s) fail(404, "no_slot");
     return s!;
   }
@@ -191,7 +207,7 @@ export class Works {
     b: { mediaKind: MediaKind; fileIds: string[]; text?: string; aiNote?: string; members: string[] },
   ) {
     const st = await this.store.state(ctx.serverId);
-    const s = teamSlots(st, ctx.teamId, this.now()).find((x) => x.slot === slot);
+    const s = (await this.slotsOf(ctx.serverId, st, ctx.teamId)).find((x) => x.slot === slot);
     if (!s) fail(404, "no_slot");
     if (!s!.open) refuse(this.now() >= s!.deadline ? "too_late" : "too_early");
     const t = st.teams[ctx.teamId]!;

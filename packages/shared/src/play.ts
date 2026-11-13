@@ -49,7 +49,8 @@ export const uploadRequest = z.object({
   filename: z.string().trim().max(200).optional(),
 });
 
-export const slotParam = z.object({ slot: z.string().regex(/^(contest:[A-Za-z0-9]+|war:\d+|line|main:[ab])$/) });
+export const slotParam = z.object({ slot: z.string().regex(/^(contest:[A-Za-z0-9]+(:open)?|war:\d+|line|main:[ab])$/) });
+export const sideRequest = z.object({ side: z.enum(["pro", "con"]) });
 
 export const materialRequest = z.object({
   fileId: z.uuid().optional(),

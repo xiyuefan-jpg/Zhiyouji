@@ -15,6 +15,7 @@ import type { Scoring } from "./season/scoring.js";
 import type { DataRights } from "./accounts/dataRights.js";
 import type { DailyTasks } from "./daily/daily.js";
 import type { Supply } from "./season/supply.js";
+import type { Debates } from "./season/debates.js";
 
 /** Season states in which planned events run (part 4 §4). */
 export const LIVE_SEASON_STATES = ["grouped", "running", "big_battle", "final_pending"];
@@ -50,6 +51,7 @@ export class Worker {
     private readonly dataRights?: DataRights,
     private readonly daily?: DailyTasks,
     private readonly supply?: Supply,
+    private readonly debates?: Debates,
   ) {}
 
   /** One pass. Skips if the previous pass is still running. */
@@ -81,6 +83,7 @@ export class Worker {
       }
       for (const serverId of ids) {
         try {
+          await this.debates?.runDue(serverId);
           const sc = await this.scoring?.runDue(serverId);
           if (sc) report.scoring = { closed: report.scoring.closed + sc.closed, settled: report.scoring.settled + sc.settled, timeouts: report.scoring.timeouts + sc.timeouts };
           const sp = await this.supply?.runDue(serverId);

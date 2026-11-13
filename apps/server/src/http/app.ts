@@ -39,6 +39,7 @@ import { Supply } from "../season/supply.js";
 import { WarWords } from "../season/warWords.js";
 import { QuestionBank } from "../content/questionBank.js";
 import { bankRoutes } from "./bankRoutes.js";
+import { Debates } from "../season/debates.js";
 import { DailyTasks } from "../daily/daily.js";
 import { dailyRoutes } from "./dailyRoutes.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
@@ -91,6 +92,7 @@ export interface Services {
   supply: Supply;
   warWords: WarWords;
   bank: QuestionBank;
+  debates: Debates;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -103,6 +105,11 @@ export function buildServices(d: AppDeps): Services {
   const seasonNotices = new SeasonNotices(d.db, notifier);
   const warWords = new WarWords(d.db, d.clock, store, notifier);
   const bank = new QuestionBank(d.db, d.clock, store, notifier);
+  const storage = d.storage ?? new LocalStorage(d.cfg.secret);
+  const debates = new Debates(d.db, d.clock, store, notifier, storage);
+  store.onApplied(async (serverId, _seq, notices, state) => {
+    for (const n of notices) if (n.kind === "contest_started") await debates.onContestStarted(serverId, state, String(n.data.contestId));
+  });
   // A land running out of prompts after a draw → tell the admins.
   store.onApplied(async (serverId, _seq, notices, state) => {
     for (const n of notices) if (n.kind === "contest_started") await bank.checkAfterDraw(serverId, state, String(n.data.landId));
@@ -115,7 +122,6 @@ export function buildServices(d: AppDeps): Services {
     if (kind === "gift_deadline") await warWords.reveal(serverId, Number(key.split(":")[1]));
   });
   const seasons = new SeasonAdmin(d.db, d.clock, store, notifier, bank);
-  const storage = d.storage ?? new LocalStorage(d.cfg.secret);
   const ai = d.ai ?? new FakeAiScorer();
   const aiDaily = d.aiDaily ?? new FakeAiDaily();
   const play = new SeasonPlay(d.db, d.clock, store);
@@ -127,14 +133,15 @@ export function buildServices(d: AppDeps): Services {
     dataRights: new DataRights(d.db, d.clock, storage, notifier),
     scoring: new Scoring(d.db, d.clock, store, ai, notifier, storage),
     storage,
-    works: new Works(d.db, d.clock, d.cfg, store, storage),
+    works: new Works(d.db, d.clock, d.cfg, store, storage, debates),
+    debates,
     store,
     scheduler,
     seasons,
     control: new SeasonControl(d.db, d.clock, store, scheduler, seasons),
     play,
     reports: new Reports(d.db, d.clock, store, notifier),
-    reminders: new Reminders(d.db, d.clock, store, notifier, warWords),
+    reminders: new Reminders(d.db, d.clock, store, notifier, warWords, debates),
     warWords,
     bank,
     seasonNotices,
@@ -168,7 +175,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   adminRoutes(app, d.cfg, services.admin, services.sessions, services.adminAuth);
   messageRoutes(app, services.notifier, services.familyAuth, services.adminAuth);
   seasonAdminRoutes(app, services.seasons, services.adminAuth);
-  playRoutes(app, services.play, services.reports, services.supply, services.warWords, services.familyAuth);
+  playRoutes(app, services.play, services.reports, services.supply, services.warWords, services.debates, services.familyAuth);
   seasonControlRoutes(app, services.control, services.adminAuth);
   workRoutes(app, services.works, services.play, services.scoring, services.familyAuth);
   reviewRoutes(app, services.scoring, services.admin, services.adminAuth);

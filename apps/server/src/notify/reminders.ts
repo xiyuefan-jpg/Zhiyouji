@@ -22,6 +22,7 @@ import type { Notifier } from "./notifier.js";
 import { ROUNDS, type RoundName } from "../season/play.js";
 import { teamSlots } from "../season/works.js";
 import type { WarWords } from "../season/warWords.js";
+import type { Debates } from "../season/debates.js";
 
 const HOUR = 3_600_000;
 export const SUBMIT_REMINDER_HOURS = 3;
@@ -40,6 +41,7 @@ export class Reminders {
     private readonly store: SeasonStore,
     private readonly notifier: Notifier,
     private readonly warWords?: WarWords,
+    private readonly debates?: Debates,
   ) {}
 
   private leaders(st: SeasonState, teamId: string): string[] {
@@ -110,8 +112,9 @@ export class Reminders {
   /** 本组的作品还没交: 6 hours before (with SMS) and 2 hours before. */
   private async workReminders(serverId: string, st: SeasonState, now: number): Promise<number> {
     let sent = 0;
+    const debateDeadlines = this.debates ? await this.debates.openingDeadlines(serverId) : new Map();
     for (const teamId of st.teamOrder) {
-      const due = teamSlots(st, teamId, now).filter((s) => s.open && s.deadline - now <= 6 * HOUR);
+      const due = teamSlots(st, teamId, now, debateDeadlines).filter((s) => s.open && s.deadline - now <= 6 * HOUR);
       if (due.length === 0) continue;
       const handed = await this.db
         .select({ slot: works.slot })

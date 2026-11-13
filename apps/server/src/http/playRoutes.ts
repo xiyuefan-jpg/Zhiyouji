@@ -17,6 +17,7 @@ import {
   offerRoleRequest,
   roundParam,
   roundSubmission,
+  sideRequest,
   supplyEntryRequest,
   useItemRequest,
 } from "@zhiyouji/shared";
@@ -24,13 +25,14 @@ import type { SeasonPlay } from "../season/play.js";
 import type { Reports } from "../season/reports.js";
 import type { Supply } from "../season/supply.js";
 import type { WarWords } from "../season/warWords.js";
+import type { Debates } from "../season/debates.js";
 import type { FamilyAuth } from "./familyRoutes.js";
 
 const idParam = z.object({ id: z.string().min(1).max(40) });
 
 const beforeQuery = z.object({ before: z.coerce.date().optional() });
 
-export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Reports, supply: Supply, warWords: WarWords, auth: FamilyAuth): void {
+export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Reports, supply: Supply, warWords: WarWords, debates: Debates, auth: FamilyAuth): void {
   const ctx = async (req: FastifyRequest) => play.ctx((await auth.child(req)).child.id);
 
   app.get("/v1/season/me", async (req) => play.me((await auth.child(req)).child.id));
@@ -93,4 +95,8 @@ export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Repo
   const weekParam = z.object({ week: z.coerce.number().int().min(1).max(5) });
   app.get("/v1/season/wars/:week", async (req) => warWords.view(await ctx(req), weekParam.parse(req.params).week));
   app.post("/v1/season/wars/:week/card", async (req) => warWords.choose(await ctx(req), weekParam.parse(req.params).week, chooseCardRequest.parse(req.body).card));
+
+  // 异步辩论 (§10.4)
+  app.get("/v1/season/contests/:id/debate", async (req) => debates.view(await ctx(req), idParam.parse(req.params).id));
+  app.post("/v1/season/contests/:id/side", async (req) => debates.chooseSide(await ctx(req), idParam.parse(req.params).id, sideRequest.parse(req.body).side));
 }

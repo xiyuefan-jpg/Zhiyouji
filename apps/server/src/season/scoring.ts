@@ -51,8 +51,12 @@ type RoundRow = typeof scoringRounds.$inferSelect;
 
 /** Slots a scoring round covers. */
 function slotsOf(key: string): string[] {
-  return key === "battle" ? ["line", "main:a", "main:b"] : [key];
+  if (key === "battle") return ["line", "main:a", "main:b"];
+  // Debate lands: the opening (立论) and the rebuttal (驳论) are scored together.
+  return key.startsWith("contest:") ? [key, `${key}:open`] : [key];
 }
+
+const baseSlot = (slot: string) => slot.replace(/:open$/, "");
 
 export class Scoring {
   constructor(
@@ -95,13 +99,15 @@ export class Scoring {
       .where(and(eq(works.serverId, serverId), inArray(works.slot, slotsOf(key))))
       .orderBy(asc(works.submittedAt), asc(works.version));
     const last = new Map<string, WorkRow>();
-    for (const r of rows) last.set(r.slot.startsWith("main:") ? r.slot : `${r.slot}|${r.teamId}`, r);
+    // Openings first, so a team's rebuttal (when there is one) is the work that counts.
+    const ordered = [...rows.filter((r) => r.slot.endsWith(":open")), ...rows.filter((r) => !r.slot.endsWith(":open"))];
+    for (const r of ordered) last.set(r.slot.startsWith("main:") ? r.slot : `${baseSlot(r.slot)}|${r.teamId}`, r);
     return [...last.values()];
   }
 
   private async rubricOf(serverId: string, st: SeasonState, w: WorkRow): Promise<RubricId> {
     if (w.kind !== "contest") return rubricFor(w.kind, null);
-    const landId = st.contests[w.slot.slice("contest:".length)]?.landId;
+    const landId = st.contests[baseSlot(w.slot).slice("contest:".length)]?.landId;
     const [land] = landId ? await this.db.select().from(lands).where(and(eq(lands.serverId, serverId), eq(lands.code, landId))) : [];
     return rubricFor("contest", land?.name ?? null);
   }
@@ -200,7 +206,7 @@ export class Scoring {
   }
 
   private async roundOfWork(w: WorkRow): Promise<RoundRow | null> {
-    const key = w.slot === "line" || w.slot.startsWith("main:") ? "battle" : w.slot;
+    const key = w.slot === "line" || w.slot.startsWith("main:") ? "battle" : baseSlot(w.slot);
     const [r] = await this.db.select().from(scoringRounds).where(and(eq(scoringRounds.serverId, w.serverId), eq(scoringRounds.key, key)));
     return r ?? null;
   }
@@ -246,7 +252,27 @@ export class Scoring {
     const fs = ids.length ? await this.db.select().from(files).where(inArray(files.id, ids)) : [];
     const ai = await this.officialAi(w.id);
     const now = this.now();
+    // Debate lands: the reviewer sees the team's opening next to its rebuttal.
+    let opening = null;
+    if (w.kind === "contest" && !w.slot.endsWith(":open")) {
+      const [o] = await this.db
+        .select()
+        .from(works)
+        .where(and(eq(works.serverId, w.serverId), eq(works.teamId, w.teamId), eq(works.slot, `${w.slot}:open`)))
+        .orderBy(desc(works.version))
+        .limit(1);
+      if (o) {
+        const oids = (o.fileIds as string[]) ?? [];
+        const ofs = oids.length ? await this.db.select().from(files).where(inArray(files.id, oids)) : [];
+        opening = {
+          text: o.text,
+          mediaKind: o.mediaKind,
+          files: await Promise.all(ofs.map(async (f) => ({ id: f.id, kind: f.kind, contentType: f.contentType, transcript: f.transcript, url: await this.storage.downloadUrl(f.storageKey, now) }))),
+        };
+      }
+    }
     return {
+      opening,
       assignmentId: a.id,
       status: a.status,
       second: a.second,
@@ -457,11 +483,11 @@ export class Scoring {
 
   /** After settlement: every team's score; the own team's dimensions and comments. */
   async results(serverId: string, teamId: string, slot: string) {
-    const key = slot === "line" || slot.startsWith("main:") ? "battle" : slot;
+    const key = slot === "line" || slot.startsWith("main:") ? "battle" : baseSlot(slot);
     const [round] = await this.db.select().from(scoringRounds).where(and(eq(scoringRounds.serverId, serverId), eq(scoringRounds.key, key)));
     if (!round || round.status !== "settled") return { settled: false as const };
     const st = await this.store.state(serverId);
-    const ws = (await this.countingWorks(serverId, key)).filter((w) => w.slot === slot);
+    const ws = (await this.countingWorks(serverId, key)).filter((w) => baseSlot(w.slot) === baseSlot(slot));
     const settled = await this.settledOf(ws.map((w) => w.id));
     const mine = ws.find((w) => w.teamId === teamId);
     let detail = null;
