@@ -123,4 +123,30 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
     expect((await t.call("POST", `/v1/admin/works/${w.id}/rule`, { score: 60, note: "取中" }, boss2)).json().error).toBe("already_settled");
     await t.close();
   });
+
+  it("weekly war: the pair's works are reviewed, then the war settles (the side that did not submit loses)", async () => {
+    const t = await scoringSetup(0);
+    t.clock.set(bj("2027-02-11", 19, 1)); // D4 evening: W1 pairing
+    await t.services.scheduler.runDue(t.serverId);
+    const slots = (await t.a1api("GET", "/v1/season/works")).json().slots as { slot: string; open: boolean }[];
+    expect(slots.find((s) => s.slot === "war:1")!.open).toBe(true);
+    const w = (await t.a1api("POST", "/v1/season/works/war:1", { mediaKind: "text", text: "方案", members: [t.a1] })).json().work;
+    t.clock.set(bj("2027-02-14", 21, 1)); // D7 21:00
+    await t.services.scoring.runDue(t.serverId);
+    const [a] = (await t.db.select().from(reviewAssignments)).filter((x) => x.workId === w.id);
+    const reviewer = a!.reviewerId === t.r1.id ? t.r1 : t.r2;
+    const token = await reviewer.relogin();
+    const view = (await t.call("GET", `/v1/admin/reviews/${a!.id}`, undefined, token)).json();
+    expect(view.rubric.id).toBe("C");
+    const dims = { problem: 15, solution: 20, constraints: 15, novelty: 10, clarity: 5, ai: 5 };
+    expect((await t.call("POST", `/v1/admin/reviews/${a!.id}`, { dims, comment: "可行" }, token)).json().total).toBe(70);
+    // the other contest work is still open, but the war settles on its own
+    const st = await t.services.store.state(t.serverId);
+    expect(st.wars[1]!.settled).toBe(true);
+    expect(st.wars[1]!.results!.find((r) => r.teamId === t.myTeam)).toMatchObject({ outcome: "win" });
+    const res = (await t.a1api("GET", "/v1/season/works/war:1/result")).json();
+    expect(res.mine.score).toBe(70);
+    expect(res.scores).toHaveLength(1);
+    await t.close();
+  });
 });
