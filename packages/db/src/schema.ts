@@ -984,3 +984,24 @@ export const envoys = pgTable(
   },
   (t) => [uniqueIndex("envoys_child").on(t.serverId, t.childId)],
 );
+
+/** 注册问卷 answers (part 4 §2; content library §10): every completion is kept, the latest counts. */
+export const surveyAnswers = pgTable(
+  "survey_answers",
+  {
+    id: id(),
+    childId: uuid("child_id").notNull().references(() => children.id),
+    version: text("version").notNull(),
+    answers: jsonb("answers").notNull(),
+    /** 好奇分 per subject. */
+    curiosity: jsonb("curiosity").notNull(),
+    /** fighter | strategist | healer | builder */
+    style: text("style").notNull(),
+    /** The 30-second challenge: the growth baseline (voice file or text). */
+    challengeKind: text("challenge_kind"),
+    challengeText: text("challenge_text"),
+    challengeFileId: uuid("challenge_file_id"),
+    completedAt: ts("completed_at").notNull(),
+  },
+  (t) => [index("survey_answers_child").on(t.childId, t.completedAt)],
+);

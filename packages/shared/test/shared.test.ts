@@ -29,4 +29,13 @@ describe("shared", () => {
     expect(formatBeijing(Date.UTC(2027, 1, 9, 13, 0))).toBe("2月9日 21:00");
     expect(formatBeijing(Date.UTC(2027, 1, 9, 16, 5))).toBe("2月10日 00:05");
   });
+
+  it("survey curiosity scores (content library 10.3)", async () => {
+    const { curiosityScores } = await import("../src/index.js");
+    const rounds = Array.from({ length: 8 }, (_, i) => [`q${2 * i + 1}`, `q${2 * i + 2}`, `q${2 * i + 1}`] as [string, string, string]);
+    const s = curiosityScores({ rounds, final: "q1" });
+    expect(s["物理与天文"]).toBe(4);
+    expect(s["生命科学"]).toBe(2);
+    expect(s["化学与材料"]).toBeUndefined();
+  });
 });

@@ -42,6 +42,8 @@ import { bankRoutes } from "./bankRoutes.js";
 import { Debates } from "../season/debates.js";
 import { Operations } from "../season/operations.js";
 import { opsRoutes } from "./opsRoutes.js";
+import { Survey } from "../accounts/survey.js";
+import { surveySubmit } from "@zhiyouji/shared";
 import { DailyTasks } from "../daily/daily.js";
 import { dailyRoutes } from "./dailyRoutes.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
@@ -96,6 +98,7 @@ export interface Services {
   bank: QuestionBank;
   debates: Debates;
   ops: Operations;
+  survey: Survey;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -125,7 +128,8 @@ export function buildServices(d: AppDeps): Services {
     if (kind === "war_pairing") await warWords.onPaired(serverId, Number(key.split(":")[1]));
     if (kind === "gift_deadline") await warWords.reveal(serverId, Number(key.split(":")[1]));
   });
-  const seasons = new SeasonAdmin(d.db, d.clock, store, notifier, bank);
+  const survey = new Survey(d.db, d.clock);
+  const seasons = new SeasonAdmin(d.db, d.clock, store, notifier, bank, survey);
   const ai = d.ai ?? new FakeAiScorer();
   const aiDaily = d.aiDaily ?? new FakeAiDaily();
   const play = new SeasonPlay(d.db, d.clock, store);
@@ -139,6 +143,7 @@ export function buildServices(d: AppDeps): Services {
     storage,
     works: new Works(d.db, d.clock, d.cfg, store, storage, debates, ops),
     ops,
+    survey,
     debates,
     store,
     scheduler,
@@ -187,6 +192,8 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   dataRoutes(app, d.db, services.dataRights, services.familyAuth, services.adminAuth);
   bankRoutes(app, services.bank, services.adminAuth);
   opsRoutes(app, services.ops, services.play, services.familyAuth, services.adminAuth);
+  app.get("/v1/survey", async (req) => services.survey.latest((await services.familyAuth.child(req)).child.id));
+  app.post("/v1/survey", async (req) => services.survey.submit((await services.familyAuth.child(req)).child, surveySubmit.parse(req.body)));
   dailyRoutes(app, services.daily, services.admin, services.familyAuth, services.adminAuth);
   devStorageRoutes(app, services.storage, d.clock, Math.max(...Object.values(d.cfg.uploads.maxBytes)));
   return { app, services };

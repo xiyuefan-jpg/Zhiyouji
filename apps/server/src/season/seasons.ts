@@ -18,6 +18,7 @@ import { fail } from "../http/errors.js";
 import type { SeasonStore } from "../seasonStore.js";
 import type { Notifier } from "../notify/notifier.js";
 import type { QuestionBank } from "../content/questionBank.js";
+import type { Survey } from "../accounts/survey.js";
 
 export type SeasonRow = typeof seasons.$inferSelect;
 
@@ -54,6 +55,7 @@ export class SeasonAdmin {
     private readonly store: SeasonStore,
     private readonly notifier?: Notifier,
     private readonly bank?: QuestionBank,
+    private readonly survey?: Survey,
   ) {}
 
   private async log(actor: string, action: string, object: string, before: unknown, after: unknown, reason?: string): Promise<void> {
@@ -290,8 +292,9 @@ export class SeasonAdmin {
       .from(seasonPlayers)
       .innerJoin(children, eq(seasonPlayers.childId, children.id))
       .where(and(eq(seasonPlayers.seasonId, seasonId), eq(seasonPlayers.status, "enrolled")));
-    // Play style comes from the registration survey (content library 10.2 Q6), which is not stored yet.
-    return rows.map((r) => ({ childId: r.child.id, familyId: r.child.familyId, grade: r.child.grade, style: null, nickname: r.child.nickname }));
+    // Play style from the registration survey (content library 10.2 Q6); children who skipped it have none.
+    const styles = this.survey ? await this.survey.styles(rows.map((r) => r.child.id)) : new Map<string, string>();
+    return rows.map((r) => ({ childId: r.child.id, familyId: r.child.familyId, grade: r.child.grade, style: (styles.get(r.child.id) as Player["style"]) ?? null, nickname: r.child.nickname }));
   }
 
   /** 生成分组: snake by grade, varied play styles, siblings apart. Moves the season to 已分组 (not yet locked). */
