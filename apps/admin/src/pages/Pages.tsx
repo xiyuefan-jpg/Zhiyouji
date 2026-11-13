@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router";
-import { Alert, Button, Card, DatePicker, Empty, Form, Input, List, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, DatePicker, Empty, Form, Input, List, Modal, Popconfirm, Select, Space, Statistic, Table, Tag, Typography, message } from "antd";
 import type { MessageView } from "@zhiyouji/shared";
-import { api, type AdminUserRow, type ViewLogEntry } from "../api";
+import { api, request, type AdminUserRow, type ViewLogEntry } from "../api";
 import { useAdmin } from "../auth";
 import { Time } from "../time";
 import { NAV } from "./Layout";
@@ -37,34 +37,79 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): { data: T | nul
 
 // ---- 看板 (part 7 §1) ------------------------------------------------------------
 
+interface DashboardData {
+  today: { day: string; dailyTasks: { passed: number; failed: number; error: number; reviewing: number }; worksSubmitted: number; newChildren: number; activeChildren: number };
+  attention: { reviewsDueSoon: number; reviewsPending: number; dailyExceptions: number; failedPlannedEvents: { serverId: string; key: string }[]; lowPromptLands: number };
+  servers: { id: string; name: string; season: string; status: string; day: number; paused: boolean; activeContests: number; nextPublication: string; top: { rank: number; name: string; points: number }[] }[];
+  ai: { workScores: number; dailyReviews: number };
+}
+
 export function DashboardPage() {
   const me = useAdmin();
   const nav = useNavigate();
   const { data } = useLoad(() => api.messages());
+  const dash = useLoad(() => request<DashboardData>("GET", "/v1/admin/dashboard"));
   const open = (data?.messages ?? []).filter((m) => !m.read);
+  const d = dash.data;
+  const todo = d
+    ? [
+        d.attention.reviewsDueSoon ? { text: `${d.attention.reviewsDueSoon} 件复核快到时限`, to: "/review" } : null,
+        d.attention.reviewsPending ? { text: `${d.attention.reviewsPending} 件作品待复核`, to: "/review" } : null,
+        d.attention.dailyExceptions ? { text: `${d.attention.dailyExceptions} 条每日任务卡住了`, to: "/review" } : null,
+        d.attention.failedPlannedEvents.length ? { text: `${d.attention.failedPlannedEvents.length} 个计划事件失败`, to: `/monitor/${d.attention.failedPlannedEvents[0]!.serverId}` } : null,
+        d.attention.lowPromptLands ? { text: `${d.attention.lowPromptLands} 块地题库不足`, to: "/content" } : null,
+      ].filter((x): x is { text: string; to: string } => x !== null)
+    : [];
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={3} style={{ margin: 0 }}>
         看板
       </Typography.Title>
       <Card title="需要处理">
-        {open.length === 0 ? (
+        {todo.length === 0 && open.length === 0 ? (
           <Typography.Text type="secondary">现在没有要处理的事。计划事件失败、复核快到时限、内容安全不通过这些情况会出现在这里。</Typography.Text>
         ) : (
           <List
-            dataSource={open}
+            dataSource={[...todo.map((t) => ({ key: t.text, title: t.text, body: "", to: t.to })), ...open.map((m) => ({ key: m.id, title: m.title, body: m.body, to: "/notifications" }))]}
             renderItem={(m) => (
-              <List.Item actions={[<Button key="see" type="link" onClick={() => nav("/notifications")}>查看</Button>]}>
+              <List.Item actions={[<Button key="see" type="link" onClick={() => nav(m.to)}>查看</Button>]}>
                 <List.Item.Meta title={<Typography.Text type="danger">{m.title}</Typography.Text>} description={m.body} />
               </List.Item>
             )}
           />
         )}
       </Card>
-      {me.role === "admin" && (
-        <Card title="今天、赛季概况、AI">
-          <Typography.Text type="secondary">每日任务数、作品提交数、活跃人数、赛季第几天、各服排名、AI 调用量和费用，等服务器的统计接口做好后显示在这里。</Typography.Text>
-        </Card>
+      {d && me.role === "admin" && (
+        <>
+          <Card title={`今天（${d.today.day}）`}>
+            <Space size={32} wrap>
+              <Statistic title="每日任务通过" value={d.today.dailyTasks.passed} />
+              <Statistic title="不通过" value={d.today.dailyTasks.failed} />
+              <Statistic title="审核中 / 卡住" value={`${d.today.dailyTasks.reviewing} / ${d.today.dailyTasks.error}`} />
+              <Statistic title="交了作品" value={d.today.worksSubmitted} />
+              <Statistic title="活跃孩子" value={d.today.activeChildren} />
+              <Statistic title="新孩子" value={d.today.newChildren} />
+              <Statistic title="AI 初评 / 审核" value={`${d.ai.workScores} / ${d.ai.dailyReviews}`} />
+            </Space>
+          </Card>
+          <Card title="各服">
+            <Table
+              rowKey="id"
+              size="small"
+              pagination={false}
+              dataSource={d.servers}
+              locale={{ emptyText: "没有进行中的服" }}
+              onRow={(s) => ({ onClick: () => nav(`/monitor/${s.id}`), style: { cursor: "pointer" } })}
+              columns={[
+                { title: "赛季 · 服", render: (_, s) => `${s.season} · ${s.name}` },
+                { title: "第几天", render: (_, s) => `第 ${s.day} 天${s.paused ? "（暂停）" : ""}` },
+                { title: "进行中的争夺", dataIndex: "activeContests" },
+                { title: "下一次公布", render: (_, s) => <Time iso={s.nextPublication} /> },
+                { title: "前三名", render: (_, s) => s.top.map((t) => `${t.rank}. ${t.name} ${(t.points / 100).toFixed(1)}`).join("  ") },
+              ]}
+            />
+          </Card>
+        </>
       )}
     </Space>
   );

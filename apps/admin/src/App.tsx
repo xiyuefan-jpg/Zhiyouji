@@ -9,8 +9,9 @@ import { ComingPage, DashboardPage, NotificationsPage, UsersPage, ViewLogPage } 
 import { ReviewersPage, ReviewPage, ReviewWorkPage } from "./pages/ReviewPages";
 import { MonitorPage } from "./pages/MonitorPages";
 import { PlayersPage, SeasonDetailPage, SeasonsPage } from "./pages/SeasonSetupPages";
+import { ContentPage, FinalPage, OpsPage } from "./pages/ContentOpsPages";
 
-const BUILT = new Set(["/", "/users", "/view-log", "/review", "/reviewers", "/monitor", "/season", "/players"]);
+const BUILT = new Set(["/", "/users", "/view-log", "/review", "/reviewers", "/monitor", "/season", "/players", "/content", "/ops", "/final"]);
 
 export function App() {
   return (
@@ -48,6 +49,12 @@ function Console() {
         <Route path="reviews/:id" element={<ReviewWorkPage />} />
         {me.role === "admin" && <Route path="reviewers" element={<ReviewersPage />} />}
         {me.role === "admin" && <Route path="monitor" element={<MonitorPage />} />}
+        <Route path="content" element={<ContentPage />} />
+        <Route path="question-bank" element={<ContentPage />} />
+        {me.role === "admin" && <Route path="ops" element={<OpsPage />} />}
+        <Route path="safety" element={<OpsPage />} />
+        {me.role === "admin" && <Route path="final" element={<FinalPage />} />}
+        {me.role === "admin" && <Route path="final/:serverId" element={<FinalPage />} />}
         {me.role === "admin" && <Route path="season" element={<SeasonsPage />} />}
         {me.role === "admin" && <Route path="season/:id" element={<SeasonDetailPage />} />}
         {me.role === "admin" && <Route path="players" element={<PlayersPage />} />}
