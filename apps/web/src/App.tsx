@@ -5,7 +5,7 @@
  */
 
 import { useState } from "react";
-import { Link, Navigate, Outlet, Route, Routes, useParams } from "react-router";
+import { Link, Navigate, Outlet, Route, Routes } from "react-router";
 import { Button } from "antd-mobile";
 import { Empty } from "./components/ui";
 import { SessionProvider, useSession } from "./session";
@@ -21,6 +21,7 @@ import { DailyHome, DailyNew, DailyResult } from "./pages/DailyPages";
 import { WorkSlot, WorksList } from "./pages/season/WorksPages";
 import { ItemsPage } from "./pages/season/ItemsPage";
 import { ContestPage, RoundPage } from "./pages/season/TeamPages";
+import { BigBattlePage, ShopPage, SupplyPage, WarsPage, WarWeekPage } from "./pages/season/BattlePages";
 
 export function App() {
   const [privacyOk, setPrivacyOk] = useState(privacyAccepted);
@@ -103,6 +104,11 @@ function Gate() {
       <Route path="season/items" element={<ItemsPage />} />
       <Route path="season/contests/:id" element={<ContestPage />} />
       <Route path="season/rounds/:round" element={<RoundPage />} />
+      <Route path="season/wars" element={<WarsPage />} />
+      <Route path="season/wars/:week" element={<WarWeekPage />} />
+      <Route path="season/supply" element={<SupplyPage />} />
+      <Route path="season/shop" element={<ShopPage />} />
+      <Route path="season/big-battle" element={<BigBattlePage />} />
       <Route path="season/reports/:id" element={<Navigate to="/report?tab=reports" replace />} />
       <Route path="choose" element={<ChooseChild />} />
       <Route path="children/new" element={<ChildForm />} />

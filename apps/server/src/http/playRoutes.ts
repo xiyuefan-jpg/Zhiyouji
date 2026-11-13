@@ -26,16 +26,19 @@ import type { Reports } from "../season/reports.js";
 import type { Supply } from "../season/supply.js";
 import type { WarWords } from "../season/warWords.js";
 import type { Debates } from "../season/debates.js";
+import type { Home } from "../season/todo.js";
 import type { FamilyAuth } from "./familyRoutes.js";
 
 const idParam = z.object({ id: z.string().min(1).max(40) });
 
 const beforeQuery = z.object({ before: z.coerce.date().optional() });
 
-export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Reports, supply: Supply, warWords: WarWords, debates: Debates, auth: FamilyAuth): void {
+export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Reports, supply: Supply, warWords: WarWords, debates: Debates, auth: FamilyAuth, home: Home): void {
   const ctx = async (req: FastifyRequest) => play.ctx((await auth.child(req)).child.id);
 
   app.get("/v1/season/me", async (req) => play.me((await auth.child(req)).child.id));
+  // 首页 (part 5 §4): 战况, 今天要做的事 (incl. 组长待办 E2), next publication, calendar strip
+  app.get("/v1/home", async (req) => home.home((await auth.child(req)).child.id));
   app.get("/v1/season/map", async (req) => play.map(await ctx(req)));
   app.get("/v1/season/ranking", async (req) => play.ranking(await ctx(req)));
   app.get("/v1/season/team", async (req) => play.team(await ctx(req)));

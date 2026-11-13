@@ -33,7 +33,7 @@ interface SupplyWindow {
 
 export function supplyTask(supplyId: string) {
   const preset = SUPPLY_PRESETS.find((p) => p.id === SUPPLY_SCHEDULE[supplyId]) ?? SUPPLY_PRESETS[0];
-  return { presetId: preset.id, title: preset.title, perPerson: preset.perPerson, summary: preset.summary };
+  return { presetId: preset.id, title: preset.title, perPerson: preset.perPerson, summaryTask: preset.summary };
 }
 
 export class Supply {
@@ -199,7 +199,7 @@ export class Supply {
       let comment: string | null = null;
       if (members.length > 0 || summary) {
         try {
-          const r = await this.ai.scoreSupply({ task, entries: members.map((e) => e.text), summary: summary?.text ?? null });
+          const r = await this.ai.scoreSupply({ task: { title: task.title, perPerson: task.perPerson, summary: task.summaryTask }, entries: members.map((e) => e.text), summary: summary?.text ?? null });
           quality = Math.max(0, Math.min(40, Math.round(r.quality)));
           summaryScore = summary ? Math.max(0, Math.min(20, Math.round(r.summary))) : 0;
           model = r.model;

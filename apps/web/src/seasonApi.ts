@@ -20,7 +20,7 @@ export type SeasonMe =
   | { status: "waiting"; season: { id: string; name: string; statusLabel: string; opening: string } }
   | {
       status: "playing";
-      season: { id: string; name: string; status: string; statusLabel: string; opening: string; day: number; paused: boolean };
+      season: { id: string; name: string; status: string; statusLabel: string; opening: string; day: number; paused: boolean; days?: { shopOpen: number; shopClose: number; bigBattle: number; end: number } };
       server: { id: string; name: string };
       team: { id: string; name: string; hasWechatQr: boolean };
       role: "leader" | "deputy" | "member";

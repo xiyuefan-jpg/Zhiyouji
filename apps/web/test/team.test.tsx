@@ -106,3 +106,21 @@ describe("student website: 法宝囊, 争夺详情, 移交, 偏好 (part 5 E5, E
     await be.stop();
   });
 });
+
+describe("student website: 首页 (part 5 §4)", () => {
+  it("a season player sees 战况, the quick entries and today's list with 组长待办", async () => {
+    const be = await seasonPlayer();
+    const ctx = await be.services.play.ctx(be.childId);
+    await be.services.play.claimRole(ctx, "leader");
+    renderApp("/");
+    expect(await screen.findByLabelText("战况")).toBeTruthy();
+    expect(screen.getByText("还没有地")).toBeTruthy();
+    expect(screen.getByText("每日任务（今天已计 0/2）")).toBeTruthy();
+    expect(screen.getByText("盲拍：出价和边缘地顺序")).toBeTruthy();
+    expect(screen.getAllByText("（组长待办）").length).toBeGreaterThan(0);
+    expect(screen.getByText("法宝囊")).toBeTruthy();
+    expect(screen.queryByText("商店")).toBeNull();
+    expect(screen.getByText(/赛季日历 · 第 0 天/)).toBeTruthy();
+    await be.stop();
+  });
+});

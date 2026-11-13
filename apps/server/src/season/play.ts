@@ -26,6 +26,15 @@ import {
   isItemEnabled,
   itemDef,
   taixuCopyTarget,
+  shopOpensAt,
+  linesDeadline,
+  linesPublishedAt,
+  battleDeadline,
+  shopClosesAt,
+  rareRoundAt,
+  epicAuctionsStartAt,
+  shopPrice,
+  minimumBid,
   landZeroed,
   pointsOf,
   quoteAttack,
@@ -133,7 +142,7 @@ export class SeasonPlay {
     return new Map(rows.map((r) => [r.id, { nickname: r.nickname, avatar: r.avatar, lastActiveAt: r.lastActiveAt, createdAt: r.createdAt }]));
   }
 
-  private async landNames(serverId: string): Promise<Map<string, string>> {
+  async landNames(serverId: string): Promise<Map<string, string>> {
     const rows = await this.db.select().from(landRows).where(eq(landRows.serverId, serverId));
     return new Map(rows.map((r) => [r.code, r.name]));
   }
@@ -163,7 +172,13 @@ export class SeasonPlay {
     const [qr] = await this.db.select({ qrImage: teams.qrImage }).from(teams).where(eq(teams.id, ctx.teamId));
     return {
       status: "playing" as const,
-      season: { ...seasonView(ctx.season), day: seasonDayOf(s.opening, this.now()), paused: s.paused },
+      season: {
+        ...seasonView(ctx.season),
+        day: seasonDayOf(s.opening, this.now()),
+        paused: s.paused,
+        // Season days of the shop and the big battle (the website shows those entries only then).
+        days: { shopOpen: s.params.time.shopOpenDay, shopClose: s.params.time.shopCloseDay, bigBattle: s.params.time.bigBattleStartDay, end: s.params.time.seasonDays },
+      },
       server: { id: ctx.serverId, name: ctx.serverName },
       team: { id: t.id, name: t.name, hasWechatQr: !!qr?.qrImage },
       role,
@@ -481,7 +496,10 @@ export class SeasonPlay {
       for (const x of d.results ?? []) outcomes.push({ teamId: x.teamId, team: name(x.teamId), outcome: x.outcome as "hit" });
     }
     const copied = (used?.data as { copied?: string | null } | undefined)?.copied ?? null;
-    return { ...(await this.team(ctx)), used: { itemId: b.itemId, copied: copied ? { id: copied, name: itemDef(copied).name } : null, outcomes } };
+    // 侦察令: who the other camp has put on our line right now (only this team learns it).
+    const ud = (used?.data ?? {}) as { line?: number; opponent?: string | null };
+    const scouted = b.itemId === "zhencha" && typeof ud.line === "number" ? { line: ud.line, opponent: ud.opponent ? { id: ud.opponent, name: name(ud.opponent) } : null } : null;
+    return { ...(await this.team(ctx)), used: { itemId: b.itemId, copied: copied ? { id: copied, name: itemDef(copied).name } : null, outcomes, scouted } };
   }
 
   // center land after D8 (D2), shop (E10), epic auctions (E11)
@@ -506,12 +524,35 @@ export class SeasonPlay {
 
   async shop(ctx: PlayCtx) {
     const s = await this.state(ctx);
+    const p = s.params;
+    const now = this.now();
     const name = (id: string | null) => (id ? (s.teams[id]?.name ?? "") : null);
+    const opensAt = shopOpensAt(s);
+    const closesAt = shopClosesAt(s);
+    const bought = s.shop.bought[ctx.teamId] ?? [];
     return {
-      bought: s.shop.bought[ctx.teamId] ?? [],
+      opensAt,
+      closesAt,
+      open: now >= opensAt && now <= closesAt,
+      rareRoundAt: rareRoundAt(s),
+      rareRoundDone: s.done.includes("rare_round"),
+      epicStartAt: epicAuctionsStartAt(s),
+      maxItems: p.items.shopMaxItems,
+      maxEpic: p.items.shopMaxEpic,
+      antiSnipeMinutes: p.items.antiSnipeMinutes,
+      bought,
       rareStock: s.shop.rareStock,
       spendableGrain: spendableGrain(s, ctx.teamId),
       frozenGrain: frozenGrain(s, ctx.teamId),
+      // Common items (unlimited, one per kind) and rare items (stock per kind) on sale (§13.2).
+      goods: ITEMS.filter((i) => i.tier !== "epic" && !i.bigBattle && isItemEnabled(i.id, p)).map((i) => ({
+        id: i.id,
+        name: i.name,
+        tier: i.tier,
+        price: shopPrice(i.id, p),
+        stock: i.tier === "rare" ? (s.shop.rareStock[i.id] ?? 0) : null,
+        mine: bought.includes(i.id),
+      })),
       auctions: s.shop.auctions.map((a) => {
         const lead = a.bids.length ? a.bids[a.bids.length - 1]! : null;
         return {
@@ -520,6 +561,7 @@ export class SeasonPlay {
           startAt: a.startAt,
           endAt: a.endAt,
           closed: a.closed,
+          minBid: minimumBid(a, p),
           leader: lead ? { teamId: lead.teamId, name: name(lead.teamId), amount: lead.amount, mine: lead.teamId === ctx.teamId } : null,
           winner: a.winner ? { teamId: a.winner, name: name(a.winner) } : null,
           bids: a.bids.map((x) => ({ team: name(x.teamId), amount: x.amount, at: x.at, mine: x.teamId === ctx.teamId })),
@@ -592,15 +634,22 @@ export class SeasonPlay {
     const camp = campOf(bb, ctx.teamId);
     const name = (id: string) => s.teams[id]?.name ?? "";
     const now = this.now();
-    const published = bb.lockedAt !== null && bb.final !== null && now >= (bb.lockedAt ?? 0);
+    const publishAt = linesPublishedAt(s);
+    const published = bb.final !== null && now >= publishAt;
+    const sub = camp ? bb.submitted[camp] : null;
+    const by = sub?.by ? (await this.nicknames([sub.by])).get(sub.by)?.nickname ?? null : null;
     return {
       formed: true as const,
       myCamp: camp,
       camps: { a: bb.camps.a.map((id) => ({ id, name: name(id) })), b: bb.camps.b.map((id) => ({ id, name: name(id) })) },
       lineValues: bb.lineValues,
+      linesDeadline: linesDeadline(s),
+      publishAt,
+      battleDeadline: battleDeadline(s),
       // Own camp's latest board; the other camp's lines only once both are locked and published.
-      myLines: camp ? (bb.submitted[camp] ? { lines: bb.submitted[camp]!.lines, by: bb.submitted[camp]!.by, at: bb.submitted[camp]!.at } : null) : null,
+      myLines: sub ? { lines: sub.lines, by: sub.by, byName: by, at: sub.at } : null,
       final: published ? bb.final : null,
+      flags: bb.flags[ctx.teamId] ?? {},
       settled: bb.settled,
     };
   }

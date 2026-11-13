@@ -14,7 +14,7 @@ describe("军需任务 (part 3 §12; part 5 E9)", () => {
 
     t.clock.set(bj("2027-02-09", 19, 1)); // Tuesday evening: published
     let task = (await a1("GET", "/v1/season/supply")).json().tasks[0];
-    expect(task).toMatchObject({ supplyId: "1a", title: "好奇心接力", open: true, mine: null, summary: null });
+    expect(task).toMatchObject({ supplyId: "1a", title: "好奇心接力", summaryTask: "最值得继续探索的问题，以及理由", open: true, mine: null, summary: null });
     expect(task.deadline).toBe(bj("2027-02-10", 21).toISOString());
     const size = task.progress.members as number;
     await a1("POST", "/v1/season/supply/1a/entry", { text: "为什么天是蓝的？查了资料：瑞利散射。" });

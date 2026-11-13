@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bj } from "./helpers.js";
-import { playSetup } from "./seasonHelpers.js";
+import { contestSetup, playSetup } from "./seasonHelpers.js";
 
 describe("season play on the student website (part 5 D–E)", () => {
   it("before D0 evening the child waits; afterwards sees the season, the map and the team", async () => {
@@ -152,6 +152,35 @@ describe("season play on the student website (part 5 D–E)", () => {
     expect((await a1("GET", "/v1/season/items")).json().taixuCopies).not.toBeNull();
     await t.close();
   });
+
+  it("商店 (D15–D17): window, goods with prices and stock, buying a common item, rare waits for the D15 round, epic auctions with the minimum bid", async () => {
+    const t = await playSetup();
+    t.clock.set(bj("2027-02-07", 19, 1));
+    await t.services.scheduler.runDue(t.serverId);
+    const a1 = await t.as("13800000001", t.a1);
+    await a1("POST", "/v1/season/roles/claim", { role: "leader" });
+    expect((await a1("GET", "/v1/season/shop")).json()).toMatchObject({ open: false, rareRoundDone: false, maxItems: 3, maxEpic: 1, bought: [] });
+    t.clock.set(bj("2027-02-22", 10));
+    await t.services.scheduler.runDue(t.serverId);
+    const shop = (await a1("GET", "/v1/season/shop")).json();
+    expect(shop.open).toBe(true);
+    expect(shop.goods.find((g: { id: string }) => g.id === "huanhun")).toMatchObject({ tier: "common", price: 50, stock: null, mine: false });
+    expect(shop.goods.find((g: { id: string }) => g.id === "zijin")).toMatchObject({ tier: "rare", price: 80, stock: 2 });
+    expect(shop.goods.some((g: { id: string }) => g.id === "zhencha" || g.id === "bagua")).toBe(false);
+    expect((await a1("POST", "/v1/season/shop/buy", { itemId: "zijin" })).json().error).toBe("rare_round_pending");
+    const team = (await a1("GET", "/v1/season/team")).json();
+    if (team.spendableGrain >= 50) {
+      await a1("POST", "/v1/season/shop/buy", { itemId: "huanhun" });
+      expect((await a1("GET", "/v1/season/shop")).json().goods.find((g: { id: string }) => g.id === "huanhun").mine).toBe(true);
+    }
+    t.clock.set(bj("2027-02-22", 21, 1));
+    await t.services.scheduler.runDue(t.serverId);
+    const later = (await a1("GET", "/v1/season/shop")).json();
+    expect(later.rareRoundDone).toBe(true);
+    expect(later.auctions.length).toBeGreaterThan(0);
+    expect(later.auctions[0]).toMatchObject({ closed: false, minBid: 150, leader: null });
+    await t.close();
+  });
 });
 
 describe("notifications, reports and feeds (part 8 §1.2; part 5 F1, F2, E1)", () => {
@@ -246,6 +275,62 @@ describe("submission reminders (part 8 §1.2)", () => {
     const m = (await a2("GET", "/v1/messages")).json().messages.find((x: { type: string }) => x.type === "submit_due");
     expect(m.body).toBe("本组还没提交第 1 批选地（盲拍）的出价和偏好，2月8日 21:00 截止。");
     expect((await a1("GET", "/v1/messages")).json().messages.some((x: { type: string }) => x.type === "submit_due")).toBe(false);
+    await t.close();
+  });
+});
+
+describe("首页 (part 5 §4) and 组长待办 (E2)", () => {
+  it("leader: 战况 with the contest, today's list sorted by deadline, the calendar strip; the defender's team sees it as urgent", async () => {
+    const t = await contestSetup(); // D2 10:00: a1 leads and has attacked
+    const h = (await t.a1api("GET", "/v1/home")).json();
+    expect(h.status).toBe("playing");
+    expect(h.season.day).toBe(2);
+    expect(h.battle.contests).toHaveLength(1);
+    expect(h.battle.contests[0]).toMatchObject({ id: t.contestId, role: "attacker", urgent: false });
+    expect(h.battle.lands.map((l: { id: string }) => l.id)).toContain("E1");
+    const kinds = h.todo.map((x: { kind: string }) => x.kind);
+    expect(kinds).toContain("daily");
+    expect(kinds).toContain("work");
+    const daily = h.todo.find((x: { kind: string }) => x.kind === "daily");
+    expect(daily).toMatchObject({ title: "每日任务（今天已计 0/2）", done: false, deadline: +bj("2027-02-10", 0) });
+    const work = h.todo.find((x: { kind: string }) => x.kind === "work");
+    expect(work.link).toBe(`/season/works/${encodeURIComponent(`contest:${t.contestId}`)}`);
+    // undone first, then by deadline
+    const open = h.todo.filter((x: { done: boolean }) => !x.done).map((x: { deadline: number | null }) => x.deadline ?? Infinity);
+    expect([...open].sort((a, b) => a - b)).toEqual(open);
+    expect(h.counts.worksPending).toBe(1);
+    expect(h.upcoming.length).toBeGreaterThan(0);
+    expect(h.nextPublication).toBeGreaterThan(+t.clock.now());
+
+    // someone on the defending team: urgent, with the defence work in the list
+    const st = await t.services.store.state(t.serverId);
+    const defenderChild = st.teams[t.defender]!.members[0]!.childId;
+    const dh = await t.services.home.home(defenderChild);
+    expect(dh.status).toBe("playing");
+    const d = dh as Extract<typeof dh, { status: "playing" }>;
+    expect(d.battle.contests[0]).toMatchObject({ role: "defender", urgent: true });
+    expect(d.todo.some((x) => x.kind === "work" && x.title.includes("守方"))).toBe(true);
+    // b1 is a plain member of a1's team: no leader-only items
+    const b = await t.services.home.home(t.b1);
+    expect(b.todo.every((x) => !x.leaderOnly)).toBe(true);
+    await t.close();
+  });
+
+  it("leader at D0 evening: the blind auction is in 组长待办 until submitted; a child without a season only has the daily task", async () => {
+    const t = await playSetup();
+    t.clock.set(bj("2027-02-07", 19, 1));
+    await t.services.scheduler.runDue(t.serverId);
+    const a1 = await t.as("13800000001", t.a1);
+    await a1("POST", "/v1/season/roles/claim", { role: "leader" });
+    let h = (await a1("GET", "/v1/home")).json();
+    expect(h.todo.find((x: { kind: string }) => x.kind === "round")).toMatchObject({ title: "盲拍：出价和边缘地顺序", done: false, leaderOnly: true, link: "/season/rounds/blind_auction" });
+    await a1("POST", "/v1/season/rounds/blind_auction", { bid: 5, prefs: ["E1"] });
+    h = (await a1("GET", "/v1/home")).json();
+    expect(h.todo.find((x: { kind: string }) => x.kind === "round").done).toBe(true);
+    const free = await t.family("13800000009", [{ nickname: "小芳", grade: 3 }]);
+    const fh = await t.services.home.home(free.childIds[0]!);
+    expect(fh.status).toBe("none");
+    expect(fh.todo.map((x) => x.kind)).toEqual(["daily"]);
     await t.close();
   });
 });

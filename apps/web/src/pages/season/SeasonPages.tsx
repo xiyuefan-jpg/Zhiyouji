@@ -256,23 +256,13 @@ export function SeasonTeam() {
                 </div>
               ))}
             </div>
-            <div className="panel row" style={{ marginTop: 12 }}>
-              <Link to="/team/works" className="grow" style={{ color: "inherit" }}>
-                作品工坊
-              </Link>
-              <RightOutline />
-            </div>
-            <div className="panel row">
-              <Link to="/season/items" className="grow" style={{ color: "inherit" }}>
-                法宝囊
-              </Link>
-              <RightOutline />
-            </div>
-            <div className="panel row">
-              <Link to="/team/ledger" className="grow" style={{ color: "inherit" }}>
-                粮草和团队分明细
-              </Link>
-              <RightOutline />
+            <div style={{ marginTop: 12 }}>
+              {TEAM_LINKS.filter((l) => !l.show || !m.season.days || l.show(m.season.day, m.season.days)).map((l) => (
+                <Link key={l.to} to={l.to} className="panel row" style={{ textDecoration: "none", color: "inherit" }}>
+                  <span className="grow">{l.title}</span>
+                  <RightOutline />
+                </Link>
+              ))}
             </div>
             <h2 className="section-title">组内动态</h2>
             <FeedList lines={feed.data?.lines ?? null} empty="还没有动态" />
@@ -282,6 +272,18 @@ export function SeasonTeam() {
     </SeasonGate>
   );
 }
+
+/** Team page entries; the shop only around D15–D17 and the big battle from week 5 (part 5 §4). */
+type Days = { shopOpen: number; shopClose: number; bigBattle: number; end: number };
+const TEAM_LINKS: { to: string; title: string; show?: (day: number, d: Days) => boolean }[] = [
+  { to: "/team/works", title: "作品工坊" },
+  { to: "/season/items", title: "法宝囊" },
+  { to: "/season/wars", title: "周战争" },
+  { to: "/season/supply", title: "军需任务" },
+  { to: "/season/shop", title: "商店", show: (day, d) => day >= d.shopOpen - 1 && day <= d.shopClose },
+  { to: "/season/big-battle", title: "大团战", show: (day, d) => day >= d.bigBattle - 1 },
+  { to: "/team/ledger", title: "粮草和团队分明细" },
+];
 
 export function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (

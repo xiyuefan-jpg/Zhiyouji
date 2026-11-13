@@ -37,6 +37,7 @@ import { dataRoutes } from "./dataRoutes.js";
 import { FakeAiDaily, FakeAiSupply, type AiDailyReviewer, type AiSupplyScorer } from "../ai.js";
 import { Supply } from "../season/supply.js";
 import { WarWords } from "../season/warWords.js";
+import { Home } from "../season/todo.js";
 import { QuestionBank } from "../content/questionBank.js";
 import { bankRoutes } from "./bankRoutes.js";
 import { Debates } from "../season/debates.js";
@@ -116,6 +117,7 @@ export interface Services {
   showcase: Showcase;
   summaries: Summaries;
   gateway: AiGateway;
+  home: Home;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -153,18 +155,21 @@ export function buildServices(d: AppDeps): Services {
   const aiDaily = d.aiDaily ?? new FakeAiDaily();
   const play = new SeasonPlay(d.db, d.clock, store);
   const reports = new Reports(d.db, d.clock, store, notifier);
+  const works = new Works(d.db, d.clock, d.cfg, store, storage, debates, ops);
+  const supply = new Supply(d.db, d.clock, store, gateway.wrapSupply(d.aiSupply ?? new FakeAiSupply()), notifier);
   return {
+    home: new Home(d.db, d.clock, store, play, works, supply, warWords, reports),
     gateway,
     summaries: new Summaries(d.db, d.clock, gateway.wrapSummary(d.aiSummary ?? new FakeAiSummarizer()), notifier, store),
     showcase: new Showcase(d.db, d.clock, store, d.safety ?? new FakeContentSafety(), notifier, storage, play, reports),
-    supply: new Supply(d.db, d.clock, store, gateway.wrapSupply(d.aiSupply ?? new FakeAiSupply()), notifier),
+    supply,
     aiDaily,
     daily: new DailyTasks(d.db, d.clock, d.cfg, storage, gateway.wrapDaily(aiDaily), notifier, store, play),
     ai,
     dataRights: new DataRights(d.db, d.clock, storage, notifier),
     scoring: new Scoring(d.db, d.clock, store, gateway.wrapScorer(ai), notifier, storage),
     storage,
-    works: new Works(d.db, d.clock, d.cfg, store, storage, debates, ops),
+    works,
     ops,
     survey,
     dashboard: new Dashboard(d.db, d.clock, store),
@@ -209,7 +214,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   adminRoutes(app, d.cfg, services.admin, services.sessions, services.adminAuth);
   messageRoutes(app, services.notifier, services.familyAuth, services.adminAuth);
   seasonAdminRoutes(app, services.seasons, services.adminAuth);
-  playRoutes(app, services.play, services.reports, services.supply, services.warWords, services.debates, services.familyAuth);
+  playRoutes(app, services.play, services.reports, services.supply, services.warWords, services.debates, services.familyAuth, services.home);
   seasonControlRoutes(app, services.control, services.adminAuth);
   workRoutes(app, services.works, services.play, services.scoring, services.familyAuth);
   reviewRoutes(app, services.scoring, services.admin, services.adminAuth);

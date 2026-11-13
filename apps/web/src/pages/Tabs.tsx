@@ -6,11 +6,12 @@
 import { Link, useOutletContext, useSearchParams } from "react-router";
 import { Tabs } from "antd-mobile";
 import { RightOutline } from "antd-mobile-icons";
-import { Avatar, Empty, ReadAloud, Seal } from "../components/ui";
+import { Avatar, Empty, ReadAloud } from "../components/ui";
 import { greeting } from "../format";
 import { useChild } from "../session";
 import { MessageList } from "./Messages";
 import { BroadcastList, RankingList, ReportsList } from "./season/SeasonPages";
+import { HomeBody } from "./season/HomePage";
 import type { ShellContext } from "./Shell";
 
 export function Home() {
@@ -37,20 +38,8 @@ export function Home() {
         </Link>
       )}
 
-      <Link to="/daily" className="panel row" style={{ marginTop: 18, textDecoration: "none", color: "inherit" }}>
-        <Seal text="修" size={40} tilt={-3} />
-        <span className="grow" style={{ fontWeight: 600 }}>
-          去修行
-        </span>
-        <RightOutline />
-      </Link>
 
-      <h2 className="section-title">今天要做的事</h2>
-      <div className="panel">
-        <Empty title="今天还没有要做的事" icon={<Seal text="闲" size={48} tilt={3} outline />}>
-          每日任务开放、赛季开始以后，要做的事会按截止时间排在这里。
-        </Empty>
-      </div>
+      <HomeBody />
     </>
   );
 }
