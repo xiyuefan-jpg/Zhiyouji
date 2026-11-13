@@ -48,6 +48,7 @@ export class FamilyAuth {
     const ctx = await this.consented(req);
     if (!ctx.session.childId) fail(400, "no_child");
     const child = await this.accounts.child(ctx.family.id, ctx.session.childId!);
+    await this.accounts.touchChild(child);
     return { ...ctx, child };
   }
 }

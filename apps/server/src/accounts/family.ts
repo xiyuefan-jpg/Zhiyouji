@@ -200,6 +200,13 @@ export class FamilyAccounts {
     });
   }
 
+  /** Remember when this child last used the site (leader take-over, part 3 §5). Written at most every 5 minutes. */
+  async touchChild(c: ChildRow): Promise<void> {
+    const now = this.clock.now();
+    if (c.lastActiveAt && +now - +c.lastActiveAt < 5 * 60_000) return;
+    await this.db.update(children).set({ lastActiveAt: now }).where(eq(children.id, c.id));
+  }
+
   async chooseChild(session: SessionRow, childId: string): Promise<ChildRow> {
     const c = await this.child(session.familyId!, childId);
     await this.sessions.setChild(session.id, c.id);

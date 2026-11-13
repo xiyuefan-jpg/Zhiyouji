@@ -42,6 +42,10 @@ export const ERROR_TEXT = {
   team_empty: "有的小组没有成员，请先调整分组",
   not_enrolled: "这个孩子没有开通本赛季",
   bad_position: "没有这个服或这个组",
+  no_season: "你还没有参加赛季",
+  season_not_active: "赛季现在不能进行这个操作",
+  withdrawn: "你已经退赛了，只能查看",
+  bad_prefs: "选择的内容不对，请重新选",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_TEXT;

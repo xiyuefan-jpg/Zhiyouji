@@ -14,6 +14,28 @@ import { dailyTaskPassed, runParticipationAward, settleSupply } from "./tasks.js
 import { useItem } from "./useItem.js";
 import { pairWar, settleWar } from "./war.js";
 import type { Notice, Result, SeasonState } from "./state.js";
+import type { AdminRefusal } from "./admin.js";
+import type { BattleRefusal } from "./bigBattle.js";
+import type { ContestRefusal } from "./contests.js";
+import type { DailyRefusal } from "./daily.js";
+import type { RoundRefusal } from "./rounds.js";
+import type { SeasonShopRefusal } from "./shop.js";
+import type { TaskRefusal } from "./tasks.js";
+import type { ItemRefusal } from "./useItem.js";
+import type { WarRefusal } from "./war.js";
+
+/** Every reason the engine can refuse an event (the API turns these into Chinese messages). */
+export type SeasonRefusal =
+  | AdminRefusal
+  | BattleRefusal
+  | ContestRefusal
+  | DailyRefusal
+  | RoundRefusal
+  | SeasonShopRefusal
+  | TaskRefusal
+  | ItemRefusal
+  | WarRefusal
+  | "unknown_event";
 
 type Arg<F> = F extends (s: SeasonState, e: infer E) => unknown ? E : never;
 

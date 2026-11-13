@@ -474,3 +474,27 @@ export const viewLog = pgTable(
   },
   (t) => [index("view_log_admin").on(t.adminUserId, t.at), index("view_log_child").on(t.childId, t.at)],
 );
+
+// ---- season play (part 3 §5; part 4 §4) --------------------------------------------
+
+/**
+ * Leader / deputy hand-overs waiting for the receiver to accept (part 3 §5:
+ * "对方确认后生效"). The change itself is an engine event once accepted.
+ */
+export const roleTransfers = pgTable(
+  "role_transfers",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    teamId: uuid("team_id").notNull().references(() => teams.id),
+    /** leader | deputy */
+    role: text("role").notNull(),
+    fromChild: uuid("from_child").notNull(),
+    toChild: uuid("to_child").notNull(),
+    /** pending | accepted | declined | cancelled | failed */
+    status: text("status").notNull().default("pending"),
+    createdAt: ts("created_at").notNull(),
+    decidedAt: ts("decided_at"),
+  },
+  (t) => [index("role_transfers_team").on(t.teamId, t.status)],
+);

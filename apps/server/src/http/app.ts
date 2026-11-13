@@ -20,6 +20,8 @@ import { HttpError } from "./errors.js";
 import { FamilyAuth, familyRoutes } from "./familyRoutes.js";
 import { messageRoutes } from "./messageRoutes.js";
 import { seasonAdminRoutes } from "./seasonAdminRoutes.js";
+import { playRoutes } from "./playRoutes.js";
+import { SeasonPlay } from "../season/play.js";
 import { SeasonAdmin } from "../season/seasons.js";
 import { SeasonStore } from "../seasonStore.js";
 import { Scheduler } from "../scheduler.js";
@@ -46,6 +48,7 @@ export interface Services {
   store: SeasonStore;
   scheduler: Scheduler;
   seasons: SeasonAdmin;
+  play: SeasonPlay;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -57,6 +60,7 @@ export function buildServices(d: AppDeps): Services {
     store,
     scheduler: new Scheduler(d.db, store, d.clock),
     seasons: new SeasonAdmin(d.db, d.clock, store),
+    play: new SeasonPlay(d.db, d.clock, store),
     sessions,
     family,
     admin,
@@ -87,5 +91,6 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   adminRoutes(app, d.cfg, services.admin, services.sessions, services.adminAuth);
   messageRoutes(app, services.notifier, services.familyAuth, services.adminAuth);
   seasonAdminRoutes(app, services.seasons, services.adminAuth);
+  playRoutes(app, services.play, services.familyAuth);
   return { app, services };
 }
