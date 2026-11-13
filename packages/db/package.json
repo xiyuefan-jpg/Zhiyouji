@@ -1,0 +1,25 @@
+{
+  "name": "@zhiyouji/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "数据库结构与迁移（PRD 第 4 部分）。开发和测试用 PGlite（进程内的 PostgreSQL），正式环境用阿里云 RDS PostgreSQL",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "generate": "drizzle-kit generate"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1"
+  }
+}
