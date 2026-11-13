@@ -173,6 +173,12 @@ describe("改判 after settlement (part 3 §16, §20.4)", () => {
     // the same score again: nothing changes
     const same = (await t.call("POST", `/v1/admin/works/${w.id}/rejudge`, { score: 70, note: "复查后维持" }, boss)).json();
     expect(same.changed).toBe(false);
+    // the admin's view of the work: team, AI scores, the settled history
+    const v = (await t.call("GET", `/v1/admin/works/${w.id}`, undefined, boss)).json();
+    expect(v.work).toMatchObject({ text: "作品", team: (await t.services.store.state(t.serverId)).teams[t.myTeam]!.name });
+    expect(v.round.status).toBe("settled");
+    expect(v.settled.map((x: { score: number; basis: string }) => [x.score, x.basis])).toEqual([[70, "ai_timeout"], [40, "admin"], [70, "admin"]]);
+    expect(v.ai.length).toBe(2);
     await t.close();
   });
 });

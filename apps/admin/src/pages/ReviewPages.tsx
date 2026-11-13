@@ -428,3 +428,109 @@ export function ReviewersPage() {
     </Space>
   );
 }
+
+// ---- 裁定、改判 (§5.3) -----------------------------------------------------------------------------------
+
+interface WorkAdmin {
+  work: { id: string; kind: string; team: string; version: number; text: string | null; aiNote: string | null; submittedAt: string; files: FileView[] };
+  round: { key: string; status: string } | null;
+  ai: { total: number; comment: string; model: string; official: boolean; createdAt: string }[];
+  reviews: { reviewer: string; second: boolean; total: number; comment: string; at: string }[];
+  pending: { assignmentId: string; reviewer: string; dueAt: string }[];
+  settled: { score: number; basis: string; note: string | null; decidedAt: string }[];
+}
+
+const BASIS: Record<string, string> = { human: "人工复核", ai_timeout: "超时按 AI 分", admin: "管理员" };
+
+/** One work for an admin: rule before settlement, rejudge after (the outcome is worked out again; what to adjust by hand is listed). */
+export function WorkAdminPage() {
+  const { id = "" } = useParams();
+  const v = useLoad(() => request<WorkAdmin>("GET", `/v1/admin/works/${id}`), [id]);
+  const [score, setScore] = useState<number | null>(null);
+  const [note, setNote] = useState("");
+  const [result, setResult] = useState<{ changed: boolean; suggestions: string[] } | null>(null);
+  const d = v.data;
+  const settled = d?.round?.status === "settled";
+  const decide = () => {
+    if (score === null || !note.trim()) return void message.warning("填分数和说明");
+    Modal.confirm({
+      title: settled ? `改判为 ${score} 分？` : `裁定为 ${score} 分？`,
+      content: settled ? "会重新算这场的结果，并列出需要手动调整的账目和地块。" : "这个分数就是结算分。",
+      okText: "确定",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          const r = await request<{ changed?: boolean; suggestions?: string[] }>("POST", `/v1/admin/works/${id}/${settled ? "rejudge" : "rule"}`, { score, note: note.trim() });
+          if (settled) setResult({ changed: !!r.changed, suggestions: r.suggestions ?? [] });
+          message.success("已记录");
+          v.reload();
+        } catch (e) {
+          message.error(errText(e));
+        }
+      },
+    });
+  };
+  return (
+    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Typography.Title level={3} style={{ margin: 0 }}>
+        作品 · 裁定与改判
+      </Typography.Title>
+      {v.error && <Alert type="error" message={v.error} />}
+      {d && (
+        <>
+          <Descriptions size="small" column={3} bordered>
+            <Descriptions.Item label="组">{d.work.team}</Descriptions.Item>
+            <Descriptions.Item label="类型">{KIND[d.work.kind] ?? d.work.kind}（第 {d.work.version} 版）</Descriptions.Item>
+            <Descriptions.Item label="状态">{d.round ? (settled ? "已结算" : "复核中") : "还没截止"}</Descriptions.Item>
+          </Descriptions>
+          <Card size="small" title="作品">
+            {d.work.text && <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>{d.work.text}</Typography.Paragraph>}
+            <Files files={d.work.files} />
+          </Card>
+          <Card size="small" title="分数">
+            {d.ai.map((a, i) => (
+              <div key={`ai${i}`}>
+                AI（{a.model}{a.official ? "，正式" : "，重跑"}）：{a.total} · {a.comment}
+              </div>
+            ))}
+            {d.reviews.map((r, i) => (
+              <div key={`h${i}`}>
+                {r.reviewer}
+                {r.second ? "（抽查）" : ""}：{r.total} · {r.comment}
+              </div>
+            ))}
+            {d.pending.map((p) => (
+              <div key={p.assignmentId}>
+                {p.reviewer} 还没交（时限 <Time iso={p.dueAt} />）
+              </div>
+            ))}
+            {d.settled.map((x, i) => (
+              <div key={`s${i}`}>
+                <Typography.Text strong>结算分 {x.score}</Typography.Text>（{BASIS[x.basis] ?? x.basis}
+                {x.note ? `：${x.note}` : ""}，<Time iso={x.decidedAt} />）
+              </div>
+            ))}
+          </Card>
+          {d.round && (
+            <Card size="small" title={settled ? "改判" : "裁定"}>
+              <Space wrap>
+                <InputNumber aria-label="分数" min={0} max={100} value={score} onChange={setScore} />
+                <Input aria-label="说明" placeholder="说明（进记录）" style={{ width: 320 }} value={note} onChange={(e) => setNote(e.target.value)} />
+                <Button type="primary" onClick={decide}>
+                  {settled ? "改判" : "裁定"}
+                </Button>
+              </Space>
+            </Card>
+          )}
+          {result && (
+            <Alert
+              type={result.changed ? "warning" : "success"}
+              message={result.changed ? "结果有变化，请到「赛季监控 → 人工干预」手动处理：" : "结果没有变化，只更新了分数。"}
+              description={result.changed ? <ul>{result.suggestions.map((s, i) => <li key={i}>{s}</li>)}</ul> : undefined}
+            />
+          )}
+        </>
+      )}
+    </Space>
+  );
+}

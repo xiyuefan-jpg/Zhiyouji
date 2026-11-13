@@ -6,7 +6,7 @@ import { useAdmin, useAuth } from "./auth";
 import { InvitePage, LoginPage } from "./pages/Auth";
 import { ConsoleLayout, NAV } from "./pages/Layout";
 import { ComingPage, DashboardPage, NotificationsPage, UsersPage, ViewLogPage } from "./pages/Pages";
-import { ReviewersPage, ReviewPage, ReviewWorkPage } from "./pages/ReviewPages";
+import { ReviewersPage, ReviewPage, ReviewWorkPage, WorkAdminPage } from "./pages/ReviewPages";
 import { MonitorPage } from "./pages/MonitorPages";
 import { PlayersPage, SeasonDetailPage, SeasonsPage } from "./pages/SeasonSetupPages";
 import { ContentPage, FinalPage, OpsPage } from "./pages/ContentOpsPages";
@@ -47,6 +47,7 @@ function Console() {
         <Route path="review" element={<ReviewPage />} />
         <Route path="review/:id" element={<ReviewWorkPage />} />
         <Route path="reviews/:id" element={<ReviewWorkPage />} />
+        {me.role === "admin" && <Route path="reviews/works/:id" element={<WorkAdminPage />} />}
         {me.role === "admin" && <Route path="reviewers" element={<ReviewersPage />} />}
         {me.role === "admin" && <Route path="monitor" element={<MonitorPage />} />}
         <Route path="content" element={<ContentPage />} />

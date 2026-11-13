@@ -40,6 +40,15 @@ export function reviewRoutes(app: FastifyInstance, scoring: Scoring, accounts: A
     return scoring.reassign(idParam.parse(req.params).id, reassignRequest.parse(req.body).reviewerId);
   });
 
+  app.get("/v1/admin/works/:id", async (req) => {
+    const { user } = await auth.user(req, ["admin"]);
+    const id = idParam.parse(req.params).id;
+    const v = await scoring.adminView(id);
+    const [w] = await scoring.membersOf(id);
+    for (const childId of w ?? []) await accounts.recordView(user.id, { childId, contentKind: "work", objectId: id, action: "view" });
+    return v;
+  });
+
   app.post("/v1/admin/works/:id/rule", async (req) => {
     const { user } = await auth.user(req, ["admin"]);
     const b = ruleRequest.parse(req.body);

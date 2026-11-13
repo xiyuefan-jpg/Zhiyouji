@@ -409,6 +409,59 @@ export class Scoring {
     return { before, after, changed: suggestions.length > 0, suggestions };
   }
 
+  /**
+   * Admin view of one work (part 7 §5.3 裁定, 改判): the work with its team,
+   * the round's status, the AI's scores, every reviewer's score and the
+   * settled history — for ruling before settlement or rejudging after.
+   */
+  async adminView(workId: string) {
+    const [w] = await this.db.select().from(works).where(eq(works.id, workId));
+    if (!w) fail(404, "not_found");
+    const st = await this.store.state(w!.serverId);
+    const round = await this.roundOfWork(w!);
+    const ids = (w!.fileIds as string[]) ?? [];
+    const fs = ids.length ? await this.db.select().from(files).where(inArray(files.id, ids)) : [];
+    const now = this.now();
+    const ai = await this.db.select().from(aiScores).where(eq(aiScores.workId, workId)).orderBy(desc(aiScores.createdAt));
+    const humans = await this.db
+      .select({ h: humanScores, name: adminUsers.name, second: reviewAssignments.second })
+      .from(humanScores)
+      .innerJoin(reviewAssignments, eq(humanScores.assignmentId, reviewAssignments.id))
+      .innerJoin(adminUsers, eq(humanScores.reviewerId, adminUsers.id))
+      .where(eq(humanScores.workId, workId));
+    const settled = await this.db.select().from(settledScores).where(eq(settledScores.workId, workId)).orderBy(asc(settledScores.decidedAt));
+    const pending = await this.db
+      .select({ a: reviewAssignments, name: adminUsers.name })
+      .from(reviewAssignments)
+      .innerJoin(adminUsers, eq(reviewAssignments.reviewerId, adminUsers.id))
+      .where(and(eq(reviewAssignments.workId, workId), eq(reviewAssignments.status, "pending")));
+    return {
+      work: {
+        id: w!.id,
+        kind: w!.kind,
+        slot: w!.slot,
+        team: st.teams[w!.teamId]?.name ?? "",
+        version: w!.version,
+        mediaKind: w!.mediaKind,
+        text: w!.text,
+        aiNote: w!.aiNote,
+        submittedAt: w!.submittedAt.toISOString(),
+        files: await Promise.all(fs.map(async (f) => ({ id: f.id, kind: f.kind, contentType: f.contentType, transcript: f.transcript, url: await this.storage.downloadUrl(f.storageKey, now) }))),
+      },
+      round: round ? { key: round.key, status: round.status } : null,
+      ai: ai.map((r) => ({ total: r.total, dims: r.dims, comment: r.comment, model: r.model, official: r.official, createdAt: r.createdAt.toISOString() })),
+      reviews: humans.map((x) => ({ reviewer: x.name, second: x.second, total: x.h.total, dims: x.h.dims, comment: x.h.comment, flags: x.h.flags, at: x.h.at.toISOString() })),
+      pending: pending.map((x) => ({ assignmentId: x.a.id, reviewer: x.name, dueAt: x.a.dueAt.toISOString() })),
+      settled: settled.map((x) => ({ score: x.score, basis: x.basis, note: x.note, decidedBy: x.decidedBy, decidedAt: x.decidedAt.toISOString() })),
+    };
+  }
+
+  /** Children whose data a work is (for the view log). */
+  async membersOf(workId: string): Promise<string[][]> {
+    const [w] = await this.db.select({ m: works.members }).from(works).where(eq(works.id, workId));
+    return w ? [w.m as string[]] : [];
+  }
+
   /** Move an open review to another reviewer. */
   async reassign(assignmentId: string, reviewerId: string) {
     const [a] = await this.db.select().from(reviewAssignments).where(eq(reviewAssignments.id, assignmentId));
