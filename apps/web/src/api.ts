@@ -21,7 +21,7 @@ export class ApiError extends Error {
 
 export const NETWORK_MESSAGE = "网络连不上，请检查一下网络再试";
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {

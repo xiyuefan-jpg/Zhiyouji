@@ -10,6 +10,7 @@ import { Avatar, Empty, ReadAloud, Seal } from "../components/ui";
 import { greeting } from "../format";
 import { useChild } from "../session";
 import { MessageList } from "./Messages";
+import { BroadcastList, RankingList, ReportsList } from "./season/SeasonPages";
 import type { ShellContext } from "./Shell";
 
 export function Home() {
@@ -84,9 +85,9 @@ export function ReportTab() {
         ))}
       </Tabs>
       <div style={{ marginTop: 16 }}>
-        {tab === "reports" && <Empty title="还没有战报">赛季开始后，每天早、中、晚三次公布战报：争夺结果、周战争、法宝使用和排名变化。</Empty>}
-        {tab === "broadcast" && <Empty title="还没有广播">谁发起了进攻、谁用了法宝、谁买下了中心地，会实时出现在这里。</Empty>}
-        {tab === "ranking" && <Empty title="还没有排行榜">赛季开始后，这里显示本服各组的团队分和名次。</Empty>}
+        {tab === "reports" && <ReportsList />}
+        {tab === "broadcast" && <BroadcastList />}
+        {tab === "ranking" && <RankingList />}
         {tab === "messages" && <MessageList onChange={reloadUnread} />}
       </div>
     </>

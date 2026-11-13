@@ -15,7 +15,8 @@ import { acceptPrivacy, DocPage, privacyAccepted, PrivacyGate, Splash } from "./
 import { Login } from "./pages/Login";
 import { AboutPage, MeTab, PrivacyPage, Settings } from "./pages/Me";
 import { Shell } from "./pages/Shell";
-import { Home, MapTab, ReportTab, TeamTab } from "./pages/Tabs";
+import { Home, ReportTab } from "./pages/Tabs";
+import { LandPage, LedgerPage, SeasonMap, SeasonTeam } from "./pages/season/SeasonPages";
 
 export function App() {
   const [privacyOk, setPrivacyOk] = useState(privacyAccepted);
@@ -78,11 +79,13 @@ function Gate() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Home />} />
-        <Route path="map" element={<MapTab />} />
-        <Route path="team" element={<TeamTab />} />
+        <Route path="map" element={<SeasonMap />} />
+        <Route path="team" element={<SeasonTeam />} />
         <Route path="report" element={<ReportTab />} />
         <Route path="me" element={<MeTab />} />
       </Route>
+      <Route path="map/:landId" element={<LandPage />} />
+      <Route path="team/ledger" element={<LedgerPage />} />
       <Route path="choose" element={<ChooseChild />} />
       <Route path="children/new" element={<ChildForm />} />
       <Route element={<Plain />}>
