@@ -10,6 +10,7 @@ import { seasons, servers, type Db } from "@zhiyouji/db";
 import type { Notifier, SmsDispatcher } from "./notify/notifier.js";
 import type { Scheduler } from "./scheduler.js";
 import type { Reports } from "./season/reports.js";
+import type { Reminders } from "./notify/reminders.js";
 
 /** Season states in which planned events run (part 4 §4). */
 export const LIVE_SEASON_STATES = ["grouped", "running", "big_battle", "final_pending"];
@@ -20,6 +21,8 @@ export interface TickReport {
   failed: string[];
   /** 战报 created this tick. */
   reports: number;
+  /** Reminder messages sent this tick. */
+  reminders: number;
   sms: { sent: number; dropped: number; failed: number; deferred: number };
 }
 
@@ -32,6 +35,7 @@ export class Worker {
     private readonly sms: SmsDispatcher,
     private readonly notifier: Notifier,
     private readonly reports?: Reports,
+    private readonly reminders?: Reminders,
   ) {}
 
   /** One pass. Skips if the previous pass is still running. */
@@ -45,7 +49,7 @@ export class Worker {
         .innerJoin(seasons, eq(servers.seasonId, seasons.id))
         .where(inArray(seasons.status, LIVE_SEASON_STATES));
       const ids = live.map((s) => s.id);
-      const report: TickReport = { servers: ids.length, ran: 0, failed: [], reports: 0, sms: { sent: 0, dropped: 0, failed: 0, deferred: 0 } };
+      const report: TickReport = { servers: ids.length, ran: 0, failed: [], reports: 0, reminders: 0, sms: { sent: 0, dropped: 0, failed: 0, deferred: 0 } };
       for (const serverId of ids) {
         const r = await this.scheduler.runDue(serverId);
         report.ran += r.ran.length;
@@ -64,6 +68,7 @@ export class Worker {
       for (const serverId of ids) {
         try {
           report.reports += (await this.reports?.runDue(serverId)) ?? 0;
+          report.reminders += (await this.reminders?.runDue(serverId)) ?? 0;
         } catch (err) {
           console.error("report failed", serverId, err);
         }

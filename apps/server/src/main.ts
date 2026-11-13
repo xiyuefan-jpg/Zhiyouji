@@ -21,7 +21,7 @@ async function main() {
   const sms = new FakeSms(env.NODE_ENV === "production" ? undefined : (line) => console.log(line));
   const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha(), logger: true, trustProxy: env.TRUST_PROXY === "1" });
 
-  const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier, services.reports);
+  const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier, services.reports, services.reminders);
   const tickMs = Number(env.TICK_MS ?? 30_000);
   setInterval(() => {
     worker.tick().then(

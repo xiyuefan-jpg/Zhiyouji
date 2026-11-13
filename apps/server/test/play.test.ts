@@ -236,3 +236,26 @@ describe("notifications, reports and feeds (part 8 §1.2; part 5 F1, F2, E1)", (
     await t.close();
   });
 });
+
+describe("submission reminders (part 8 §1.2)", () => {
+  it("3 hours before a preference deadline, leaders of teams that have not submitted get a message once", async () => {
+    const t = await playSetup();
+    t.clock.set(bj("2027-02-07", 19, 1));
+    await t.services.scheduler.runDue(t.serverId);
+    const a1 = await t.as("13800000001", t.a1);
+    await a1("POST", "/v1/season/roles/claim", { role: "leader" });
+    t.clock.set(bj("2027-02-08", 17, 30));
+    expect(await t.services.reminders.runDue(t.serverId)).toBe(0);
+    // a1's team submits; at 18:30 the other 7 teams (no leaders yet → every member) are reminded
+    await a1("POST", "/v1/season/rounds/blind_auction", { bid: 0, prefs: ["E1"] });
+    t.clock.set(bj("2027-02-08", 18, 30));
+    const sent = await t.services.reminders.runDue(t.serverId);
+    expect(sent).toBe(16 - (await a1("GET", "/v1/season/me")).json().members.length);
+    expect(await t.services.reminders.runDue(t.serverId)).toBe(0);
+    const a2 = await t.as("13800000001", t.a2);
+    const m = (await a2("GET", "/v1/messages")).json().messages.find((x: { type: string }) => x.type === "submit_due");
+    expect(m.body).toBe("本组还没提交第 1 批选地（盲拍）的出价和偏好，2月8日 21:00 截止。");
+    expect((await a1("GET", "/v1/messages")).json().messages.some((x: { type: string }) => x.type === "submit_due")).toBe(false);
+    await t.close();
+  });
+});

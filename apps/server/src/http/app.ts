@@ -25,6 +25,7 @@ import { SeasonPlay } from "../season/play.js";
 import { Reports } from "../season/reports.js";
 import { SeasonNotices } from "../notify/seasonNotices.js";
 import { SeasonControl } from "../season/control.js";
+import { Reminders } from "../notify/reminders.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
 import { SeasonAdmin } from "../season/seasons.js";
 import { SeasonStore } from "../seasonStore.js";
@@ -56,6 +57,7 @@ export interface Services {
   reports: Reports;
   seasonNotices: SeasonNotices;
   control: SeasonControl;
+  reminders: Reminders;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -79,6 +81,7 @@ export function buildServices(d: AppDeps): Services {
     control: new SeasonControl(d.db, d.clock, store, scheduler, seasons),
     play: new SeasonPlay(d.db, d.clock, store),
     reports: new Reports(d.db, d.clock, store, notifier),
+    reminders: new Reminders(d.db, d.clock, store, notifier),
     seasonNotices,
     sessions,
     family,
