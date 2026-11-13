@@ -143,6 +143,29 @@ export interface WarState {
   results?: { teamId: string; outcome: "win" | "lose" | "tie" | "bye"; points: Pts; chestItem: string | null }[];
 }
 
+export type Camp = "a" | "b";
+
+export interface BigBattleState {
+  camps: Record<Camp, string[]>;
+  lineValues: number[];
+  formedAt: Instant;
+  /** Latest submission per camp: line index → team (§14). */
+  submitted: Record<Camp, { lines: string[]; by: string | null; at: Instant } | null>;
+  /** Locked at D29 21:00 (missing or invalid submissions completed at random). */
+  final: Record<Camp, string[]> | null;
+  lockedAt: Instant | null;
+  /** Big-battle items activated per team. */
+  flags: Record<string, { beishui?: boolean; jiancheng?: boolean; qiankun?: boolean }>;
+  settled: boolean;
+}
+
+export interface FinalResult {
+  at: Instant;
+  ranking: { teamId: string; rank: number; points: Pts }[];
+  scholarship: { teamId: string; yuan: number }[];
+  poolYuan: number;
+}
+
 export interface SeasonState {
   seasonId: string;
   seed: number;
@@ -175,6 +198,8 @@ export interface SeasonState {
   shop: ShopState;
   /** Weekly wars by week number (§11). */
   wars: Record<string, WarState>;
+  bigBattle: BigBattleState | null;
+  final: FinalResult | null;
   paused: boolean;
   /** Counter for deterministic ids. */
   seq: number;
@@ -234,6 +259,8 @@ export function createSeasonState(i: CreateSeasonInput): SeasonState {
       auctions: [],
     },
     wars: {},
+    bigBattle: null,
+    final: null,
     paused: false,
     seq: 0,
   };
