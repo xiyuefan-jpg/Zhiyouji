@@ -65,6 +65,22 @@ const EVENT_LABELS: Partial<Record<string, string>> = {
   battle_deadline: "大团战作品截止",
 };
 
+/** Where a calendar event takes the child (message links use the same paths). */
+export function eventLink(kind: string, key: string): string | null {
+  const week = key.split(":")[1];
+  if (kind.startsWith("war_") || kind === "gift_deadline") return `/season/wars/${week}`;
+  if (kind.startsWith("supply_")) return "/season/supply";
+  if (kind === "blind_auction" || kind === "auction_open") return "/season/rounds/blind_auction";
+  if (kind === "starter_items" || kind === "starter_items_open") return "/season/rounds/starter_items";
+  if (kind === "center_round" || kind === "center_open") return "/season/rounds/center_round";
+  if (kind === "rare_round") return "/season/rounds/rare_round";
+  if (kind.startsWith("shop_") || kind.startsWith("epic_")) return "/season/shop";
+  if (kind === "form_big_battle" || kind.startsWith("lines_") || kind === "battle_deadline" || kind === "diaobing_close") return "/season/big-battle";
+  if (kind.startsWith("contests_")) return "/map";
+  if (kind === "publish_groups") return "/team";
+  return null;
+}
+
 export class Home {
   constructor(
     private readonly db: Db,
@@ -222,6 +238,34 @@ export class Home {
       nextPublication: nextPublicationAfter(now, st.params, st.calendar),
       latestReport: latest ? { id: latest.id, title: latest.title, lines: latest.lines.slice(0, 3).map((x) => x.text) } : null,
       upcoming,
+    };
+  }
+
+  /**
+   * 赛季日历 (B2): every planned event of the child's server (the daily 24:00
+   * settlements left out), by season day, with where to go for it.
+   */
+  async calendar(childId: string) {
+    const l = await this.play.lookup(childId);
+    if (l.kind !== "playing") return { status: l.kind, days: [] };
+    const now = this.now();
+    const st = await this.store.state(l.ctx.serverId);
+    const rows = await this.db.select().from(plannedEvents).where(eq(plannedEvents.serverId, l.ctx.serverId)).orderBy(asc(plannedEvents.runAt));
+    const byDay = new Map<number, { at: number; label: string; link: string | null; done: boolean }[]>();
+    for (const r of rows) {
+      const label = r.kind === "publish_groups" ? "分组公布" : EVENT_LABELS[r.kind];
+      if (!label) continue;
+      const week = Number(r.key.split(":")[1]);
+      const fullLabel = r.kind.startsWith("war_") || r.kind === "gift_deadline" ? `第 ${week} 周${label}` : label;
+      const day = seasonDayOf(st.opening, +r.runAt);
+      const list = byDay.get(day) ?? [];
+      list.push({ at: +r.runAt, label: fullLabel, link: eventLink(r.kind, r.key), done: r.status !== "pending" || +r.runAt <= now });
+      byDay.set(day, list);
+    }
+    return {
+      status: "playing" as const,
+      today: seasonDayOf(st.opening, now),
+      days: [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([day, events]) => ({ day, date: beijingDate(events[0]!.at), events })),
     };
   }
 

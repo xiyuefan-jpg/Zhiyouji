@@ -7,6 +7,7 @@ import { api } from "../api";
 import { Avatar, AUTO_READ_KEY, canSpeak, PageHeader } from "../components/ui";
 import { useChild, useMe, useSession } from "../session";
 import { DOCS } from "./Gate";
+import { DataRights } from "./MorePages";
 
 export const APP_VERSION: string = import.meta.env.VITE_APP_VERSION ?? "0.1.0";
 
@@ -38,6 +39,7 @@ export function MeTab() {
       <div style={{ height: 14 }} />
       <List>
         <List.Item onClick={() => nav("/report?tab=messages")}>我的消息</List.Item>
+        <List.Item onClick={() => nav("/announcements")}>公告</List.Item>
         <List.Item onClick={() => nav("/me/edit")}>修改资料</List.Item>
         <List.Item onClick={() => nav("/choose")} extra={me.children.length > 1 ? `${me.children.length} 个孩子` : undefined}>
           切换孩子
@@ -159,10 +161,7 @@ export function PrivacyPage() {
           </List.Item>
         ))}
       </List>
-      <div className="field-label">导出或删除数据</div>
-      <div className="panel">
-        <p style={{ margin: 0 }}>家长可以申请导出或删除孩子的数据。网站上的申请入口还在做，开放之前请联系老师办理。</p>
-      </div>
+      <DataRights />
     </>
   );
 }

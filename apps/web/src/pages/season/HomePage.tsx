@@ -63,6 +63,17 @@ export function HomeBody() {
           </span>
           <RightOutline />
         </Link>
+        <div className="row" style={{ marginTop: 12, justifyContent: "space-around" }}>
+          {[
+            { to: "/journal", label: "修行日志", glyph: "日" },
+            { to: "/watch", label: "观战", glyph: "观" },
+          ].map((e) => (
+            <Link key={e.to} to={e.to} style={{ ...link, textAlign: "center", fontSize: 13 }}>
+              <Seal text={e.glyph} size={44} tilt={0} />
+              <div style={{ marginTop: 4 }}>{e.label}</div>
+            </Link>
+          ))}
+        </div>
         <TodoList items={h.todo} />
       </>
     );
@@ -142,7 +153,9 @@ export function HomeBody() {
       </div>
 
       <h2 className="section-title">
-        赛季日历 · 第 {h.season.day} 天{h.season.paused ? "（暂停中）" : ""}
+        <Link to="/season/calendar" style={link}>
+          赛季日历 · 第 {h.season.day} 天{h.season.paused ? "（暂停中）" : ""} ›
+        </Link>
       </h2>
       <div className="panel">
         {h.upcoming.length === 0 && <div className="hint">接下来没有安排。</div>}

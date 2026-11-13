@@ -17,6 +17,7 @@ import { Avatar, Empty, PageHeader, Seal } from "../../components/ui";
 import { points, seasonApi, type FeedLine, type LandView, type SeasonMe } from "../../seasonApi";
 import { useLoad, useSeasonMe } from "./useSeason";
 import { RolesPanel } from "./TeamPages";
+import { TeamRanking } from "../WatchPages";
 
 export const ROLE_TEXT = { leader: "组长", deputy: "副组长", member: "组员" } as const;
 
@@ -283,6 +284,7 @@ const TEAM_LINKS: { to: string; title: string; show?: (day: number, d: Days) => 
   { to: "/season/shop", title: "商店", show: (day, d) => day >= d.shopOpen - 1 && day <= d.shopClose },
   { to: "/season/big-battle", title: "大团战", show: (day, d) => day >= d.bigBattle - 1 },
   { to: "/team/ledger", title: "粮草和团队分明细" },
+  { to: "/season/calendar", title: "赛季日历" },
 ];
 
 export function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -412,20 +414,13 @@ export function RankingList() {
   const me = useSeasonMe();
   const data = useLoad(() => seasonApi.ranking());
   if (me.data?.status !== "playing") return <Empty title="还没有排行榜">赛季开始后，这里显示本服各组的团队分和名次。</Empty>;
-  if (!data.data) return <div className="hint">正在加载……</div>;
   return (
-    <div className="panel">
-      {data.data.ranking.map((r) => (
-        <div key={r.teamId} className="row" style={{ padding: "6px 0", fontWeight: r.mine ? 700 : 400 }}>
-          <span style={{ width: 28 }}>{r.rank}</span>
-          <span className="grow">
-            {r.name}
-            {r.mine ? "（本组）" : ""}
-          </span>
-          <span className="hint">{r.lands} 块地</span>
-          <span style={{ width: 56, textAlign: "right" }}>{points(r.points)}</span>
-        </div>
-      ))}
-    </div>
+    <>
+      <TeamRanking serverId={me.data.server.id} rows={data.data?.ranking ?? null} mine={me.data.team.id} />
+      <Link to={`/watch/${me.data.server.id}/showcase`} className="panel row" style={{ textDecoration: "none", color: "inherit" }}>
+        <span className="grow">作品展</span>
+        <RightOutline />
+      </Link>
+    </>
   );
 }

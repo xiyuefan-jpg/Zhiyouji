@@ -20,6 +20,8 @@ import { LandPage, LedgerPage, SeasonMap, SeasonTeam } from "./pages/season/Seas
 import { DailyHome, DailyNew, DailyResult } from "./pages/DailyPages";
 import { SurveyPage } from "./pages/SurveyPage";
 import { GuidePage } from "./pages/GuidePage";
+import { AnnouncementPage, AnnouncementsPage, SeasonCalendarPage } from "./pages/MorePages";
+import { ShowcasePage, ShowWorkPage, TeamPublicPage, WatchServer, WatchServers } from "./pages/WatchPages";
 import { CardPage, Journal, RealmPage, SeasonReviewPage, SummaryPage } from "./pages/JournalPages";
 import { WorkSlot, WorksList } from "./pages/season/WorksPages";
 import { ItemsPage } from "./pages/season/ItemsPage";
@@ -98,6 +100,15 @@ function Gate() {
       <Route path="daily/:id" element={<DailyResult />} />
       <Route path="survey" element={<SurveyPage />} />
       <Route path="guide" element={<GuidePage />} />
+      <Route path="season/calendar" element={<SeasonCalendarPage />} />
+      <Route path="announcements" element={<AnnouncementsPage />} />
+      <Route path="announcements/:id" element={<AnnouncementPage />} />
+      <Route path="data-requests" element={<Navigate to="/me/privacy" replace />} />
+      <Route path="watch" element={<WatchServers />} />
+      <Route path="watch/:serverId" element={<WatchServer />} />
+      <Route path="watch/:serverId/showcase" element={<ShowcasePage />} />
+      <Route path="watch/:serverId/works/:workId" element={<ShowWorkPage />} />
+      <Route path="watch/:serverId/teams/:teamId" element={<TeamPublicPage />} />
       <Route path="journal" element={<Journal />} />
       <Route path="journal/cards/:id" element={<CardPage />} />
       <Route path="journal/summaries/:id" element={<SummaryPage />} />

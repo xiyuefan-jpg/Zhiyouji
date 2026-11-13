@@ -39,6 +39,8 @@ export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Repo
   app.get("/v1/season/me", async (req) => play.me((await auth.child(req)).child.id));
   // 首页 (part 5 §4): 战况, 今天要做的事 (incl. 组长待办 E2), next publication, calendar strip
   app.get("/v1/home", async (req) => home.home((await auth.child(req)).child.id));
+  // 赛季日历 (B2)
+  app.get("/v1/season/calendar", async (req) => home.calendar((await auth.child(req)).child.id));
   app.get("/v1/season/map", async (req) => play.map(await ctx(req)));
   app.get("/v1/season/ranking", async (req) => play.ranking(await ctx(req)));
   app.get("/v1/season/team", async (req) => play.team(await ctx(req)));

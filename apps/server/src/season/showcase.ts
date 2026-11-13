@@ -11,6 +11,7 @@
 
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { files, lands, safetyQueue, scoringRounds, seasons, servers, settledScores, works, type Db } from "@zhiyouji/db";
+import { GRADE_LABELS } from "@zhiyouji/shared";
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
 import type { Notifier } from "../notify/notifier.js";
@@ -68,7 +69,7 @@ export class Showcase {
 
   // ---- 作品展 (F5) ----------------------------------------------------------------------------------
 
-  async showcase(serverId: string, f: { kind?: string; landId?: string; week?: number }) {
+  async showcase(serverId: string, f: { kind?: string; landId?: string; week?: number; teamId?: string }) {
     await this.watchable(serverId);
     const st = await this.store.state(serverId);
     const rows = await this.db
@@ -83,6 +84,7 @@ export class Showcase {
     if (f.kind) list = list.filter((w) => w.kind === f.kind);
     if (f.landId) list = list.filter((w) => w.slot.startsWith("contest:") && st.contests[w.slot.split(":")[1]!]?.landId === f.landId);
     if (f.week) list = list.filter((w) => w.slot === `war:${f.week}`);
+    if (f.teamId) list = list.filter((w) => w.teamId === f.teamId);
     const landNames = new Map((await this.db.select().from(lands).where(eq(lands.serverId, serverId))).map((l) => [l.code, l.name]));
     const scores = list.length ? await this.db.select().from(settledScores).where(inArray(settledScores.workId, list.map((w) => w.id))).orderBy(asc(settledScores.decidedAt)) : [];
     const score = new Map(scores.map((s) => [s.workId, s.score]));
@@ -125,6 +127,44 @@ export class Showcase {
   }
 
   // ---- 观战 -------------------------------------------------------------------------------------------
+
+  /**
+   * 小组公开主页 (F4): what anyone watching may know about a team — grade
+   * spread, lands, where its points came from, the weekly-war record and its
+   * published works. No member names, no items.
+   */
+  async team(serverId: string, teamId: string) {
+    await this.watchable(serverId);
+    const st = await this.store.state(serverId);
+    const t = st.teams[teamId];
+    if (!t) fail(404, "not_found");
+    const landNames = new Map((await this.db.select().from(lands).where(eq(lands.serverId, serverId))).map((l) => [l.code, l.name]));
+    const grades = new Map<number, number>();
+    for (const m of t!.members.filter((x) => x.active)) grades.set(m.grade, (grades.get(m.grade) ?? 0) + 1);
+    const bySource = new Map<string, number>();
+    for (const e of st.ledger) if (e.teamId === teamId && e.currency === "points") bySource.set(e.source, (bySource.get(e.source) ?? 0) + e.amount);
+    const ranking = (await this.play.ranking(await this.watcher(serverId))).ranking;
+    const r = ranking.find((x) => x.teamId === teamId);
+    return {
+      id: teamId,
+      name: t!.name,
+      rank: r?.rank ?? null,
+      points: r?.points ?? 0,
+      lands: st.landOrder.filter((l) => st.lands[l]!.owner === teamId).map((l) => ({ id: l, name: landNames.get(l) ?? l })),
+      grades: [...grades.entries()].sort((a, b) => a[0] - b[0]).map(([g, n]) => ({ grade: g, gradeLabel: GRADE_LABELS[g] ?? String(g), count: n })),
+      pointsBySource: [...bySource.entries()].filter(([, v]) => v !== 0).sort((a, b) => b[1] - a[1]).map(([source, amount]) => ({ source, amount })),
+      wars: Object.values(st.wars)
+        .sort((a, b) => a.week - b.week)
+        .flatMap((w) => {
+          const res = w.results?.find((x) => x.teamId === teamId);
+          if (!res) return [];
+          const pair = w.pairs.find((p) => p.includes(teamId));
+          const opp = pair ? (pair[0] === teamId ? pair[1] : pair[0]) : null;
+          return [{ week: w.week, opponent: opp ? (st.teams[opp]?.name ?? "") : null, outcome: res.outcome, points: res.points }];
+        }),
+      works: (await this.showcase(serverId, { teamId })).works,
+    };
+  }
 
   async servers() {
     const rows = await this.db

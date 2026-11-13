@@ -334,3 +334,25 @@ describe("首页 (part 5 §4) and 组长待办 (E2)", () => {
     await t.close();
   });
 });
+
+describe("赛季日历 (B2) and 小组公开主页 (F4)", () => {
+  it("the calendar lists planned events by season day with links; a team's public page has no member names", async () => {
+    const t = await contestSetup();
+    const cal = (await t.a1api("GET", "/v1/season/calendar")).json();
+    expect(cal.today).toBe(2);
+    const d0 = cal.days.find((d: { day: number }) => d.day === 0);
+    expect(d0.events.map((e: { label: string }) => e.label)).toContain("分组公布");
+    const all = cal.days.flatMap((d: { events: { label: string; link: string | null }[] }) => d.events);
+    expect(all.find((e: { label: string }) => e.label === "第 1 周周战争配对").link).toBe("/season/wars/1");
+    expect(all.some((e: { label: string }) => e.label === "商店开门")).toBe(true);
+    expect(all.some((e: { label: string }) => e.label === "大团战作品截止")).toBe(true);
+
+    const page = (await t.a1api("GET", `/v1/watch/${t.serverId}/teams/${t.defender}`)).json();
+    const st = await t.services.store.state(t.serverId);
+    expect(page.name).toBe(st.teams[t.defender]!.name);
+    expect(page.lands.length).toBeGreaterThan(0);
+    expect(page.grades.reduce((n: number, g: { count: number }) => n + g.count, 0)).toBe(st.teams[t.defender]!.members.length);
+    expect(JSON.stringify(page)).not.toMatch(/nickname|childId|items/);
+    await t.close();
+  });
+});
