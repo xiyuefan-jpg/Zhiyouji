@@ -14,3 +14,5 @@ export * from "./war.js";
 export * from "./supply.js";
 export * from "./items.js";
 export * from "./shop.js";
+export * from "./bigBattle.js";
+export * from "./final.js";
