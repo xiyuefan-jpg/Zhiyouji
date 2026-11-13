@@ -3,6 +3,7 @@
 原则：法宝不改评分；负面法宝"恃强凌弱减半"；败者宝箱。默认参数 = 法宝设计 v0.3.1（20 件，已删紧箍咒）。
 用法：from items import make_cls; run_many(replace(P(), atk_pts=4), cls=make_cls())
 """
+import math
 import numpy as np
 from sim import Season, P, replace, run_many, report
 
@@ -30,7 +31,7 @@ DEFAULT_CFG = dict(
     price={"凡": 50, "灵": 80, "仙": 150},
     ling_stock=2, shop_max=3, shop_day=15,
     # 数值
-    huanhun_tasks=6, dahua=1, dahua_days=3, shengsi_pts=7, shengsi_days=4, fatian_pts=10,
+    huanhun_tasks=6, huanhun_grain=5, huanhun_days=7, dahua=1, dahua_days=3, shengsi_pts=7, shengsi_days=4, fatian_pts=10,
     danao=(25, -10), jiuzhuan_days=5, xiuli_days=3, sanmei_days=3, jingu_days=3,
     zijin_steal=5, qibao_steal=3, suotian_days=3, suotian_n=3,
     bagua=1.5, jianbi_pts=3, xiuli_refund=0.5,
@@ -110,13 +111,24 @@ class ItemSeason(Season):
         self.inv[t].remove(name)
 
     def hit(self, src, tgt, name, fn, d):
-        """负面法宝结算：辟火罩抵挡 → 照妖镜反弹 → 生效"""
+        """负面法宝结算：辟火罩抵挡 → 照妖镜反弹 → 生效（v1.0.2：照妖镜先触发，第二十一轮确认）"""
+        if self.p.v102 and "玄天照妖镜" in self.inv[tgt]:
+            self.take(tgt, "玄天照妖镜"); self.istat["reflected"] += 1; self.log_use(tgt, "玄天照妖镜", d, src)
+            fn(src, tgt); fn(src, tgt); return
         if "辟火罩" in self.inv[tgt]:
             self.take(tgt, "辟火罩"); self.istat["blocked"] += 1; self.log_use(tgt, "辟火罩", d, src); return
         if "玄天照妖镜" in self.inv[tgt]:
             self.take(tgt, "玄天照妖镜"); self.istat["reflected"] += 1; self.log_use(tgt, "玄天照妖镜", d, src)
             fn(src, tgt); fn(src, tgt); return          # 反弹且效果翻倍
         fn(tgt, src)
+
+    def opponent(self, t):
+        """本周周战争的对手：v1.0.2 用周四公布的配对，否则按排名相邻"""
+        for a, b in (getattr(self, "pairs", None) or []) if self.p.v102 else []:
+            if a == t: return b
+            if b == t: return a
+        order = list(self.ranking()); i = order.index(t)
+        return order[i ^ 1]
 
     def owned(self, t):
         return [r for r in range(len(self.rv)) if self.owner[r] == t]
@@ -125,6 +137,20 @@ class ItemSeason(Season):
     def on_start(self):
         fan = [k for k, v in CATALOG.items() if v[0] == "凡" and self.avail(k)
                and (self.cfg["kaiying_bb"] or not v[2])]
+        if self.p.v102:
+            # 方案 B（第二十二轮）：按第 1 批选地顺位反过来挑，每种限量（组数 ÷ 2），同一种不能拿 2 件
+            order = list(reversed(getattr(self, "b1_order", list(range(self.p.n_teams)))))
+            stock = {k: self.p.n_teams // 2 for k in fan}
+            for _ in range(self.cfg["kaiying_n"]):
+                for t in order:
+                    opts = [k for k in fan if stock[k] > 0 and k not in self.inv[t]]
+                    if not opts:
+                        continue
+                    w = np.array([1.5 if CATALOG[k][2] else 1.0 for k in opts]) * self.rng.uniform(0.5, 1.5, len(opts))
+                    k = opts[int(np.argmax(w))]
+                    stock[k] -= 1
+                    self.give(t, k)
+            return
         order = list(self.rng.permutation(self.p.n_teams))
         for _ in range(self.cfg["kaiying_n"]):
             for t in order:
@@ -225,6 +251,12 @@ class ItemSeason(Season):
             return False
         own = self.owned(t)
         late = d >= 22
+        if name == "还魂金丹" and p.v102:
+            # 新效果（第二十二轮）：7 天内每通过一次每日任务得 5 粮草；周一用，整整覆盖一周
+            if dow == 0 or late:
+                self.fx.append(dict(kind="huanhun", team=t, until=d + cfg["huanhun_days"] - 1))
+                self.take(t, name); self.log_use(t, name, d); return True
+            return False
         if name == "还魂金丹":
             if dow == 5:
                 ok = (self.week_tasks[t] >= p.part_thr).mean() >= p.part_ratio
@@ -259,14 +291,13 @@ class ItemSeason(Season):
             return False
         if name in ("大闹天宫", "玉净瓶"):
             if dow == 4 and not self.danao_armed[t] and not getattr(self, "jing_armed", {}).get(t):
-                order = list(self.ranking()); i = order.index(t); opp = order[i ^ 1]
+                opp = self.opponent(t)
                 pwin = 1 / (1 + np.exp(-(self.mu[t] - self.mu[opp]) / 8))
                 if name == "玉净瓶":
                     if pwin < 0.55 or late:
                         self.jing_armed = getattr(self, "jing_armed", {}); self.jing_armed[t] = True
                         self.take(t, name); self.log_use(t, name, d); return True
                     return False
-                order = list(self.ranking()); i = order.index(t); opp = order[i ^ 1]
                 if self.mu[t] > self.mu[opp] - 2 or late:
                     self.danao_armed[t] = True
                     self.take(t, name); self.log_use(t, name, d); return True
@@ -283,12 +314,14 @@ class ItemSeason(Season):
                 if (not c["defend"]) or strong:
                     self.contests.remove(c)
                     for a, paid in zip(c["attackers"], c.get("paid", [])):
-                        self.grain[a] += paid * cfg["xiuli_refund"]
+                        back = paid * cfg["xiuli_refund"]
+                        self.grain[a] += math.floor(back + 1e-9) if p.v102 else back
                     self.busy = [(tt, e) for (tt, e) in self.busy if not (tt in c["attackers"] + [t] and e == c["start"] + 3)]
                     self.take(t, name); self.log_use(t, name, d); return True
             return False
         if name == "太虚幻镜":
-            cands = [u for u in self.used if CATALOG[u[2]][0] != "仙" and u[2] not in PASSIVE
+            # v1.0.2：被动法宝被触发也算"被使用"，可以复制（第 20.4 节）
+            cands = [u for u in self.used if CATALOG[u[2]][0] != "仙" and (p.v102 or u[2] not in PASSIVE)
                      and not CATALOG[u[2]][2] and u[2] != "太虚幻镜"]
             if cands:
                 self.take(t, name); self.log_use(t, name, d)
@@ -362,6 +395,11 @@ class ItemSeason(Season):
         return False
 
     # ---------- 钩子 ----------
+    def task_grain(self, t, d):
+        if self.p.v102 and any(f["kind"] == "huanhun" and f["team"] == t and f["until"] >= d for f in self.fx):
+            return self.cfg["huanhun_grain"]
+        return self.p.grain_per_task
+
     def qm_mult(self, t, d):
         return 2.0 if self.qm_double_week[t] == (d - 1) // 7 else 1.0
 

@@ -11,6 +11,8 @@
   D29-33    大团战（布洛托战线 + 主战场 + 夺地）
 """
 from dataclasses import dataclass, field, replace
+import math
+from itertools import permutations
 import numpy as np
 
 
@@ -72,6 +74,8 @@ class P:
     q_skill: float = 6
     q_effort: float = 20
     q_noise: float = 10
+    # —— 规则版本 ——
+    v102: bool = True                    # True = 按 PRD 第 3 部分 v1.0.2 同步后的规则（费用向上取整、粮草折算保留 1 位小数向下取整、周战争周四按排名配对且尽量不重复对手、法宝见 items.py）；False = 同步前
 
 
 SRC = ("territory", "contest", "war", "bigbattle", "participation", "grain", "items")
@@ -135,17 +139,48 @@ class Season:
         n = self.active_attacks(t, d) + 1
         held = (self.owner == t).sum()
         c = self.p.A + self.p.D * (n - 1) + self.p.R * held
-        return c * (self.p.exile if held == 0 else 1.0)
+        return self.gcost(c * (self.p.exile if held == 0 else 1.0))
 
     def ranking(self):
         return np.argsort(-self.pts)  # 第一名在前
+
+    def gcost(self, x):
+        """v1.0.2：乘了折扣的粮草费用向上取整（PRD 第 3 部分第 1 节）"""
+        return math.ceil(x - 1e-9) if self.p.v102 else x
+
+    def task_grain(self, t, d):
+        """每通过一次每日任务的粮草（还魂金丹在 items.py 里覆盖）"""
+        return self.p.grain_per_task
+
+    def pair_war(self):
+        """v1.0.2：周四按当前排名两两配对（1对2、3对4……），尽量不重复对手；重复数相同时排名差最小（和引擎 pairWeeklyWar 一致）"""
+        order = [int(t) for t in self.ranking()]
+        met = getattr(self, "met", set())
+        pos = {t: i for i, t in enumerate(order)}
+        best = None
+        def search(rest, acc, cost, rep):
+            nonlocal best
+            if best is not None and (rep > best[2] or (rep == best[2] and cost >= best[1])):
+                return
+            if not rest:
+                best = (list(acc), cost, rep)
+                return
+            a, others = rest[0], rest[1:]
+            for i, b in enumerate(others):
+                key = (min(a, b), max(a, b))
+                search(others[:i] + others[i + 1:], acc + [(a, b)], cost + abs(pos[a] - pos[b]) - 1, rep + (key in met))
+        search(order, [], 0, 0)
+        self.pairs = best[0]
 
     # ---------- 开营与选地 ----------
     def batch1(self):
         p, rng = self.p, self.rng
         bids = self.grain * rng.uniform(0.0, 0.35, p.n_teams)
         bids = np.minimum(bids, self.grain)
-        order = np.argsort(-bids)
+        if p.v102:   # 出价是整数
+            bids = np.floor(bids)
+        order = np.argsort(-bids, kind="stable")
+        self.b1_order = [int(t) for t in order]
         avail = sorted(self.batch1_ids, key=lambda r: -self.rv[r])
         for t in order:
             r = avail.pop(0)
@@ -158,7 +193,7 @@ class Season:
         base = self.p.price_center if self.is_center[r] else self.p.price_edge
         # 地价随剩余天数线性下降（以第2批开放日为满价）
         frac = (self.p.days - d) / (self.p.days - self.p.batch2_day)
-        return base * min(1.0, max(0.2, frac))
+        return self.gcost(base * min(1.0, max(0.2, frac)))
 
     def batch2(self, d):
         rng = self.rng
@@ -195,7 +230,7 @@ class Season:
         do = rng.random(self.week_tasks.shape) < prob[:, None]
         do &= self.week_tasks < p.task_cap_week
         self.week_tasks += do
-        g = do.sum(1) * p.grain_per_task
+        g = do.sum(1) * np.array([self.task_grain(t, d) for t in range(p.n_teams)], float)
         self.grain += g
         self.stat["grain_earned"] += g
         # 军需任务：周三、周日各一次机会
@@ -262,7 +297,11 @@ class Season:
                         best, bs = r, sc
                 if best is None:
                     break
-                if self.owner[best] == leader and p.bounty > 0:
+                if p.v102:   # 讨伐令和流亡令叠加相乘后再向上取整
+                    held = (self.owner == t).sum()
+                    raw = (p.A + p.D * self.active_attacks(t, d) + p.R * held) * (p.exile if held == 0 else 1.0)
+                    cost = self.gcost(raw * ((1 - p.bounty) if self.owner[best] == leader else 1.0))
+                elif self.owner[best] == leader and p.bounty > 0:
                     cost = cost * (1 - p.bounty)
                 if p.last_land == "backwater" and (self.owner == self.owner[best]).sum() <= 1:
                     cost = cost * 2
@@ -320,8 +359,12 @@ class Season:
     def war(self, d):
         p = self.p
         order = self.ranking()
-        for i in range(0, p.n_teams, 2):
-            a, b = order[i], order[i + 1]
+        pairs = getattr(self, "pairs", None) if p.v102 else None
+        if pairs is None:
+            pairs = [(order[i], order[i + 1]) for i in range(0, p.n_teams, 2)]
+        self.met = getattr(self, "met", set())
+        for a, b in pairs:
+            self.met.add((min(a, b), max(a, b)))
             self.stat["works_human"] += 2
             if self.q(a, True) > self.q(b, True):
                 w, l = a, b
@@ -416,6 +459,8 @@ class Season:
             if d == p.batch2_day:
                 self.batch2(d)
             self.daily_grain(d)
+            if dow == 3 and d <= p.days - p.bb_days and p.v102:   # 周四晚间公布配对
+                self.pair_war()
             if dow == 4 and d <= p.days - p.bb_days:   # 周五开战，占用一个槽三天
                 for t in range(p.n_teams):
                     self.busy.append((t, d + 3))
@@ -459,6 +504,8 @@ class Season:
         self.big_battle()
         if p.grain_to_pts > 0:
             conv = self.grain * p.grain_to_pts
+            if p.v102:   # 保留 1 位小数，向下取整（PRD 第 3 部分第 15 节）
+                conv = np.floor(np.maximum(conv, 0) * 10 + 1e-9) / 10
             self.pts += conv
             self.pts_src.setdefault("grain", np.zeros(p.n_teams))
             self.pts_src["grain"] += conv
