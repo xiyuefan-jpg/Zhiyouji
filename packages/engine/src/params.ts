@@ -22,11 +22,10 @@ export interface SeasonParams {
     shopCloseDay: number;
   };
   grouping: {
-    /** At most this many teams per server; more players → two servers (§20.1). */
-    maxTeamsPerServer: number;
-    teamSizeMin: number;
-    teamSizeMax: number;
-    teamSizeTarget: number;
+    /** Every server has exactly this many teams (§20.1: fixed at 8). */
+    teamsPerServer: number;
+    /** A server holds at most teamsPerServer × maxTeamSize players; more → another server. */
+    maxTeamSize: number;
   };
   team: {
     /** Deputy may take over after the leader has not logged in for this many days. */
@@ -165,7 +164,7 @@ export const DEFAULT_PARAMS: SeasonParams = {
     shopOpenDay: 15,
     shopCloseDay: 17,
   },
-  grouping: { maxTeamsPerServer: 8, teamSizeMin: 7, teamSizeMax: 11, teamSizeTarget: 9 },
+  grouping: { teamsPerServer: 8, maxTeamSize: 11 },
   team: { leaderInactiveDays: 3 },
   dailyTask: { grainPerTask: 3, capPerDay: 2, capPerWeek: 4, grainFromDay: 1 },
   participation: { ratio: 0.75, minTasks: 2, bonus: 3, weeks: 4 },
@@ -275,4 +274,33 @@ export function battleLineValues(teams: number, p: SeasonParams): number[] {
   const lo = 10;
   const hi = 25;
   return Array.from({ length: n }, (_, i) => Math.round(lo + ((hi - lo) * i) / (n - 1)));
+}
+
+export interface ServerPlan {
+  servers: number;
+  teamsPerServer: number;
+  /** Players per server, as even as possible. */
+  playersPerServer: number[];
+  /** Team sizes per server, as even as possible (differ by at most 1). */
+  teamSizes: number[][];
+}
+
+/**
+ * How many servers and how big the teams are (§4, §20.1): every server has
+ * exactly 8 teams; one server takes up to 8 × 11 = 88 players, more players
+ * open another server.
+ */
+export function planServers(players: number, p: SeasonParams): ServerPlan {
+  const t = p.grouping.teamsPerServer;
+  const cap = t * p.grouping.maxTeamSize;
+  if (!Number.isInteger(players) || players < t) throw new Error(`need at least ${t} players, got ${players}`);
+  const servers = Math.ceil(players / cap);
+  const playersPerServer = splitEvenly(players, servers);
+  return { servers, teamsPerServer: t, playersPerServer, teamSizes: playersPerServer.map((n) => splitEvenly(n, t)) };
+}
+
+function splitEvenly(total: number, parts: number): number[] {
+  const base = Math.floor(total / parts);
+  const extra = total % parts;
+  return Array.from({ length: parts }, (_, i) => base + (i < extra ? 1 : 0));
 }

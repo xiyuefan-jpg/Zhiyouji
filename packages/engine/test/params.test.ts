@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PARAMS, battleLineValues, landCounts, openingStockPerKind, withParams } from "../src/index.js";
+import { DEFAULT_PARAMS, battleLineValues, landCounts, openingStockPerKind, planServers, withParams } from "../src/index.js";
 
 describe("params", () => {
   it("land counts per server (§4, §20.1)", () => {
@@ -25,5 +25,20 @@ describe("params", () => {
     expect(p.war.giftWeeks).toEqual([1]);
     expect(DEFAULT_PARAMS.contest.qualityLine).toBe(50);
     expect(DEFAULT_PARAMS.war.giftWeeks).toEqual([2, 4]);
+  });
+  it("8 teams per server, up to 88 players per server (§20.1)", () => {
+    expect(planServers(72, DEFAULT_PARAMS)).toEqual({
+      servers: 1,
+      teamsPerServer: 8,
+      playersPerServer: [72],
+      teamSizes: [[9, 9, 9, 9, 9, 9, 9, 9]],
+    });
+    expect(planServers(50, DEFAULT_PARAMS).teamSizes[0]).toEqual([7, 7, 6, 6, 6, 6, 6, 6]);
+    expect(planServers(88, DEFAULT_PARAMS).servers).toBe(1);
+    const two = planServers(120, DEFAULT_PARAMS);
+    expect(two.servers).toBe(2);
+    expect(two.playersPerServer).toEqual([60, 60]);
+    expect(two.teamSizes[0]).toEqual([8, 8, 8, 8, 7, 7, 7, 7]);
+    expect(() => planServers(5, DEFAULT_PARAMS)).toThrow();
   });
 });
