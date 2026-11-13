@@ -34,6 +34,9 @@ import { Scoring } from "../season/scoring.js";
 import { reviewRoutes } from "./reviewRoutes.js";
 import { DataRights } from "../accounts/dataRights.js";
 import { dataRoutes } from "./dataRoutes.js";
+import { FakeAiDaily, type AiDailyReviewer } from "../ai.js";
+import { DailyTasks } from "../daily/daily.js";
+import { dailyRoutes } from "./dailyRoutes.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
 import { SeasonAdmin } from "../season/seasons.js";
 import { SeasonStore } from "../seasonStore.js";
@@ -49,6 +52,8 @@ export interface AppDeps {
   storage?: ObjectStorage;
   /** AI initial scoring of works (default: the fake). */
   ai?: AiScorer;
+  /** AI review of daily tasks (default: the fake). */
+  aiDaily?: AiDailyReviewer;
   logger?: boolean;
   trustProxy?: boolean;
 }
@@ -75,6 +80,8 @@ export interface Services {
   ai: AiScorer;
   scoring: Scoring;
   dataRights: DataRights;
+  aiDaily: AiDailyReviewer;
+  daily: DailyTasks;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -93,7 +100,11 @@ export function buildServices(d: AppDeps): Services {
   const seasons = new SeasonAdmin(d.db, d.clock, store, notifier);
   const storage = d.storage ?? new LocalStorage(d.cfg.secret);
   const ai = d.ai ?? new FakeAiScorer();
+  const aiDaily = d.aiDaily ?? new FakeAiDaily();
+  const play = new SeasonPlay(d.db, d.clock, store);
   return {
+    aiDaily,
+    daily: new DailyTasks(d.db, d.clock, d.cfg, storage, aiDaily, notifier, store, play),
     ai,
     dataRights: new DataRights(d.db, d.clock, storage, notifier),
     scoring: new Scoring(d.db, d.clock, store, ai, notifier, storage),
@@ -103,7 +114,7 @@ export function buildServices(d: AppDeps): Services {
     scheduler,
     seasons,
     control: new SeasonControl(d.db, d.clock, store, scheduler, seasons),
-    play: new SeasonPlay(d.db, d.clock, store),
+    play,
     reports: new Reports(d.db, d.clock, store, notifier),
     reminders: new Reminders(d.db, d.clock, store, notifier),
     seasonNotices,
@@ -142,6 +153,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   workRoutes(app, services.works, services.play, services.scoring, services.familyAuth);
   reviewRoutes(app, services.scoring, services.admin, services.adminAuth);
   dataRoutes(app, d.db, services.dataRights, services.familyAuth, services.adminAuth);
+  dailyRoutes(app, services.daily, services.admin, services.familyAuth, services.adminAuth);
   devStorageRoutes(app, services.storage, d.clock, Math.max(...Object.values(d.cfg.uploads.maxBytes)));
   return { app, services };
 }

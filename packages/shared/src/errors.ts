@@ -64,6 +64,13 @@ export const ERROR_TEXT = {
   bad_dims: "每个维度都要打分，而且不能超过满分",
   not_closed: "这件作品还没到截止时间",
   already_settled: "已经结算了",
+  evidence_required: "至少交一张证据图片",
+  explain_length: "文字讲解要 50 到 150 个字",
+  explain_missing: "讲解的录音还没传好",
+  ai_note_required: "说一句你是怎么用 AI 的",
+  no_ai_not_allowed: "这个模板要用到 AI，请说一句你是怎么用的",
+  retries_used: "今天重交的次数用完了，明天再来吧",
+  not_reviewing: "这条已经有结果了",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_TEXT;

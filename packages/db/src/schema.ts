@@ -718,3 +718,90 @@ export const dataRequests = pgTable(
   },
   (t) => [index("data_requests_family").on(t.familyId), index("data_requests_due").on(t.status, t.dueAt)],
 );
+
+// ---- daily tasks and the journal (part 4 §8; content library §8) -------------------------
+
+/** One daily task a child handed in (evidence + explanation + a line on how AI was used). */
+export const dailySubmissions = pgTable(
+  "daily_submissions",
+  {
+    id: id(),
+    childId: uuid("child_id").notNull().references(() => children.id),
+    /** 1–6 (content library 8.1). */
+    templateId: integer("template_id").notNull(),
+    evidenceFileIds: jsonb("evidence_file_ids").notNull(),
+    /** voice | text */
+    explainKind: text("explain_kind").notNull(),
+    explainFileId: uuid("explain_file_id"),
+    explainText: text("explain_text"),
+    aiNote: text("ai_note"),
+    /** "没用 AI" (templates 3–6): human–AI level is "not applicable". */
+    noAi: boolean("no_ai").notNull().default(false),
+    submittedAt: ts("submitted_at").notNull(),
+    /** Beijing date of the submission (the day it counts for). */
+    day: date("day").notNull(),
+    /** Grade on the day (crossing score, part 4 §2). */
+    grade: integer("grade").notNull(),
+    /** reviewing | passed | failed | error (AI kept failing: exception queue) */
+    status: text("status").notNull().default("reviewing"),
+    attempts: integer("attempts").notNull().default(0),
+    nextTryAt: ts("next_try_at"),
+    /** For the child when not passed: why and how to fix it. */
+    failReason: text("fail_reason"),
+    feedbackGood: text("feedback_good"),
+    feedbackBetter: text("feedback_better"),
+    /** Grain counted through the season engine (null: not a season player, or not counted). */
+    grain: integer("grain"),
+    counted: boolean("counted"),
+    busyNoticeAt: ts("busy_notice_at"),
+    decidedAt: ts("decided_at"),
+  },
+  (t) => [index("daily_child_day").on(t.childId, t.day), index("daily_status").on(t.status)],
+);
+
+/** The review (AI or a person from the exception queue); background levels are never shown to the child. */
+export const dailyReviews = pgTable(
+  "daily_reviews",
+  {
+    id: id(),
+    submissionId: uuid("submission_id").notNull().references(() => dailySubmissions.id),
+    /** "ai:<model>" or "admin:<id>" */
+    by: text("by").notNull(),
+    passed: boolean("passed").notNull(),
+    /** 表达档 0–4 */
+    expression: integer("expression"),
+    /** 人机协作档 0–4; null = not applicable */
+    aiLevel: integer("ai_level"),
+    aiTone: boolean("ai_tone").notNull().default(false),
+    mainTag: text("main_tag"),
+    subTag: text("sub_tag"),
+    /** L1–L6 as 1–6 */
+    difficulty: integer("difficulty"),
+    /** difficulty − the level of the child's grade */
+    crossing: integer("crossing"),
+    /** Seconds of voice or characters of text. */
+    length: integer("length"),
+    raw: jsonb("raw"),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [index("daily_reviews_submission").on(t.submissionId)],
+);
+
+/** 知识卡片 in the journal (修行日志). Only what the child said (PRD part 6 §0.4). */
+export const knowledgeCards = pgTable(
+  "knowledge_cards",
+  {
+    id: id(),
+    childId: uuid("child_id").notNull().references(() => children.id),
+    submissionId: uuid("submission_id").notNull().references(() => dailySubmissions.id),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    /** "物理与天文/力与运动" */
+    tag: text("tag"),
+    difficulty: integer("difficulty"),
+    day: date("day").notNull(),
+    visible: boolean("visible").notNull().default(true),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [index("knowledge_cards_child").on(t.childId, t.day)],
+);
