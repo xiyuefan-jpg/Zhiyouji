@@ -16,3 +16,4 @@ export * from "./items.js";
 export * from "./shop.js";
 export * from "./bigBattle.js";
 export * from "./final.js";
+export * from "./grouping.js";
