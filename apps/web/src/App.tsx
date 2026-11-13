@@ -4,7 +4,7 @@
  * The three documents can be read at any step.
  */
 
-import { useState } from "react";
+import { lazy, Suspense, useState, type ComponentType } from "react";
 import { Link, Navigate, Outlet, Route, Routes } from "react-router";
 import { Button } from "antd-mobile";
 import { Empty } from "./components/ui";
@@ -17,16 +17,36 @@ import { AboutPage, MeTab, PrivacyPage, Settings } from "./pages/Me";
 import { Shell } from "./pages/Shell";
 import { Home, ReportTab } from "./pages/Tabs";
 import { LandPage, LedgerPage, SeasonMap, SeasonTeam } from "./pages/season/SeasonPages";
-import { DailyHome, DailyNew, DailyResult } from "./pages/DailyPages";
-import { SurveyPage } from "./pages/SurveyPage";
 import { GuidePage } from "./pages/GuidePage";
 import { AnnouncementPage, AnnouncementsPage, SeasonCalendarPage } from "./pages/MorePages";
 import { ShowcasePage, ShowWorkPage, TeamPublicPage, WatchServer, WatchServers } from "./pages/WatchPages";
-import { CardPage, Journal, RealmPage, SeasonReviewPage, SummaryPage } from "./pages/JournalPages";
-import { WorkSlot, WorksList } from "./pages/season/WorksPages";
-import { ItemsPage } from "./pages/season/ItemsPage";
 import { ContestPage, RoundPage } from "./pages/season/TeamPages";
-import { BigBattlePage, ShopPage, SupplyPage, WarsPage, WarWeekPage } from "./pages/season/BattlePages";
+
+/** Pages that are not on the first screen load when first opened (smaller first download on phones). */
+function page<M>(load: () => Promise<M>, name: keyof M) {
+  return lazy(async () => ({ default: (await load())[name] as unknown as ComponentType }));
+}
+const dailyPages = () => import("./pages/DailyPages");
+const DailyHome = page(dailyPages, "DailyHome");
+const DailyNew = page(dailyPages, "DailyNew");
+const DailyResult = page(dailyPages, "DailyResult");
+const SurveyPage = page(() => import("./pages/SurveyPage"), "SurveyPage");
+const journalPages = () => import("./pages/JournalPages");
+const Journal = page(journalPages, "Journal");
+const CardPage = page(journalPages, "CardPage");
+const SummaryPage = page(journalPages, "SummaryPage");
+const RealmPage = page(journalPages, "RealmPage");
+const SeasonReviewPage = page(journalPages, "SeasonReviewPage");
+const worksPages = () => import("./pages/season/WorksPages");
+const WorksList = page(worksPages, "WorksList");
+const WorkSlot = page(worksPages, "WorkSlot");
+const ItemsPage = page(() => import("./pages/season/ItemsPage"), "ItemsPage");
+const battlePages = () => import("./pages/season/BattlePages");
+const WarsPage = page(battlePages, "WarsPage");
+const WarWeekPage = page(battlePages, "WarWeekPage");
+const SupplyPage = page(battlePages, "SupplyPage");
+const ShopPage = page(battlePages, "ShopPage");
+const BigBattlePage = page(battlePages, "BigBattlePage");
 
 export function App() {
   const [privacyOk, setPrivacyOk] = useState(privacyAccepted);
@@ -86,6 +106,7 @@ function Gate() {
       </Routes>
     );
   return (
+    <Suspense fallback={<Splash />}>
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Home />} />
@@ -141,6 +162,7 @@ function Gate() {
       </Route>
       <Route path="*" element={<NotOpen />} />
     </Routes>
+    </Suspense>
   );
 }
 
