@@ -16,7 +16,7 @@ async function main() {
   const env = process.env;
   const cfg = defaultConfig(env);
   if (env.NODE_ENV === "production" && cfg.secret === "dev-secret-change-me") throw new Error("SERVER_SECRET must be set in production");
-  const { db } = env.DATABASE_URL ? await createPgDb(env.DATABASE_URL) : await createPgliteDb(env.PGLITE_DIR);
+  const { db, close } = env.DATABASE_URL ? await createPgDb(env.DATABASE_URL) : await createPgliteDb(env.PGLITE_DIR);
   const clock = realClock;
   // TODO(Aliyun SMS): replace once the signature and templates are approved.
   const sms = new FakeSms(env.NODE_ENV === "production" ? undefined : (line) => console.log(line));
@@ -26,7 +26,7 @@ async function main() {
 
   const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier, services.reports, services.reminders, services.scoring, services.dataRights, services.daily, services.supply, services.debates, services.ops, services.showcase, services.summaries, services.media, services.tagSuggestions);
   const tickMs = Number(env.TICK_MS ?? 30_000);
-  setInterval(() => {
+  const timer = setInterval(() => {
     worker.tick().then(
       (r) => r && (r.ran || r.sms.sent || r.failed.length) && app.log.info({ worker: r }, "worker tick"),
       (err) => app.log.error(err, "worker tick failed"),
@@ -36,6 +36,17 @@ async function main() {
   const port = Number(env.PORT ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
   app.log.info(`worker tick every ${tickMs}ms`);
+
+  // Docker / systemd stop: no new ticks, finish the requests in flight, then exit.
+  const stop = async (signal: string) => {
+    app.log.info(`${signal}: shutting down`);
+    clearInterval(timer);
+    await app.close();
+    await close();
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => void stop("SIGTERM"));
+  process.once("SIGINT", () => void stop("SIGINT"));
 }
 
 main().catch((err) => {
