@@ -19,6 +19,7 @@
  * idempotent.
  */
 
+import type { MediaPipeline } from "../media.js";
 import { createHash } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
@@ -66,6 +67,7 @@ export class Scoring {
     private readonly ai: AiScorer,
     private readonly notifier: Notifier,
     private readonly storage: ObjectStorage,
+    private readonly media?: MediaPipeline,
   ) {}
 
   private now(): number {
@@ -139,10 +141,15 @@ export class Scoring {
   private async aiScore(serverId: string, st: SeasonState, w: WorkRow, official = true): Promise<void> {
     const rubric = RUBRICS[await this.rubricOf(serverId, st, w)];
     const ids = (w.fileIds as string[]) ?? [];
+    // speech-to-text, key frames and document text first (part 6 §2); a file still not ready is left out
+    await this.media?.ensure(ids).catch(() => undefined);
     const fs = ids.length ? await this.db.select().from(files).where(inArray(files.id, ids)) : [];
     const transcript = fs.map((f) => f.transcript).filter(Boolean).join("\n") || null;
+    const now = this.now();
+    const imageKeys = [...fs.filter((f) => f.kind === "image" && f.status !== "deleted").map((f) => f.storageKey), ...fs.flatMap((f) => (f.frames as string[]) ?? [])];
+    const images = await Promise.all(imageKeys.slice(0, 40).map((k) => this.storage.downloadUrl(k, now)));
     try {
-      const r = await this.ai.score({ workId: w.id, rubric, promptId: w.promptId, mediaKind: w.mediaKind, text: w.text, aiNote: w.aiNote, transcript });
+      const r = await this.ai.score({ workId: w.id, rubric, promptId: w.promptId, mediaKind: w.mediaKind, text: w.text, aiNote: w.aiNote, transcript, images });
       await this.db.insert(aiScores).values({
         workId: w.id,
         rubric: `${rubric.id}@${rubric.version}`,

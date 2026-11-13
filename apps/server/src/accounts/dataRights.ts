@@ -211,8 +211,11 @@ export class DataRights {
       const workFiles = signed.flatMap((w) => (w.fileIds as string[]) ?? []);
       const fileIds = [...new Set([...own.map((f) => f.id), ...workFiles])];
       const gone = fileIds.length ? await tx.select().from(files).where(inArray(files.id, fileIds)) : [];
-      for (const f of gone) await this.storage.delete(f.storageKey);
-      if (fileIds.length) await tx.update(files).set({ status: "deleted", filename: null, transcript: null }).where(inArray(files.id, fileIds));
+      for (const f of gone) {
+        await this.storage.delete(f.storageKey);
+        for (const k of (f.frames as string[]) ?? []) await this.storage.delete(k); // video key frames
+      }
+      if (fileIds.length) await tx.update(files).set({ status: "deleted", filename: null, transcript: null, frames: [] }).where(inArray(files.id, fileIds));
       if (fileIds.length) await tx.update(materials).set({ removedAt: now, text: null }).where(inArray(materials.fileId, fileIds));
       await tx.update(materials).set({ removedAt: now, text: null }).where(eq(materials.addedBy, childId));
       if (signed.length) await tx.update(works).set({ text: null, aiNote: null, fileIds: [], members: [] }).where(inArray(works.id, signed.map((w) => w.id)));

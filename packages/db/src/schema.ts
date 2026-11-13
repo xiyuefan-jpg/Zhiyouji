@@ -546,11 +546,17 @@ export const files = pgTable(
     /** uploading | uploaded | processed | failed */
     status: text("status").notNull().default("uploading"),
     durationSec: integer("duration_sec"),
+    /** Speech-to-text of audio and video, or the text of a PDF (PRD part 6 T1, T3). */
     transcript: text("transcript"),
+    /** Storage keys of key frames taken from a video (part 6 T2). */
+    frames: jsonb("frames").notNull().default([]),
+    processAttempts: integer("process_attempts").notNull().default(0),
+    processError: text("process_error"),
+    processedAt: ts("processed_at"),
     createdAt: ts("created_at").notNull(),
     uploadedAt: ts("uploaded_at"),
   },
-  (t) => [index("files_team").on(t.teamId)],
+  (t) => [index("files_team").on(t.teamId), index("files_status").on(t.status)],
 );
 
 /** 素材箱 (part 5 §3.3): what any team member puts in for one work slot, files or text. */

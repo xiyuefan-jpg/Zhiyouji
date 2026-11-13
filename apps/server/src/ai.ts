@@ -8,6 +8,8 @@ import { createHash } from "node:crypto";
 import type { Rubric } from "./season/rubrics.js";
 
 export interface ScoreRequest {
+  /** Picture URLs: image files and video key frames (part 6 T2, T5). */
+  images?: string[];
   workId: string;
   rubric: Rubric;
   promptId: string | null;

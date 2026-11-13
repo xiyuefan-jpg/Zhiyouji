@@ -38,6 +38,7 @@ import { FakeAiDaily, FakeAiSupply, type AiDailyReviewer, type AiSupplyScorer } 
 import { Supply } from "../season/supply.js";
 import { WarWords } from "../season/warWords.js";
 import { Home } from "../season/todo.js";
+import { FakeMediaProcessor, MediaPipeline, type MediaProcessor } from "../media.js";
 import { QuestionBank } from "../content/questionBank.js";
 import { bankRoutes } from "./bankRoutes.js";
 import { Debates } from "../season/debates.js";
@@ -79,6 +80,8 @@ export interface AppDeps {
   safety?: ContentSafety;
   /** Weekly / monthly look-backs and season reviews (default: the fake). */
   aiSummary?: AiSummarizer;
+  /** Speech-to-text, video key frames, document text (default: the fake). */
+  media?: MediaProcessor;
   logger?: boolean;
   trustProxy?: boolean;
 }
@@ -118,6 +121,8 @@ export interface Services {
   summaries: Summaries;
   gateway: AiGateway;
   home: Home;
+  media: MediaPipeline;
+  mediaProcessor: MediaProcessor;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -156,18 +161,22 @@ export function buildServices(d: AppDeps): Services {
   const play = new SeasonPlay(d.db, d.clock, store);
   const reports = new Reports(d.db, d.clock, store, notifier);
   const works = new Works(d.db, d.clock, d.cfg, store, storage, debates, ops);
+  const mediaProcessor = d.media ?? new FakeMediaProcessor();
+  const media = new MediaPipeline(d.db, d.clock, storage, mediaProcessor, notifier);
   const supply = new Supply(d.db, d.clock, store, gateway.wrapSupply(d.aiSupply ?? new FakeAiSupply()), notifier);
   return {
     home: new Home(d.db, d.clock, store, play, works, supply, warWords, reports),
+    media,
+    mediaProcessor,
     gateway,
     summaries: new Summaries(d.db, d.clock, gateway.wrapSummary(d.aiSummary ?? new FakeAiSummarizer()), notifier, store),
     showcase: new Showcase(d.db, d.clock, store, d.safety ?? new FakeContentSafety(), notifier, storage, play, reports),
     supply,
     aiDaily,
-    daily: new DailyTasks(d.db, d.clock, d.cfg, storage, gateway.wrapDaily(aiDaily), notifier, store, play),
+    daily: new DailyTasks(d.db, d.clock, d.cfg, storage, gateway.wrapDaily(aiDaily), notifier, store, play, media),
     ai,
     dataRights: new DataRights(d.db, d.clock, storage, notifier),
-    scoring: new Scoring(d.db, d.clock, store, gateway.wrapScorer(ai), notifier, storage),
+    scoring: new Scoring(d.db, d.clock, store, gateway.wrapScorer(ai), notifier, storage, media),
     storage,
     works,
     ops,

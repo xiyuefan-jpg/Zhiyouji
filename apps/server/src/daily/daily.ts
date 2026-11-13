@@ -14,6 +14,7 @@
  *   journal. Not passed: the reason and how to fix it; up to 2 re-tries a day.
  */
 
+import type { MediaPipeline } from "../media.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, ilike, inArray, lt, lte, or } from "drizzle-orm";
 import { dailyReviews, dailySubmissions, files, knowledgeCards, type Db } from "@zhiyouji/db";
@@ -58,6 +59,7 @@ export class DailyTasks {
     private readonly notifier: Notifier,
     private readonly store: SeasonStore,
     private readonly play: SeasonPlay,
+    private readonly media?: MediaPipeline,
   ) {}
 
   private now(): number {
@@ -181,8 +183,12 @@ export class DailyTasks {
     const tpl = DAILY_TEMPLATES.find((t) => t.id === s.templateId)!;
     const evidence = s.evidenceFileIds as string[];
     let transcript: string | null = null;
-    if (s.explainFileId) transcript = (await this.db.select({ t: files.transcript }).from(files).where(eq(files.id, s.explainFileId)))[0]?.t ?? null;
     try {
+      // the voice explanation is transcribed first ("材料齐了", part 6 §2)
+      if (s.explainFileId) {
+        await this.media?.ensure([s.explainFileId]);
+        transcript = (await this.db.select({ t: files.transcript }).from(files).where(eq(files.id, s.explainFileId)))[0]?.t ?? null;
+      }
       const r = await this.ai.reviewDaily({
         submissionId: s.id,
         templateId: s.templateId,
