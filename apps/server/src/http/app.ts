@@ -37,6 +37,8 @@ import { dataRoutes } from "./dataRoutes.js";
 import { FakeAiDaily, FakeAiSupply, type AiDailyReviewer, type AiSupplyScorer } from "../ai.js";
 import { Supply } from "../season/supply.js";
 import { WarWords } from "../season/warWords.js";
+import { QuestionBank } from "../content/questionBank.js";
+import { bankRoutes } from "./bankRoutes.js";
 import { DailyTasks } from "../daily/daily.js";
 import { dailyRoutes } from "./dailyRoutes.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
@@ -88,6 +90,7 @@ export interface Services {
   daily: DailyTasks;
   supply: Supply;
   warWords: WarWords;
+  bank: QuestionBank;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -99,6 +102,11 @@ export function buildServices(d: AppDeps): Services {
   const scheduler = new Scheduler(d.db, store, d.clock);
   const seasonNotices = new SeasonNotices(d.db, notifier);
   const warWords = new WarWords(d.db, d.clock, store, notifier);
+  const bank = new QuestionBank(d.db, d.clock, store, notifier);
+  // A land running out of prompts after a draw → tell the admins.
+  store.onApplied(async (serverId, _seq, notices, state) => {
+    for (const n of notices) if (n.kind === "contest_started") await bank.checkAfterDraw(serverId, state, String(n.data.landId));
+  });
   // Engine notices → message center and SMS; D0 evening → "分组公布".
   store.onApplied((serverId, seq, notices, state) => seasonNotices.dispatch(serverId, seq, notices, state));
   scheduler.onRowDone(async (serverId, kind, key) => {
@@ -106,7 +114,7 @@ export function buildServices(d: AppDeps): Services {
     if (kind === "war_pairing") await warWords.onPaired(serverId, Number(key.split(":")[1]));
     if (kind === "gift_deadline") await warWords.reveal(serverId, Number(key.split(":")[1]));
   });
-  const seasons = new SeasonAdmin(d.db, d.clock, store, notifier);
+  const seasons = new SeasonAdmin(d.db, d.clock, store, notifier, bank);
   const storage = d.storage ?? new LocalStorage(d.cfg.secret);
   const ai = d.ai ?? new FakeAiScorer();
   const aiDaily = d.aiDaily ?? new FakeAiDaily();
@@ -128,6 +136,7 @@ export function buildServices(d: AppDeps): Services {
     reports: new Reports(d.db, d.clock, store, notifier),
     reminders: new Reminders(d.db, d.clock, store, notifier, warWords),
     warWords,
+    bank,
     seasonNotices,
     sessions,
     family,
@@ -164,6 +173,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   workRoutes(app, services.works, services.play, services.scoring, services.familyAuth);
   reviewRoutes(app, services.scoring, services.admin, services.adminAuth);
   dataRoutes(app, d.db, services.dataRights, services.familyAuth, services.adminAuth);
+  bankRoutes(app, services.bank, services.adminAuth);
   dailyRoutes(app, services.daily, services.admin, services.familyAuth, services.adminAuth);
   devStorageRoutes(app, services.storage, d.clock, Math.max(...Object.values(d.cfg.uploads.maxBytes)));
   return { app, services };

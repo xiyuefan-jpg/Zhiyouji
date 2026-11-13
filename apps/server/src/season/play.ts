@@ -12,7 +12,7 @@
 
 import { randomBytes } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { children, lands as landRows, plannedEvents, roleTransfers, seasonPlayers, seasons, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
+import { children, lands as landRows, plannedEvents, prompts as promptRows, roleTransfers, seasonPlayers, seasons, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
 import {
   ITEMS,
   REGULAR_COMMON_ITEMS,
@@ -422,7 +422,9 @@ export class SeasonPlay {
     if (!c) refuse("unknown_contest");
     const name = (id: string) => s.teams[id]?.name ?? "";
     const involved = c!.defender === ctx.teamId || c!.attackers.some((a) => a.teamId === ctx.teamId);
+    const [p] = /^[0-9a-f-]{36}$/i.test(c!.promptId) ? await this.db.select().from(promptRows).where(eq(promptRows.id, c!.promptId)) : [];
     return {
+      prompt: p ? { title: p.title, body: p.body, audience: p.audience, questionType: p.questionType } : null,
       id: c!.id,
       landId: c!.landId,
       status: c!.status,

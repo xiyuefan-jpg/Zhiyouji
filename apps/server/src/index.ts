@@ -29,3 +29,4 @@ export * from "./accounts/dataRights.js";
 export * from "./daily/daily.js";
 export * from "./season/supply.js";
 export * from "./season/warWords.js";
+export * from "./content/questionBank.js";

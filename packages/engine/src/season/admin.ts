@@ -157,6 +157,17 @@ export function setParams(input: SeasonState, e: { params: SeasonParams; version
   return { ok: true, state: s, notices: [notice("params_changed", e.at, false, { version: e.version, by: e.by, reason: e.reason ?? null })] };
 }
 
+/**
+ * The enabled prompts of a land changed in the question bank (content library
+ * §12): later draws use the new list; prompts already drawn stay used.
+ */
+export function setLandPrompts(input: SeasonState, e: { landId: string; promptIds: string[]; at: Instant }): Result<AdminRefusal> {
+  if (!input.lands[e.landId]) return { ok: false, refusal: "unknown_land" };
+  const s = cloneState(input);
+  s.prompts[e.landId] = [...new Set(e.promptIds)];
+  return { ok: true, state: s, notices: [notice("prompts_changed", e.at, false, { landId: e.landId, count: s.prompts[e.landId]!.length })] };
+}
+
 /** Total paused time before `t`: scheduled times after a pause shift by this much (§16, §18). */
 export function pausedBefore(s: SeasonState, t: Instant, now: Instant = t): number {
   let sum = 0;

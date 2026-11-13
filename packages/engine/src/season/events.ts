@@ -4,7 +4,7 @@
  * the event log are the source of truth; §16: re-running is idempotent).
  */
 
-import { adjustLedger, adminGiveItem, adminRemoveItem, adminSetLandOwner, adminSetTeamRole, claimTeamRole, finalizeSeason, memberLeaves, pauseSeason, resumeSeason, reverseEntry, setParams, systemAssignLeaders, takeOverLeader, transferTeamRole } from "./admin.js";
+import { adjustLedger, adminGiveItem, adminRemoveItem, adminSetLandOwner, adminSetTeamRole, claimTeamRole, finalizeSeason, memberLeaves, pauseSeason, resumeSeason, reverseEntry, setLandPrompts, setParams, systemAssignLeaders, takeOverLeader, transferTeamRole } from "./admin.js";
 import { formBigBattle, lockLines, settleBigBattle, submitLines, useBattleItem } from "./bigBattle.js";
 import { adminCancelContest, joinContest, settleContest, startContest } from "./contests.js";
 import { settleDay } from "./daily.js";
@@ -80,6 +80,7 @@ const HANDLERS = {
   remove_item: adminRemoveItem,
   finalize: finalizeSeason,
   set_params: setParams,
+  set_land_prompts: setLandPrompts,
 } as const;
 
 export type SeasonEventType = keyof typeof HANDLERS;

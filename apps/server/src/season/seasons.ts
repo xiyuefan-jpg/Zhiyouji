@@ -17,6 +17,7 @@ import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
 import type { SeasonStore } from "../seasonStore.js";
 import type { Notifier } from "../notify/notifier.js";
+import type { QuestionBank } from "../content/questionBank.js";
 
 export type SeasonRow = typeof seasons.$inferSelect;
 
@@ -52,6 +53,7 @@ export class SeasonAdmin {
     private readonly clock: Clock,
     private readonly store: SeasonStore,
     private readonly notifier?: Notifier,
+    private readonly bank?: QuestionBank,
   ) {}
 
   private async log(actor: string, action: string, object: string, before: unknown, after: unknown, reason?: string): Promise<void> {
@@ -411,7 +413,12 @@ export class SeasonAdmin {
     const kids = await this.db.select().from(children).where(inArray(children.id, ids));
     const grade = new Map(kids.map((k) => [k.id, k.grade]));
     const now = this.clock.now();
-    const prompts = i.prompts ?? ((s.prompts as Record<string, string[]> | null) ?? undefined);
+    // Lands come from the question bank's templates unless the admin passes names / prompts by hand.
+    const teamsPerServer = draft.servers[0]?.teams.length ?? params.grouping.teamsPerServer;
+    const bankMap = this.bank ? await this.bank.defaultMapping(teamsPerServer, teamsPerServer / 2) : null;
+    const hasBank = !!bankMap && Object.keys(bankMap.landNames).length > 0;
+    const prompts = i.prompts ?? ((s.prompts as Record<string, string[]> | null) ?? (hasBank ? bankMap!.prompts : undefined));
+    const landNames = i.landNames ?? (hasBank ? bankMap!.landNames : undefined);
     const out = await this.db.transaction(async (tx) => {
       const made: { serverId: string; name: string; teamIds: string[] }[] = [];
       for (const [k, sv] of draft.servers.entries()) {
@@ -425,7 +432,8 @@ export class SeasonAdmin {
           paramVersion: version,
           calendar,
           teams: sv.teams.map((t) => ({ name: t.name, members: t.childIds.map((c) => ({ childId: c, grade: grade.get(c) ?? 1 })) })),
-          landNames: i.landNames,
+          landNames,
+          landTemplates: hasBank ? bankMap!.landTemplates : undefined,
           prompts,
           createdBy: by,
           at: now,

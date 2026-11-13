@@ -865,3 +865,47 @@ export const warCards = pgTable(
   },
   (t) => [uniqueIndex("war_cards_team").on(t.serverId, t.week, t.teamId)],
 );
+
+// ---- question bank (part 4 §3; content library §4, §12) -----------------------------------------
+
+/** Land templates reused across seasons; each server's lands are made from them. */
+export const landTemplates = pgTable("land_templates", {
+  id: id(),
+  name: text("name").notNull().unique(),
+  /** edge | center */
+  kind: text("kind").notNull(),
+  subject: text("subject").notNull(),
+  /** Rubric family A–E. */
+  rubric: text("rubric").notNull(),
+  questionType: text("question_type").notNull(),
+  defaultAudience: text("default_audience"),
+  /** 小队友可以做什么 */
+  juniorHint: text("junior_hint"),
+  /** enabled | pending (【待定】) */
+  status: text("status").notNull().default("enabled"),
+  sort: integer("sort").notNull().default(0),
+});
+
+/** Prompts of every kind; only "enabled" ones are drawn (content library §12). */
+export const prompts = pgTable(
+  "prompts",
+  {
+    id: id(),
+    /** land | war_theme | supply | battle_line | battle_main */
+    category: text("category").notNull(),
+    landTemplateId: uuid("land_template_id").references(() => landTemplates.id),
+    questionType: text("question_type"),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    audience: text("audience"),
+    rubric: text("rubric"),
+    /** draft | enabled | disabled */
+    status: text("status").notNull().default("draft"),
+    /** 待补: still a placeholder. */
+    todo: boolean("todo").notNull().default(false),
+    createdBy: text("created_by").notNull(),
+    createdAt: ts("created_at").notNull(),
+    updatedAt: ts("updated_at").notNull(),
+  },
+  (t) => [index("prompts_land").on(t.landTemplateId, t.status)],
+);

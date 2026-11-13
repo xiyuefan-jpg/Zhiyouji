@@ -124,6 +124,8 @@ export class SeasonStore {
       calendar: DayKindOverrides;
       teams: { name: string; members: { childId: string; grade: number }[] }[];
       landNames?: Record<string, string>;
+      /** Land code → question-bank land template. */
+      landTemplates?: Record<string, string>;
       prompts?: Record<string, string[]>;
       createdBy: string;
       at: Date;
@@ -139,7 +141,9 @@ export class SeasonStore {
     );
     if (members.length) await tx.insert(teamMembers).values(members);
     const map = standardLands(i.teams.length);
-    await tx.insert(lands).values(map.map((l) => ({ serverId: server!.id, code: l.id, kind: l.kind, name: i.landNames?.[l.id] ?? l.id })));
+    await tx
+      .insert(lands)
+      .values(map.map((l) => ({ serverId: server!.id, code: l.id, kind: l.kind, name: i.landNames?.[l.id] ?? l.id, templateId: i.landTemplates?.[l.id] ?? null })));
     const state = createSeasonState({
       seasonId: i.seasonId,
       seed: i.seed,

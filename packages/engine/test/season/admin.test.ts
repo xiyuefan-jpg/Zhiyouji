@@ -19,6 +19,7 @@ import {
   pointsOf,
   resumeSeason,
   reverseEntry,
+  setLandPrompts,
   setParams,
   settleBigBattle,
   settleDay,
@@ -133,5 +134,15 @@ describe("parameter changes (§2)", () => {
     expect(s.params.dailyTask.grainPerTask).toBe(3);
     expect(r.notices[0]).toMatchObject({ kind: "params_changed", data: { version: 2 } });
     expect(setParams(s, { params: next, version: 0, at: at(3, 10), by: "a" })).toMatchObject({ ok: false });
+  });
+});
+
+describe("question bank changes (content library §12)", () => {
+  it("replaces a land's prompt list; used prompts stay used", () => {
+    const s = newSeason();
+    const r = setLandPrompts(s, { landId: "E1", promptIds: ["new1", "new2", "new1"], at: at(3, 10) });
+    if (!r.ok) throw new Error(r.refusal);
+    expect(ok(r).prompts.E1).toEqual(["new1", "new2"]);
+    expect(setLandPrompts(s, { landId: "Z9", promptIds: [], at: at(3, 10) })).toMatchObject({ ok: false, refusal: "unknown_land" });
   });
 });

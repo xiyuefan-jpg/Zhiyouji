@@ -139,3 +139,37 @@ export const opLogQuery = z.object({
   to: z.coerce.date().optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
+
+// ---- 题库 (part 7 §4; content library §12) ---------------------------------------------------
+
+export const PROMPT_CATEGORIES = ["land", "war_theme", "supply", "battle_line", "battle_main"] as const;
+export const PROMPT_STATUSES = ["draft", "enabled", "disabled"] as const;
+
+export const promptCreate = z.object({
+  category: z.enum(PROMPT_CATEGORIES),
+  landTemplateId: z.uuid().nullable().optional(),
+  questionType: z.string().trim().max(60).nullable().optional(),
+  title: z.string().trim().min(1).max(100),
+  body: z.string().trim().min(1).max(5000),
+  audience: z.string().trim().max(100).nullable().optional(),
+  rubric: z.enum(["A", "B", "C", "D", "E"]).nullable().optional(),
+  status: z.enum(PROMPT_STATUSES).optional(),
+  todo: z.boolean().optional(),
+});
+export const promptUpdate = promptCreate.partial();
+export const promptImport = z.object({ prompts: z.array(promptCreate).min(1).max(500) });
+export const promptQuery = z.object({
+  category: z.enum(PROMPT_CATEGORIES).optional(),
+  landTemplateId: z.uuid().optional(),
+  status: z.enum(PROMPT_STATUSES).optional(),
+});
+export const landTemplateUpdate = z.object({
+  name: z.string().trim().min(1).max(12).optional(),
+  subject: z.string().trim().min(1).max(40).optional(),
+  rubric: z.enum(["A", "B", "C", "D", "E"]).optional(),
+  questionType: z.string().trim().min(1).max(60).optional(),
+  defaultAudience: z.string().trim().max(100).nullable().optional(),
+  juniorHint: z.string().trim().max(200).nullable().optional(),
+  status: z.enum(["enabled", "pending"]).optional(),
+  sort: z.number().int().min(0).max(100).optional(),
+});

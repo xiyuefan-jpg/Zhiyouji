@@ -54,7 +54,7 @@ const TEAM_KINDS = new Set([
   "shop_bought",
 ]);
 
-const HIDDEN_KINDS = new Set(["daily_settled", "daily_skipped_paused", "entry_reversed", "params_changed"]);
+const HIDDEN_KINDS = new Set(["daily_settled", "daily_skipped_paused", "entry_reversed", "params_changed", "prompts_changed"]);
 
 /**
  * The notice as `teamId` (in `camp`) may see it, or null. Allocation lists are
