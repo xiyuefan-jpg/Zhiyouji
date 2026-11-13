@@ -1,0 +1,29 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_PARAMS, battleLineValues, landCounts, openingStockPerKind, withParams } from "../src/index.js";
+
+describe("params", () => {
+  it("land counts per server (§4, §20.1)", () => {
+    expect(landCounts(8)).toEqual({ edge: 8, center: 4 });
+    expect(landCounts(6)).toEqual({ edge: 6, center: 3 });
+    expect(() => landCounts(7)).toThrow();
+  });
+  it("starter stock defaults to teams / 2", () => {
+    expect(openingStockPerKind(8, DEFAULT_PARAMS)).toBe(4);
+    expect(openingStockPerKind(6, DEFAULT_PARAMS)).toBe(3);
+    expect(openingStockPerKind(8, withParams({ opening: { stockPerKind: 9 } }))).toBe(9);
+  });
+  it("big battle lines (§14, §20.1)", () => {
+    expect(battleLineValues(8, DEFAULT_PARAMS)).toEqual([10, 15, 20, 25]);
+    expect(battleLineValues(6, DEFAULT_PARAMS)).toEqual([10, 18, 25]);
+    expect(battleLineValues(4, DEFAULT_PARAMS)).toEqual([10, 25]);
+    expect(battleLineValues(10, DEFAULT_PARAMS)).toEqual([10, 14, 18, 21, 25]);
+  });
+  it("withParams deep-merges and does not mutate defaults", () => {
+    const p = withParams({ contest: { qualityLine: 60 }, war: { giftWeeks: [1] } });
+    expect(p.contest.qualityLine).toBe(60);
+    expect(p.contest.baseCost).toBe(30);
+    expect(p.war.giftWeeks).toEqual([1]);
+    expect(DEFAULT_PARAMS.contest.qualityLine).toBe(50);
+    expect(DEFAULT_PARAMS.war.giftWeeks).toEqual([2, 4]);
+  });
+});

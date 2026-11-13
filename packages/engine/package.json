@@ -1,0 +1,12 @@
+{
+  "name": "@zhiyouji/engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "智游记赛季规则引擎：纯函数，不碰数据库、不读系统时间",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}
