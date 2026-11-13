@@ -5,3 +5,4 @@ export * from "./useItem.js";
 export * from "./rounds.js";
 export * from "./tasks.js";
 export * from "./shop.js";
+export * from "./war.js";

@@ -134,6 +134,15 @@ export interface ShopState {
   auctions: EpicAuctionState[];
 }
 
+export interface WarState {
+  week: number;
+  pairs: [string, string][];
+  bye: string | null;
+  pairedAt: Instant;
+  settled: boolean;
+  results?: { teamId: string; outcome: "win" | "lose" | "tie" | "bye"; points: Pts; chestItem: string | null }[];
+}
+
 export interface SeasonState {
   seasonId: string;
   seed: number;
@@ -164,6 +173,8 @@ export interface SeasonState {
   /** Passed daily tasks as they were counted (§7). */
   taskPasses: TaskPass[];
   shop: ShopState;
+  /** Weekly wars by week number (§11). */
+  wars: Record<string, WarState>;
   paused: boolean;
   /** Counter for deterministic ids. */
   seq: number;
@@ -222,6 +233,7 @@ export function createSeasonState(i: CreateSeasonInput): SeasonState {
       rareStock: Object.fromEntries(ITEMS.filter((it) => it.tier === "rare").map((it) => [it.id, i.params.items.rareStockPerKind])),
       auctions: [],
     },
+    wars: {},
     paused: false,
     seq: 0,
   };
