@@ -5,6 +5,7 @@
 import { attackCost, meritPoints, resolveContest } from "../contest.js";
 import { jianbiTransfers, xiuliRefund } from "../items.js";
 import { canStartContest, contestTimes, type Instant } from "../time.js";
+import { reversalOf } from "../ledger.js";
 import { pts } from "../units.js";
 import {
   activeAttackCount,
@@ -17,7 +18,9 @@ import {
   spendableGrain,
   jiuzhuanActive,
   landsOf,
+  giveItem,
   logUsedItem,
+  nextId,
   notice,
   rankingAt,
   takeItem,
@@ -44,7 +47,10 @@ export type ContestRefusal =
   | "not_active"
   | "before_deadline"
   | "owner_changed"
-  | "not_leader";
+  | "not_leader"
+  | "not_settled"
+  | "later_contest"
+  | "needs_reason";
 
 /** Only the leader or deputy acts for the team (§5). `by` is optional so the server may check it itself. */
 export function canActForTeam(s: SeasonState, teamId: string, by: string | undefined): boolean {
@@ -239,6 +245,111 @@ export function settleContest(input: SeasonState, e: SettleContest): Result<Cont
     notices.push(notice("contest_nothing", e.at, false, { contestId: c.id, landId: c.landId, scores: e.scores }));
   }
   return { ok: true, state: s, notices };
+}
+
+export interface ResettleContest {
+  contestId: string;
+  /** The settled scores after the re-judgement, by team (null = no work). */
+  scores: Record<string, number | null>;
+  at: Instant;
+  by: string;
+  reason: string;
+}
+
+const OUTCOME_SOURCES = new Set(["merit_capture", "merit_defend", "territory_transfer"]);
+
+/**
+ * 改判 (§16, §20.4): a settled contest is worked out again with the new
+ * scores. Only when nothing happened on the land since (no later contest) —
+ * otherwise the admin adjusts by hand. Everything the old outcome booked is
+ * reversed (merits, moved income, 坚壁清野 transfers; a 坚壁清野 used up is
+ * given back; effects the capture ended run on), then the new outcome is
+ * booked as of now, with merits counted as at the original settlement, and the
+ * land's income since the original settlement moves to the new owner.
+ */
+export function resettleContest(input: SeasonState, e: ResettleContest): Result<ContestRefusal> {
+  const c0 = input.contests[e.contestId];
+  if (!c0) return { ok: false, refusal: "unknown_contest" };
+  if (c0.status !== "settled" || c0.settledAt === undefined) return { ok: false, refusal: "not_settled" };
+  if (!e.reason.trim()) return { ok: false, refusal: "needs_reason" };
+  const settledAt = c0.settledAt;
+  if (input.contestOrder.some((id) => id !== c0.id && input.contests[id]!.landId === c0.landId && input.contests[id]!.startedAt > c0.startedAt))
+    return { ok: false, refusal: "later_contest" };
+  const oldOwner = c0.outcome?.kind === "captured" ? c0.outcome.winner : c0.defender;
+  if (input.lands[c0.landId]?.owner !== oldOwner) return { ok: false, refusal: "owner_changed" };
+
+  const p = input.params;
+  const score = (t: string) => (e.scores[t] === undefined ? null : e.scores[t]!);
+  const outcome = resolveContest(
+    { attackers: c0.attackers.map((a) => ({ teamId: a.teamId, score: score(a.teamId), order: a.order })), defender: { teamId: c0.defender, score: score(c0.defender) } },
+    p,
+  );
+  const after = outcome.kind === "captured" ? { kind: "captured" as const, winner: outcome.winner } : { kind: outcome.kind };
+  const before = c0.outcome ?? { kind: "nothing" as const };
+  if (JSON.stringify(before) === JSON.stringify(after)) {
+    return { ok: true, state: input, notices: [notice("contest_resettled", e.at, false, { contestId: c0.id, landId: c0.landId, before, after, changed: false, reason: e.reason })] };
+  }
+
+  const s = cloneState(input);
+  const c = s.contests[e.contestId] as ContestState;
+  const note = `改判：${e.reason} (${e.by})`;
+  // 1. undo the old outcome
+  const reversed = new Set(s.ledger.filter((x) => x.reverses).map((x) => x.reverses));
+  for (const entry of [...s.ledger]) {
+    if (entry.refId !== c.id || entry.reverses || reversed.has(entry.id)) continue;
+    const jianbiEntry = entry.source === "item_effect" && entry.note === "jianbi";
+    if (!OUTCOME_SOURCES.has(entry.source) && !jianbiEntry) continue;
+    s.ledger.push(reversalOf(entry, nextId(s, "L"), e.at, note));
+  }
+  if (before.kind === "captured") {
+    s.teams[before.winner]!.meritCount -= 1;
+    for (const eff of s.effects) if ((eff.kind === "sanmei" || eff.kind === "bagua") && eff.landId === c.landId && eff.endedAt === settledAt) delete eff.endedAt;
+  }
+  if (before.kind === "defended") {
+    s.teams[c.defender]!.meritCount -= 1;
+    if (s.usedItems.some((u) => u.itemId === "jianbi" && u.teamId === c.defender && u.triggered && u.at === settledAt)) giveItem(s, c.defender, "jianbi", "admin", e.at);
+  }
+
+  // 2. the new outcome
+  const land = s.lands[c.landId]!;
+  const newOwner = outcome.kind === "captured" ? outcome.winner : c.defender;
+  if (outcome.kind === "captured") {
+    const winner = outcome.winner;
+    addPoints(s, winner, pts(meritPoints("capture", jiuzhuanActive(s, winner, settledAt), p)), "merit_capture", e.at, { refId: c.id, note });
+    s.teams[winner]!.meritCount += 1;
+    let moved = 0;
+    for (const x of s.ledger)
+      if (x.currency === "points" && x.source === "territory" && x.teamId === c.defender && x.refId === `land:${c.landId}` && x.at > c.deadline && x.at <= settledAt) moved += x.amount;
+    if (moved !== 0) {
+      addPoints(s, c.defender, -moved, "territory_transfer", e.at, { refId: c.id, note });
+      addPoints(s, winner, moved, "territory_transfer", e.at, { refId: c.id, note });
+    }
+  } else if (outcome.kind === "defended") {
+    addPoints(s, c.defender, pts(meritPoints("defend", jiuzhuanActive(s, c.defender, settledAt), p)), "merit_defend", e.at, { refId: c.id, note });
+    s.teams[c.defender]!.meritCount += 1;
+    if (takeItem(s, c.defender, "jianbi")) {
+      for (const t of jianbiTransfers(c.defender, c.attackers.map((a) => a.teamId), p)) {
+        addPoints(s, t.from, -t.amount, "item_effect", e.at, { refId: c.id, note: "jianbi" });
+        addPoints(s, t.to, t.amount, "item_effect", e.at, { refId: c.id, note: "jianbi" });
+      }
+      logUsedItem(s, "jianbi", c.defender, e.at, true);
+    }
+  }
+
+  // 3. the land and its income since the original settlement
+  if (newOwner !== oldOwner) {
+    let since = 0;
+    for (const x of s.ledger) if (x.currency === "points" && x.source === "territory" && x.teamId === oldOwner && x.refId === `land:${c.landId}` && x.at > settledAt) since += x.amount;
+    if (since !== 0) {
+      addPoints(s, oldOwner, -since, "territory_transfer", e.at, { refId: c.id, note });
+      addPoints(s, newOwner, since, "territory_transfer", e.at, { refId: c.id, note });
+    }
+    land.owner = newOwner;
+    land.ownedSince = e.at;
+    for (const eff of s.effects) if ((eff.kind === "sanmei" || eff.kind === "bagua") && eff.landId === c.landId && eff.endedAt === undefined) eff.endedAt = e.at;
+  }
+  c.outcome = after;
+  return { ok: true, state: s, notices: [notice("contest_resettled", e.at, true, { contestId: c.id, landId: c.landId, before, after, changed: true, reason: e.reason })] };
 }
 
 export interface CancelContest {

@@ -371,6 +371,7 @@ export class Scoring {
     await this.db.insert(settledScores).values({ workId, score, basis: "admin", decidedAt: this.clock.now(), decidedBy: by, note: `改判：${note}` });
     const st = await this.store.state(w!.serverId);
     const suggestions: string[] = [];
+    let automatic = false;
     let before: unknown = null;
     let after: unknown = null;
     if (round!.key.startsWith("contest:")) {
@@ -388,25 +389,34 @@ export class Scoring {
       const oldWinner = c.outcome?.kind === "captured" ? c.outcome.winner : null;
       const newWinner = outcome.kind === "captured" ? outcome.winner : null;
       if (JSON.stringify(before) !== JSON.stringify(after)) {
-        const laterContest = Object.values(st.contests).some((x) => x.landId === c.landId && x.id !== c.id && x.startedAt > (c.settledAt ?? 0));
-        if (laterContest) suggestions.push(`这块地之后又被争夺过，请先核对后来的结果，再手动调整。`);
-        const merit = st.ledger.filter((e) => e.refId === c.id && (e.source === "merit_capture" || e.source === "merit_defend" || e.source === "territory_transfer" || e.source === "item_effect") && !e.reverses);
-        for (const e of merit) suggestions.push(`冲正账目 ${e.id}（${name(e.teamId)}，${e.source}，${e.amount}）`);
-        const owner = newWinner ?? c.defender;
-        if ((oldWinner ?? c.defender) !== owner) suggestions.push(`把 ${c.landId} 的主人改为 ${name(owner)}`);
-        if (outcome.kind === "captured") suggestions.push(`给 ${name(outcome.winner)} 加夺地战功（团队分 ${st.params.contest.meritCapture}，九转兵劫印期间加倍），并转移截止后已发的领地收益`);
-        if (outcome.kind === "defended") suggestions.push(`给 ${name(c.defender)} 加守地战功（团队分 ${st.params.contest.meritDefend}）`);
+        const laterContest = Object.values(st.contests).some((x) => x.landId === c.landId && x.id !== c.id && x.startedAt > c.startedAt);
+        if (!laterContest) {
+          // Nothing happened on the land since: the engine works the contest out again (§20.4).
+          const scores = Object.fromEntries([...c.attackers.map((a) => a.teamId), c.defender].map((t) => [t, sc(t)]));
+          const r = await this.store.apply(w!.serverId, { type: "resettle_contest", contestId: c.id, scores, at: +this.clock.now(), by, reason: note }, by);
+          if (r.ok) automatic = true;
+          else suggestions.push(`自动重算没有成功（${r.refusal}），请手动调整。`);
+        }
+        if (!automatic) {
+          if (laterContest) suggestions.push(`这块地之后又被争夺过，请先核对后来的结果，再手动调整。`);
+          const merit = st.ledger.filter((e) => e.refId === c.id && (e.source === "merit_capture" || e.source === "merit_defend" || e.source === "territory_transfer" || e.source === "item_effect") && !e.reverses);
+          for (const e of merit) suggestions.push(`冲正账目 ${e.id}（${name(e.teamId)}，${e.source}，${e.amount}）`);
+          const owner = newWinner ?? c.defender;
+          if ((oldWinner ?? c.defender) !== owner) suggestions.push(`把 ${c.landId} 的主人改为 ${name(owner)}`);
+          if (outcome.kind === "captured") suggestions.push(`给 ${name(outcome.winner)} 加夺地战功（团队分 ${st.params.contest.meritCapture}，九转兵劫印期间加倍），并转移截止后已发的领地收益`);
+          if (outcome.kind === "defended") suggestions.push(`给 ${name(c.defender)} 加守地战功（团队分 ${st.params.contest.meritDefend}）`);
+        }
       }
     } else suggestions.push("周战争 / 大团战的改判请按新分数手动调整团队分。");
     await this.notifier.notifyAdmins({
       kind: "rejudged",
       title: "改判已记录",
-      body: suggestions.length ? `结果有变化，需要手动处理：${suggestions.join("；")}` : "结果没有变化，只更新了分数。",
+      body: automatic ? "结果有变化，系统已自动重算（冲正旧的账目、改地块主人、记新的战功）。" : suggestions.length ? `结果有变化，需要手动处理：${suggestions.join("；")}` : "结果没有变化，只更新了分数。",
       link: `/reviews/works/${workId}`,
       dedupeKey: `rejudge:${workId}:${+this.clock.now()}`,
       roles: ["admin"],
     });
-    return { before, after, changed: suggestions.length > 0, suggestions };
+    return { before, after, changed: automatic || suggestions.length > 0, automatic, suggestions };
   }
 
   /**

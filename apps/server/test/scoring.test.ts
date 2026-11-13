@@ -152,7 +152,7 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
 });
 
 describe("改判 after settlement (part 3 §16, §20.4)", () => {
-  it("records the new score, works the outcome out again and lists the interventions for the admin", async () => {
+  it("records the new score and works the outcome out again automatically when nothing happened on the land since", async () => {
     const t = await scoringSetup(0);
     const w = (await t.a1api("POST", `/v1/season/works/contest:${t.contestId}`, { mediaKind: "text", text: "作品", members: [t.a1] })).json().work;
     t.ai.fixed.set(w.id, 70);
@@ -163,21 +163,24 @@ describe("改判 after settlement (part 3 §16, §20.4)", () => {
     expect((await t.services.store.state(t.serverId)).lands[t.target]!.owner).toBe(t.myTeam);
     const boss = await t.boss.relogin();
     const r = (await t.call("POST", `/v1/admin/works/${w.id}/rejudge`, { score: 40, note: "抄袭" }, boss)).json();
-    expect(r).toMatchObject({ before: { kind: "captured", winner: t.myTeam }, after: { kind: "nothing" }, changed: true });
-    expect(r.suggestions.join("；")).toContain("冲正账目");
-    expect(r.suggestions.join("；")).toContain(`把 ${t.target} 的主人改为`);
+    expect(r).toMatchObject({ before: { kind: "captured", winner: t.myTeam }, after: { kind: "nothing" }, changed: true, automatic: true, suggestions: [] });
+    // nothing happened on the land since: worked out again automatically (§20.4)
+    const st2 = await t.services.store.state(t.serverId);
+    expect(st2.lands[t.target]!.owner).toBe(t.defender);
+    expect(st2.contests[t.contestId]!.outcome).toEqual({ kind: "nothing" });
+    expect(st2.ledger.some((e) => e.source === "reversal" && e.teamId === t.myTeam)).toBe(true);
     expect((await t.a1api("GET", `/v1/season/works/contest:${t.contestId}/result`)).json().mine).toMatchObject({ score: 40, basis: "admin" });
     // 单条重跑: an extra AI score, the official one stays
     const rerun = (await t.call("POST", `/v1/admin/works/${w.id}/ai-rerun`, undefined, boss)).json().scores;
     expect(rerun.map((x: { official: boolean }) => x.official).sort()).toEqual([false, true]);
     // the same score again: nothing changes
-    const same = (await t.call("POST", `/v1/admin/works/${w.id}/rejudge`, { score: 70, note: "复查后维持" }, boss)).json();
+    const same = (await t.call("POST", `/v1/admin/works/${w.id}/rejudge`, { score: 45, note: "复查后维持" }, boss)).json();
     expect(same.changed).toBe(false);
     // the admin's view of the work: team, AI scores, the settled history
     const v = (await t.call("GET", `/v1/admin/works/${w.id}`, undefined, boss)).json();
     expect(v.work).toMatchObject({ text: "作品", team: (await t.services.store.state(t.serverId)).teams[t.myTeam]!.name });
     expect(v.round.status).toBe("settled");
-    expect(v.settled.map((x: { score: number; basis: string }) => [x.score, x.basis])).toEqual([[70, "ai_timeout"], [40, "admin"], [70, "admin"]]);
+    expect(v.settled.map((x: { score: number; basis: string }) => [x.score, x.basis])).toEqual([[70, "ai_timeout"], [40, "admin"], [45, "admin"]]);
     expect(v.ai.length).toBe(2);
     await t.close();
   });

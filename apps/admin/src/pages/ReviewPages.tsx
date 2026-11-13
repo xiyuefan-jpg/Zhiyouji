@@ -448,7 +448,7 @@ export function WorkAdminPage() {
   const v = useLoad(() => request<WorkAdmin>("GET", `/v1/admin/works/${id}`), [id]);
   const [score, setScore] = useState<number | null>(null);
   const [note, setNote] = useState("");
-  const [result, setResult] = useState<{ changed: boolean; suggestions: string[] } | null>(null);
+  const [result, setResult] = useState<{ changed: boolean; automatic: boolean; suggestions: string[] } | null>(null);
   const d = v.data;
   const settled = d?.round?.status === "settled";
   const decide = () => {
@@ -460,8 +460,8 @@ export function WorkAdminPage() {
       cancelText: "取消",
       onOk: async () => {
         try {
-          const r = await request<{ changed?: boolean; suggestions?: string[] }>("POST", `/v1/admin/works/${id}/${settled ? "rejudge" : "rule"}`, { score, note: note.trim() });
-          if (settled) setResult({ changed: !!r.changed, suggestions: r.suggestions ?? [] });
+          const r = await request<{ changed?: boolean; automatic?: boolean; suggestions?: string[] }>("POST", `/v1/admin/works/${id}/${settled ? "rejudge" : "rule"}`, { score, note: note.trim() });
+          if (settled) setResult({ changed: !!r.changed, automatic: !!r.automatic, suggestions: r.suggestions ?? [] });
           message.success("已记录");
           v.reload();
         } catch (e) {
@@ -524,9 +524,15 @@ export function WorkAdminPage() {
           )}
           {result && (
             <Alert
-              type={result.changed ? "warning" : "success"}
-              message={result.changed ? "结果有变化，请到「赛季监控 → 人工干预」手动处理：" : "结果没有变化，只更新了分数。"}
-              description={result.changed ? <ul>{result.suggestions.map((s, i) => <li key={i}>{s}</li>)}</ul> : undefined}
+              type={result.changed && !result.automatic ? "warning" : "success"}
+              message={
+                result.automatic
+                  ? "结果有变化，系统已自动重算：冲正了旧的账目，改了地块主人，记了新的战功。"
+                  : result.changed
+                    ? "结果有变化，请到「赛季监控 → 人工干预」手动处理："
+                    : "结果没有变化，只更新了分数。"
+              }
+              description={result.changed && !result.automatic ? <ul>{result.suggestions.map((s, i) => <li key={i}>{s}</li>)}</ul> : undefined}
             />
           )}
         </>

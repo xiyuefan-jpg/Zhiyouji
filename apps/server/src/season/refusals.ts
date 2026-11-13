@@ -85,6 +85,8 @@ export const REFUSAL_TEXT: Record<SeasonRefusal, string> = {
   war_started: "这一周的周战争已经开始了",
   nothing_to_copy: "还没有可以复制的法宝",
   owner_changed: "这块地已经换了主人",
+  not_settled: "这场争夺还没有结算",
+  later_contest: "这块地之后又被争夺过，请手动调整",
   contest_active: "这块地正在被争夺",
   contest_closed: "这场争夺已经结束了",
   not_defender: "只有守方能用",

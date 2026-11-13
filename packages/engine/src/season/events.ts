@@ -6,7 +6,7 @@
 
 import { adjustLedger, adminGiveItem, adminRemoveItem, adminSetLandOwner, adminSetTeamRole, claimTeamRole, finalizeSeason, memberLeaves, pauseSeason, resumeSeason, reverseEntry, setLandPrompts, setParams, systemAssignLeaders, takeOverLeader, transferTeamRole } from "./admin.js";
 import { formBigBattle, lockLines, settleBigBattle, submitLines, useBattleItem } from "./bigBattle.js";
-import { adminCancelContest, joinContest, settleContest, startContest } from "./contests.js";
+import { adminCancelContest, joinContest, resettleContest, settleContest, startContest } from "./contests.js";
 import { settleDay } from "./daily.js";
 import { buyCenterLand, runBlindAuction, runCenterRound, runStarterItems } from "./rounds.js";
 import { bidEpic, buyShopItem, closeEpicAuction, openEpicAuctions, runRareRound } from "./shop.js";
@@ -44,6 +44,7 @@ const HANDLERS = {
   start_contest: startContest,
   join_contest: joinContest,
   settle_contest: settleContest,
+  resettle_contest: resettleContest,
   cancel_contest: adminCancelContest,
   use_item: useItem,
   use_battle_item: useBattleItem,
