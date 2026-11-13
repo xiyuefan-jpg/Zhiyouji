@@ -201,6 +201,8 @@ export interface SeasonState {
   bigBattle: BigBattleState | null;
   final: FinalResult | null;
   paused: boolean;
+  /** Pause intervals; open while `until` is null (§16: scheduled events shift by the paused time). */
+  pauses: { from: Instant; until: Instant | null; reason?: string }[];
   /** Counter for deterministic ids. */
   seq: number;
 }
@@ -262,6 +264,7 @@ export function createSeasonState(i: CreateSeasonInput): SeasonState {
     bigBattle: null,
     final: null,
     paused: false,
+    pauses: [],
     seq: 0,
   };
   for (const t of i.teams) {
