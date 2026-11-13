@@ -382,28 +382,7 @@ export class Scoring {
         timeouts++;
         await this.db.update(reviewAssignments).set({ status: "timeout" }).where(eq(reviewAssignments.id, a.id));
         if (a.second) continue;
-        const settled = (await this.settledOf([w.id])).get(w.id);
-        if (settled) continue;
-        const ai = await this.officialAi(w.id);
-        if (ai) {
-          await this.db.insert(settledScores).values({ workId: w.id, score: ai.total, basis: "ai_timeout", decidedAt: new Date(now), decidedBy: "system", note: "超时，按 AI 分结算" });
-          await this.notifier.notifyAdmins({
-            kind: "review_timeout",
-            title: "复核超时，按 AI 分结算",
-            body: `一件作品到了复核时限还没有人工分，已按 AI 分 ${ai.total} 结算。`,
-            link: `/reviews/works/${w.id}`,
-            dedupeKey: `review_timeout:${w.id}`,
-            roles: ["admin"],
-          });
-        } else
-          await this.notifier.notifyAdmins({
-            kind: "review_timeout",
-            title: "复核超时，没有 AI 分，请裁定",
-            body: "一件作品到了复核时限，既没有人工分也没有 AI 分，需要管理员给分后才能结算。",
-            link: `/reviews/works/${w.id}`,
-            dedupeKey: `review_timeout:${w.id}`,
-            roles: ["admin"],
-          });
+        await this.settleByAi(w, now);
       } else if (!a.remindedAt && +a.dueAt - now <= st.params.review.remindBeforeHours * HOUR) {
         await this.db.update(reviewAssignments).set({ remindedAt: new Date(now) }).where(eq(reviewAssignments.id, a.id));
         await this.notifier.notifyAdmins({
@@ -416,7 +395,48 @@ export class Scoring {
         });
       }
     }
+    // Works nobody could be assigned to (no reviewer or admin on duty): the AI score at the time limit.
+    const open = await this.db.select().from(scoringRounds).where(and(eq(scoringRounds.serverId, serverId), eq(scoringRounds.status, "open")));
+    for (const round of open) {
+      if (+round.closedAt + st.params.review.timeoutHours * HOUR > now) continue;
+      for (const w of await this.countingWorks(serverId, round.key)) {
+        const [primary] = await this.db
+          .select({ id: reviewAssignments.id })
+          .from(reviewAssignments)
+          .where(and(eq(reviewAssignments.workId, w.id), eq(reviewAssignments.second, false)));
+        if (!primary) {
+          timeouts++;
+          await this.settleByAi(w, now);
+        }
+      }
+    }
     return timeouts;
+  }
+
+  /** At the time limit: the AI score, or (without one) ask an admin to rule. */
+  private async settleByAi(w: WorkRow, now: number): Promise<void> {
+    const settled = (await this.settledOf([w.id])).get(w.id);
+    if (settled) return;
+    const ai = await this.officialAi(w.id);
+    if (ai) {
+      await this.db.insert(settledScores).values({ workId: w.id, score: ai.total, basis: "ai_timeout", decidedAt: new Date(now), decidedBy: "system", note: "超时，按 AI 分结算" });
+      await this.notifier.notifyAdmins({
+        kind: "review_timeout",
+        title: "复核超时，按 AI 分结算",
+        body: `一件作品到了复核时限还没有人工分，已按 AI 分 ${ai.total} 结算。`,
+        link: `/reviews/works/${w.id}`,
+        dedupeKey: `review_timeout:${w.id}`,
+        roles: ["admin"],
+      });
+    } else
+      await this.notifier.notifyAdmins({
+        kind: "review_timeout",
+        title: "复核超时，没有 AI 分，请裁定",
+        body: "一件作品到了复核时限，既没有人工分也没有 AI 分，需要管理员给分后才能结算。",
+        link: `/reviews/works/${w.id}`,
+        dedupeKey: `review_timeout:${w.id}`,
+        roles: ["admin"],
+      });
   }
 
   // ---- 4. settling --------------------------------------------------------------------------------
