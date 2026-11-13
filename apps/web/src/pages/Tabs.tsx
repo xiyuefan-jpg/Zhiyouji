@@ -12,6 +12,7 @@ import { useChild } from "../session";
 import { MessageList } from "./Messages";
 import { BroadcastList, RankingList, ReportsList } from "./season/SeasonPages";
 import { HomeBody } from "./season/HomePage";
+import { FirstSteps } from "./GuidePage";
 import type { ShellContext } from "./Shell";
 
 export function Home() {
@@ -39,6 +40,7 @@ export function Home() {
       )}
 
 
+      <FirstSteps />
       <HomeBody />
     </>
   );

@@ -70,6 +70,7 @@ export function MeTab() {
 
 export function Settings() {
   const child = useChild();
+  const nav = useNavigate();
   const { refresh } = useSession();
   const [autoRead, setAutoRead] = useState(() => {
     try {
@@ -136,6 +137,12 @@ export function Settings() {
           这几种紧急情况还会发短信到家长手机：本组被进攻、作品离截止不到 6 小时、军需任务自己那份离截止不到 3 小时、仙品出价被超过。晚上 21:30 到早上 7:00 不发，攒到早上发。
         </p>
       </div>
+
+      <div className="field-label">新手引导</div>
+      <List>
+        <List.Item onClick={() => nav("/guide")}>重看新手引导</List.Item>
+        <List.Item onClick={() => nav("/survey")}>重新回答土地公问卷</List.Item>
+      </List>
     </>
   );
 }
