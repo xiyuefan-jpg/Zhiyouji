@@ -4,6 +4,7 @@
  * until it is accepted. Also the splash and the document pages.
  */
 
+import { LEGAL_TEXT, renderDoc } from "../legalDocs";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { Button } from "antd-mobile";
@@ -108,9 +109,7 @@ export function DocPage() {
     <div className="page">
       <PageHeader title={doc ? doc.title : "找不到这份文件"} />
       {doc ? (
-        <div className="panel">
-          <p style={{ margin: 0 }}>《{doc.title}》正在定稿，正式上线前会放在这里。</p>
-        </div>
+        <div className="panel doc-text">{LEGAL_TEXT[doc.slug] ? renderDoc(LEGAL_TEXT[doc.slug]!) : <p style={{ margin: 0 }}>《{doc.title}》正在定稿，正式上线前会放在这里。</p>}</div>
       ) : (
         <Empty title="找不到这份文件">
           <Link to="/">回到首页</Link>
