@@ -101,4 +101,32 @@ describe("student website: the season (part 5 D, E, F)", () => {
     expect(document.body.textContent).not.toMatch(/价格|报名|元/);
     await be.stop();
   });
+
+  it("作品工坊: a contest work slot, the material box, the leader submits a version", async () => {
+    const be = await seasonPlayer();
+    const ctx = await be.services.play.ctx(be.childId);
+    await be.services.play.claimRole(ctx, "leader");
+    await be.services.play.submitRound(ctx, "blind_auction", { bid: 10, prefs: ["E1"] });
+    be.clock.set(new Date(beijingInstant("2027-01-11", 21, 1)));
+    await be.services.scheduler.runDue(be.serverId);
+    be.clock.set(new Date(beijingInstant("2027-01-12", 10, 0)));
+    const st = await be.services.store.state(be.serverId);
+    const target = st.landOrder.find((l) => st.lands[l]!.kind === "edge" && st.lands[l]!.owner && st.lands[l]!.owner !== ctx.teamId)!;
+    const c = await be.services.play.startContest(await be.services.play.ctx(be.childId), target);
+    const user = userEvent.setup();
+    renderApp("/team/works");
+    await user.click(await screen.findByText("区域争夺（进攻方）"));
+    expect(await screen.findByText("素材箱")).toBeTruthy();
+    await user.type(screen.getByPlaceholderText("写下想法或文字素材"), "用弹簧比喻大气压");
+    await user.click(screen.getByRole("button", { name: "放进素材箱" }));
+    expect(await screen.findByText("用弹簧比喻大气压")).toBeTruthy();
+    await user.type(screen.getByPlaceholderText("作品的文字"), "我们的作品正文");
+    await user.click(screen.getByText("小明"));
+    await user.click(screen.getByRole("button", { name: "提交" }));
+    await waitFor(async () => {
+      const v = await be.services.works.versions(await be.services.play.ctx(be.childId), `contest:${c.contest.id}`);
+      expect(v.works.map((w) => [w.version, w.text, w.members])).toEqual([[1, "我们的作品正文", [be.childId]]]);
+    });
+    await be.stop();
+  });
 });

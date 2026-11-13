@@ -18,6 +18,7 @@ import { Shell } from "./pages/Shell";
 import { Home, ReportTab } from "./pages/Tabs";
 import { LandPage, LedgerPage, SeasonMap, SeasonTeam } from "./pages/season/SeasonPages";
 import { DailyHome, DailyNew, DailyResult } from "./pages/DailyPages";
+import { WorkSlot, WorksList } from "./pages/season/WorksPages";
 
 export function App() {
   const [privacyOk, setPrivacyOk] = useState(privacyAccepted);
@@ -90,6 +91,8 @@ function Gate() {
       <Route path="daily/new/:templateId" element={<DailyNew />} />
       <Route path="daily/:id" element={<DailyResult />} />
       <Route path="team/ledger" element={<LedgerPage />} />
+      <Route path="team/works" element={<WorksList />} />
+      <Route path="team/works/:slot" element={<WorkSlot />} />
       <Route path="choose" element={<ChooseChild />} />
       <Route path="children/new" element={<ChildForm />} />
       <Route element={<Plain />}>

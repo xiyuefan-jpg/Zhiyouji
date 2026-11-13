@@ -254,6 +254,12 @@ export function SeasonTeam() {
               ))}
             </div>
             <div className="panel row" style={{ marginTop: 12 }}>
+              <Link to="/team/works" className="grow" style={{ color: "inherit" }}>
+                作品工坊
+              </Link>
+              <RightOutline />
+            </div>
+            <div className="panel row">
               <Link to="/team/ledger" className="grow" style={{ color: "inherit" }}>
                 粮草和团队分明细
               </Link>

@@ -25,6 +25,7 @@ npm run build -w @zhiyouji/web    # 打包到 apps/web/dist（静态文件，和
 | E1、E3 | 小组（名次、团队分、粮草、组员、认领组长 / 副组长、组内动态） | 同上 |
 | E6 | 粮草和团队分明细 | 同上 |
 | F1–F3 | 战报（一天三份）、全服广播、排行榜 | 同上，挂在 `src/pages/Tabs.tsx` 的战报标签里 |
+| E4、E7 | 作品工坊：作品位和倒计时、素材箱（文字、上传文件）、组长组装提交（形式、主体、文字、署名）、结算后的各组分数和本组各维度得分与评语 | `src/pages/season/WorksPages.tsx` |
 | C1–C3 | 去修行：选模板、交任务（证据、讲解、人机协作）、审核结果 | `src/pages/DailyPages.tsx` |
 
 不是赛季玩家的孩子在地图、小组里只看到"仅赛季玩家可用"和玩法介绍，不出现价格和报名方式。赛季接口的调用在 `src/seasonApi.ts`；上传用 `src/platform/upload.ts` 的 `ticketUploader`。
