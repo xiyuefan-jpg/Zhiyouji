@@ -38,6 +38,16 @@ npm run build -w @zhiyouji/web    # 打包到 apps/web/dist（静态文件，和
 | E10、E11 | 商店（凡品、灵品的价格和库存、购买确认）、仙品竞价（最高价、倒计时、防狙击说明、+10 / +20、出价记录、冻结粮草） | 同上 |
 | E12 | 大团战：阵营、战线和分值、战线分配板（最后修改人）、公布后的对阵、使者登记、阵营二维码、作品入口 | 同上 |
 
+| C4–C9 | 修行日志：日历、领域（15 个学科）、搜索、小结（周小结、月报告）；卡片详情（讲解录音回放、证据）；修行境界（建设中） | `src/pages/JournalPages.tsx` |
+| G6 | 赛季回顾：探索地图、最难的知识、小组、作品、数字 | 同上 |
+| §3.1 | 讲解录音：按住说话、最长 90 秒、回放、重录；浏览器不能录音时改成写字 | `src/components/VoiceRecorder.tsx` |
+| A4 | 土地公问卷（一屏一题、可朗读） | `src/pages/SurveyPage.tsx` |
+| A5 | 新手引导（可跳过、在设置里重看）；首页的新手卡片 | `src/pages/GuidePage.tsx` |
+| B2 | 赛季日历（今天高亮，事件可点） | `src/pages/MorePages.tsx` |
+| — | 公告；G4 家长申请导出 / 删除数据 | 同上 |
+| F4、F5 | 观战（服列表、只读排行榜 / 地图 / 广播）、小组公开主页、作品展和作品页 | `src/pages/WatchPages.tsx` |
+| §2.1 | 三份文件（草稿在 `docs/legal/`，同意之前也能看） | `src/legalDocs.tsx` |
+
 服务器发来的消息链接是 `/season/...`（例如 `/season/contests/<id>`、`/season/wars/2`），网站都有对应的页面。
 
 不是赛季玩家的孩子在地图、小组里只看到"仅赛季玩家可用"和玩法介绍，不出现价格和报名方式。赛季接口的调用在 `src/seasonApi.ts`；上传用 `src/platform/upload.ts` 的 `ticketUploader`。
