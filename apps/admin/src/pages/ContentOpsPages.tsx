@@ -74,6 +74,7 @@ export function ContentPage() {
           { key: "prompts", label: "题目", children: <Prompts canEdit={me.role === "admin"} /> },
           { key: "templates", label: "地块模板", children: <Templates canEdit={me.role === "admin"} /> },
           ...(me.role === "admin" ? [{ key: "low", label: "题库不足", children: <LowStock /> }] : []),
+          ...(me.role === "admin" ? [{ key: "tags", label: "新标签建议", children: <TagSuggestions /> }] : []),
         ]}
       />
     </Space>
@@ -250,6 +251,36 @@ function LowStock() {
         { title: "还能抽的题", dataIndex: "available" },
       ]}
     />
+  );
+}
+
+/** 新标签建议 (part 6 T10): what the AI tagged "其他" last month. */
+function TagSuggestions() {
+  const [month, setMonth] = useState(() => {
+    const d = new Date(Date.now() + 8 * 3600_000);
+    d.setUTCDate(0); // last day of the previous month
+    return d.toISOString().slice(0, 7);
+  });
+  const s = useLoad(() => request<{ total: number; suggestions: { name: string; count: number; examples: string[] }[] }>("GET", `/v1/admin/tags/suggestions?month=${month}`), [month]);
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      <Space>
+        <Input aria-label="月份" style={{ width: 120 }} defaultValue={month} placeholder="2027-03" onBlur={(e) => /^\d{4}-\d{2}$/.test(e.target.value) && setMonth(e.target.value)} />
+        <Typography.Text type="secondary">这个月有 {s.data?.total ?? 0} 张知识卡片放不进现有的分类（标成"其他"）。常出现的可以考虑加进知识分类表。</Typography.Text>
+      </Space>
+      <Table
+        rowKey="name"
+        size="small"
+        dataSource={s.data?.suggestions ?? []}
+        pagination={false}
+        locale={{ emptyText: "没有新标签建议" }}
+        columns={[
+          { title: "建议的子领域", dataIndex: "name" },
+          { title: "次数", dataIndex: "count" },
+          { title: "例子", render: (_, r) => r.examples.join("、") },
+        ]}
+      />
+    </Space>
   );
 }
 

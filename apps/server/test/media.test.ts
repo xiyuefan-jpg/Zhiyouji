@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { dailySubmissions, files, knowledgeCards, messages } from "@zhiyouji/db";
+import { dailySubmissions, files, knowledgeCards, landTemplates, lands, messages, works } from "@zhiyouji/db";
 import type { FakeMediaProcessor, ScoreRequest } from "../src/index.js";
 import { bj, setup } from "./helpers.js";
 import { contestSetup } from "./seasonHelpers.js";
@@ -76,6 +76,52 @@ describe("getting uploads ready for the AI (part 6 §2, T1–T3)", () => {
     const mine = seen.find((r) => r.text === "我们的视频")!;
     expect(mine.transcript).toBe("（语音转写）work.mp4");
     expect(mine.images).toHaveLength(3);
+    await t.close();
+  });
+});
+
+describe("作品知识标签 (part 6 T7)", () => {
+  it("the AI's first score tags the work inside its land's subject, with a difficulty level", async () => {
+    const t = await contestSetup({ seedBank: true });
+    const slots = (await t.a1api("GET", "/v1/season/works")).json().slots as { slot: string; open: boolean }[];
+    const slot = slots.find((s) => s.open && s.slot.startsWith("contest:"))!.slot;
+    const w = (await t.a1api("POST", `/v1/season/works/${encodeURIComponent(slot)}`, { mediaKind: "text", text: "作品", members: [t.a1] })).json().work;
+    t.clock.set(bj("2027-02-12", 21, 1));
+    await t.services.scoring.runDue(t.serverId);
+    const [row] = await t.db.select().from(works).where(eq(works.id, w.id));
+    const st = await t.services.store.state(t.serverId);
+    const landRow = (await t.db.select().from(lands)).find((l) => l.serverId === t.serverId && l.code === st.contests[t.contestId]!.landId)!;
+    const [tpl] = await t.db.select().from(landTemplates).where(eq(landTemplates.id, landRow.templateId!));
+    const tags = row!.tags as string[];
+    expect(tags.length).toBe(1);
+    expect(tags[0]!.startsWith(tpl!.subject.slice(0, 2)) || tags[0]!.startsWith("其他/")).toBe(true);
+    expect(row!.difficulty).toBe(3);
+    await t.close();
+  });
+});
+
+describe("新标签建议整理 (part 6 T10)", () => {
+  it("groups last month's 其他 tags, most frequent first; the admins hear on the 1st, once", async () => {
+    const t = await setup(bj("2027-04-01", 9));
+    await t.adminUser();
+    const f = await t.family("13500000001", [{ nickname: "小雨", grade: 4 }]);
+    const childId = f.childIds[0]!;
+    const add = async (tag: string, title: string, day: string) => {
+      const [s] = await t.db.insert(dailySubmissions).values({ childId, templateId: 1, day, status: "passed", evidenceFileIds: [], explainKind: "text", explainText: "x", grade: 4, submittedAt: new Date() }).returning();
+      await t.db.insert(knowledgeCards).values({ childId, submissionId: s!.id, title, summary: "x", tag, day, createdAt: new Date() });
+    };
+    await add("其他/魔方", "三阶魔方", "2027-03-02");
+    await add("其他/魔方", "魔方公式", "2027-03-09");
+    await add("其他/折纸", "千纸鹤", "2027-03-15");
+    await add("物理与天文/力与运动", "大气压", "2027-03-15");
+    await add("其他/魔方", "四月的", "2027-04-01");
+    const s = await t.services.tagSuggestions.suggestions("2027-03");
+    expect(s).toMatchObject({ month: "2027-03", total: 3 });
+    expect(s.suggestions.map((x) => [x.name, x.count])).toEqual([["魔方", 2], ["折纸", 1]]);
+    expect(await t.services.tagSuggestions.runDue()).toBe(1);
+    expect(await t.services.tagSuggestions.runDue()).toBe(0);
+    const msg = (await t.db.select().from(messages)).find((m) => m.type === "tag_suggestions")!;
+    expect(msg.body).toContain("魔方（2）");
     await t.close();
   });
 });

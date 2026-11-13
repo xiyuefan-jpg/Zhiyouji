@@ -4,12 +4,15 @@
  * shadow mode, call log) comes with part 6; callers only see this interface.
  */
 
+import { TAXONOMY } from "@zhiyouji/shared";
 import { createHash } from "node:crypto";
 import type { Rubric } from "./season/rubrics.js";
 
 export interface ScoreRequest {
   /** Picture URLs: image files and video key frames (part 6 T2, T5). */
   images?: string[];
+  /** The subject of the prompt's land (part 6 T7: the tags are found inside it); null for weekly wars and the big battle. */
+  subject?: string | null;
   workId: string;
   rubric: Rubric;
   promptId: string | null;
@@ -21,6 +24,9 @@ export interface ScoreRequest {
 }
 
 export interface ScoreResult {
+  /** Knowledge tags "学科/子领域" (1–3) and difficulty level 1–6 (part 6 T7). */
+  tags?: string[];
+  difficulty?: number | null;
   model: string;
   total: number;
   dims: { key: string; name: string; max: number; score: number; reason: string }[];
@@ -53,6 +59,13 @@ export function spreadTotal(rubric: Rubric, total: number): number[] {
  * Deterministic stand-in: a score between 40 and 85 from the work id, or a
  * fixed one per work id (tests). `fail` makes calls throw.
  */
+/** The fake's T7: the first sub-field of the taxonomy subject that matches the land's subject (e.g. 物理 → 物理与天文). */
+function fakeTags(subject: string | null): { tags: string[]; difficulty: number | null } {
+  if (!subject) return { tags: [], difficulty: null };
+  const key = Object.keys(TAXONOMY).find((k) => k.includes(subject.slice(0, 2)));
+  return key ? { tags: [`${key}/${TAXONOMY[key]![0]}`], difficulty: 3 } : { tags: [`其他/${subject}`], difficulty: 3 };
+}
+
 export class FakeAiScorer implements AiScorer {
   fixed = new Map<string, number>();
   fail = false;
@@ -70,6 +83,7 @@ export class FakeAiScorer implements AiScorer {
       dims: r.rubric.dims.map((d, i) => ({ ...d, score: parts[i]!, reason: `${d.name}：示例理由（假的 AI）。` })),
       comment: "示例评语（假的 AI）：讲清楚了主要原理，可以再多举一个受众熟悉的例子。",
       flags: [],
+      ...fakeTags(r.subject ?? null),
     };
   }
 }

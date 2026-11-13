@@ -20,6 +20,7 @@
  */
 
 import type { MediaPipeline } from "../media.js";
+import { isKnownTag } from "@zhiyouji/shared";
 import { createHash } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
@@ -28,6 +29,7 @@ import {
   files,
   humanScores,
   lands,
+  landTemplates,
   reviewAssignments,
   reviewerLeaves,
   scoringRounds,
@@ -107,6 +109,16 @@ export class Scoring {
     return [...last.values()];
   }
 
+  /** The subject of a contest work's land template (part 6 T7); null for wars and the big battle. */
+  private async subjectOf(serverId: string, st: SeasonState, w: WorkRow): Promise<string | null> {
+    if (w.kind !== "contest") return null;
+    const landId = st.contests[baseSlot(w.slot).slice("contest:".length)]?.landId;
+    const [land] = landId ? await this.db.select().from(lands).where(and(eq(lands.serverId, serverId), eq(lands.code, landId))) : [];
+    if (!land?.templateId) return null;
+    const [tpl] = /^[0-9a-f-]{36}$/i.test(land.templateId) ? await this.db.select().from(landTemplates).where(eq(landTemplates.id, land.templateId)) : [];
+    return tpl?.subject ?? null;
+  }
+
   private async rubricOf(serverId: string, st: SeasonState, w: WorkRow): Promise<RubricId> {
     if (w.kind !== "contest") return rubricFor(w.kind, null);
     const landId = st.contests[baseSlot(w.slot).slice("contest:".length)]?.landId;
@@ -149,7 +161,14 @@ export class Scoring {
     const imageKeys = [...fs.filter((f) => f.kind === "image" && f.status !== "deleted").map((f) => f.storageKey), ...fs.flatMap((f) => (f.frames as string[]) ?? [])];
     const images = await Promise.all(imageKeys.slice(0, 40).map((k) => this.storage.downloadUrl(k, now)));
     try {
-      const r = await this.ai.score({ workId: w.id, rubric, promptId: w.promptId, mediaKind: w.mediaKind, text: w.text, aiNote: w.aiNote, transcript, images });
+      const subject = await this.subjectOf(serverId, st, w);
+      const r = await this.ai.score({ workId: w.id, rubric, promptId: w.promptId, mediaKind: w.mediaKind, text: w.text, aiNote: w.aiNote, transcript, images, subject });
+      // T7: the work's knowledge tags (for the season review's exploration map, part 5 §4.1)
+      if (official) {
+        const tags = (r.tags ?? []).filter(isKnownTag).slice(0, 3);
+        const d = r.difficulty;
+        await this.db.update(works).set({ tags, difficulty: typeof d === "number" && d >= 1 && d <= 6 ? Math.round(d) : null }).where(eq(works.id, w.id));
+      }
       await this.db.insert(aiScores).values({
         workId: w.id,
         rubric: `${rubric.id}@${rubric.version}`,

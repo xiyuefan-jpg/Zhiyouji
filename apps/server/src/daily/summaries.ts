@@ -143,9 +143,17 @@ export class Summaries {
         text: ai.text,
         team: st.teams[m.teamId]?.name ?? "",
         rank,
-        map: this.stats(cards, crossing).subjects,
+        // 我的探索地图: the child's knowledge cards plus the works they signed (part 5 §4.1; part 6 T7)
+        map: (() => {
+          const m = { ...this.stats(cards, crossing).subjects };
+          for (const w of mine) for (const tag of ((w.tags as string[] | null) ?? [])) {
+            const subject = tag.split("/")[0]!;
+            m[subject] = (m[subject] ?? 0) + 1;
+          }
+          return m;
+        })(),
         hardest: hardest ? { title: hardest.title, tag: hardest.tag, crossing: crossing.get(hardest.submissionId) ?? null } : null,
-        works: mine.map((w) => ({ kind: w.kind, slot: w.slot })),
+        works: mine.map((w) => ({ kind: w.kind, slot: w.slot, tags: (w.tags as string[] | null) ?? [] })),
         numbers: { dailyTasks: tasks.length, cards: cards.length, works: mine.length, aboveGrade: this.stats(cards, crossing).aboveGrade },
       };
       await this.db

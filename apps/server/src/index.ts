@@ -38,3 +38,4 @@ export * from "./season/showcase.js";
 export * from "./daily/summaries.js";
 export * from "./aiGateway.js";
 export * from "./media.js";
+export * from "./daily/tagSuggestions.js";

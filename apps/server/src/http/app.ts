@@ -39,6 +39,7 @@ import { Supply } from "../season/supply.js";
 import { WarWords } from "../season/warWords.js";
 import { Home } from "../season/todo.js";
 import { FakeMediaProcessor, MediaPipeline, type MediaProcessor } from "../media.js";
+import { TagSuggestions } from "../daily/tagSuggestions.js";
 import { QuestionBank } from "../content/questionBank.js";
 import { bankRoutes } from "./bankRoutes.js";
 import { Debates } from "../season/debates.js";
@@ -123,6 +124,7 @@ export interface Services {
   home: Home;
   media: MediaPipeline;
   mediaProcessor: MediaProcessor;
+  tagSuggestions: TagSuggestions;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -168,6 +170,7 @@ export function buildServices(d: AppDeps): Services {
     home: new Home(d.db, d.clock, store, play, works, supply, warWords, reports),
     media,
     mediaProcessor,
+    tagSuggestions: new TagSuggestions(d.db, d.clock, notifier),
     gateway,
     summaries: new Summaries(d.db, d.clock, gateway.wrapSummary(d.aiSummary ?? new FakeAiSummarizer()), notifier, store),
     showcase: new Showcase(d.db, d.clock, store, d.safety ?? new FakeContentSafety(), notifier, storage, play, reports),
@@ -247,6 +250,12 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   app.post("/v1/admin/seasons/:id/reviews/release", async (req) => {
     await services.adminAuth.user(req, ["admin"]);
     return services.summaries.releaseSeasonReviews(seasonIdParam.parse(req.params).id);
+  });
+  // 新标签建议 (part 6 T10)
+  app.get("/v1/admin/tags/suggestions", async (req) => {
+    await services.adminAuth.user(req, ["admin"]);
+    const month = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }).parse(req.query).month;
+    return services.tagSuggestions.suggestions(month);
   });
   app.get("/v1/admin/dashboard", async (req) => {
     const { user } = await services.adminAuth.user(req);

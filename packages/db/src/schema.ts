@@ -606,7 +606,9 @@ export const works = pgTable(
     members: jsonb("members").notNull().default([]),
     /** pending | pass | block (part 2 §4.7) */
     safety: text("safety").notNull().default("pending"),
-    /** Knowledge tags from the AI (part 4 v0.3). */
+    /** Difficulty level from the AI's first score (PRD part 6 T7; part 5 §4.1). */
+    difficulty: integer("difficulty"),
+    /** Knowledge tags "学科/子领域" (1–3) from the AI (part 4 v0.3; part 6 T7). */
     tags: jsonb("tags"),
   },
   (t) => [uniqueIndex("works_slot_version").on(t.serverId, t.teamId, t.slot, t.version), index("works_slot").on(t.serverId, t.slot)],

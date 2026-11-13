@@ -20,6 +20,7 @@ import type { Operations } from "./season/operations.js";
 import type { Showcase } from "./season/showcase.js";
 import type { Summaries } from "./daily/summaries.js";
 import type { MediaPipeline } from "./media.js";
+import type { TagSuggestions } from "./daily/tagSuggestions.js";
 
 /** Season states in which planned events run (part 4 §4). */
 export const LIVE_SEASON_STATES = ["grouped", "running", "big_battle", "final_pending"];
@@ -60,6 +61,7 @@ export class Worker {
     private readonly showcase?: Showcase,
     private readonly summaries?: Summaries,
     private readonly media?: MediaPipeline,
+    private readonly tagSuggestions?: TagSuggestions,
   ) {}
 
   /** One pass. Skips if the previous pass is still running. */
@@ -106,6 +108,7 @@ export class Worker {
       try {
         await this.ops?.publishDue();
         await this.summaries?.runDue();
+        await this.tagSuggestions?.runDue();
         await this.ops?.qrReminders();
       } catch (err) {
         console.error("announcements / QR reminders failed", err);

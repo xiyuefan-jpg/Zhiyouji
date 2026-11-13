@@ -9,7 +9,7 @@ const LANDS = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "C1", "C2", "C3",
  * log in through the API; 13 more children are put in the database. Child a1
  * and b1 share a team.
  */
-export async function playSetup(opts: { landNames?: Record<string, string> } = {}) {
+export async function playSetup(opts: { landNames?: Record<string, string>; seedBank?: boolean } = {}) {
   const t = await setup(bj("2027-02-01", 10));
   const A = await t.family("13800000001", [
     { nickname: "大毛", grade: 6 },
@@ -35,6 +35,7 @@ export async function playSetup(opts: { landNames?: Record<string, string> } = {
   };
   const [, ta] = where(a1);
   if (where(b1)[1] !== ta) g = await t.services.seasons.movePlayer(season.id, b1, 0, ta, ADMIN);
+  if (opts.seedBank) await t.services.bank.seedDefaults(ADMIN); // lands get their templates (subjects)
   const prompts = Object.fromEntries(LANDS.map((l) => [l, [`${l}-q1`, `${l}-q2`]]));
   const conf = await t.services.seasons.confirmGrouping(season.id, { prompts, landNames: opts.landNames ?? { E1: "火焰山" } }, ADMIN);
   const serverId = conf.servers[0]!.serverId;
@@ -52,7 +53,7 @@ export async function playSetup(opts: { landNames?: Record<string, string> } = {
 
 
 /** The season up to D2 10:00: a1 leads its team, owns E1, and has just attacked another team's edge land. */
-export async function contestSetup(opts: { landNames?: Record<string, string> } = {}) {
+export async function contestSetup(opts: { landNames?: Record<string, string>; seedBank?: boolean } = {}) {
   const t = await playSetup(opts);
   t.clock.set(bj("2027-02-07", 19, 1));
   await t.services.scheduler.runDue(t.serverId);
