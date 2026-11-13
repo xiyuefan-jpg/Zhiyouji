@@ -48,6 +48,8 @@ import { Showcase } from "../season/showcase.js";
 import { watchRoutes } from "./watchRoutes.js";
 import { Summaries } from "../daily/summaries.js";
 import { FakeAiSummarizer, type AiSummarizer } from "../ai.js";
+import { AiGateway } from "../aiGateway.js";
+import { aiRoutes } from "./aiRoutes.js";
 import { FakeContentSafety, type ContentSafety } from "../providers.js";
 import { surveySubmit } from "@zhiyouji/shared";
 import { DailyTasks } from "../daily/daily.js";
@@ -112,6 +114,7 @@ export interface Services {
   dashboard: Dashboard;
   showcase: Showcase;
   summaries: Summaries;
+  gateway: AiGateway;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -143,19 +146,22 @@ export function buildServices(d: AppDeps): Services {
   });
   const survey = new Survey(d.db, d.clock);
   const seasons = new SeasonAdmin(d.db, d.clock, store, notifier, bank, survey);
+  // The raw model clients (fakes until the accounts exist); everything else gets them through the gateway (logging, fallback, shadow).
+  const gateway = new AiGateway(d.db, d.clock);
   const ai = d.ai ?? new FakeAiScorer();
   const aiDaily = d.aiDaily ?? new FakeAiDaily();
   const play = new SeasonPlay(d.db, d.clock, store);
   const reports = new Reports(d.db, d.clock, store, notifier);
   return {
-    summaries: new Summaries(d.db, d.clock, d.aiSummary ?? new FakeAiSummarizer(), notifier, store),
+    gateway,
+    summaries: new Summaries(d.db, d.clock, gateway.wrapSummary(d.aiSummary ?? new FakeAiSummarizer()), notifier, store),
     showcase: new Showcase(d.db, d.clock, store, d.safety ?? new FakeContentSafety(), notifier, storage, play, reports),
-    supply: new Supply(d.db, d.clock, store, d.aiSupply ?? new FakeAiSupply(), notifier),
+    supply: new Supply(d.db, d.clock, store, gateway.wrapSupply(d.aiSupply ?? new FakeAiSupply()), notifier),
     aiDaily,
-    daily: new DailyTasks(d.db, d.clock, d.cfg, storage, aiDaily, notifier, store, play),
+    daily: new DailyTasks(d.db, d.clock, d.cfg, storage, gateway.wrapDaily(aiDaily), notifier, store, play),
     ai,
     dataRights: new DataRights(d.db, d.clock, storage, notifier),
-    scoring: new Scoring(d.db, d.clock, store, ai, notifier, storage),
+    scoring: new Scoring(d.db, d.clock, store, gateway.wrapScorer(ai), notifier, storage),
     storage,
     works: new Works(d.db, d.clock, d.cfg, store, storage, debates, ops),
     ops,
@@ -210,6 +216,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   bankRoutes(app, services.bank, services.adminAuth);
   opsRoutes(app, services.ops, services.play, services.familyAuth, services.adminAuth);
   watchRoutes(app, services.showcase, services.familyAuth, services.adminAuth);
+  aiRoutes(app, services.gateway, services.scoring, services.adminAuth);
   app.get("/v1/journal/summaries", async (req) => services.summaries.list((await services.familyAuth.child(req)).child.id));
   app.get("/v1/season-reviews", async (req) => services.summaries.seasonReviewsOf((await services.familyAuth.child(req)).child.id));
   const seasonIdParam = z.object({ id: z.uuid() });

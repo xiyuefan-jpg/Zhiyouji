@@ -14,7 +14,7 @@ export async function setup(start = bj("2027-01-04", 10), cfgPatch: (c: ServerCo
   const sms = new FakeSms();
   const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha() });
   await app.ready();
-  const call = (method: "GET" | "POST" | "PATCH" | "DELETE", url: string, body?: unknown, token?: string, headers: Record<string, string> = {}) =>
+  const call = (method: "GET" | "POST" | "PATCH" | "DELETE" | "PUT", url: string, body?: unknown, token?: string, headers: Record<string, string> = {}) =>
     app.inject({ method, url, payload: body as object | undefined, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers } });
 
   /** A logged-in family that agreed to the documents, with children created through the API. */

@@ -167,6 +167,9 @@ describe("改判 after settlement (part 3 §16, §20.4)", () => {
     expect(r.suggestions.join("；")).toContain("冲正账目");
     expect(r.suggestions.join("；")).toContain(`把 ${t.target} 的主人改为`);
     expect((await t.a1api("GET", `/v1/season/works/contest:${t.contestId}/result`)).json().mine).toMatchObject({ score: 40, basis: "admin" });
+    // 单条重跑: an extra AI score, the official one stays
+    const rerun = (await t.call("POST", `/v1/admin/works/${w.id}/ai-rerun`, undefined, boss)).json().scores;
+    expect(rerun.map((x: { official: boolean }) => x.official).sort()).toEqual([false, true]);
     // the same score again: nothing changes
     const same = (await t.call("POST", `/v1/admin/works/${w.id}/rejudge`, { score: 70, note: "复查后维持" }, boss)).json();
     expect(same.changed).toBe(false);

@@ -126,7 +126,17 @@ export class Scoring {
     return true;
   }
 
-  private async aiScore(serverId: string, st: SeasonState, w: WorkRow): Promise<void> {
+  /** 单条重跑 (part 6 §9): score a work again; kept as an extra record, the official score stays. */
+  async rerunAi(workId: string) {
+    const [w] = await this.db.select().from(works).where(eq(works.id, workId));
+    if (!w) fail(404, "not_found");
+    const st = await this.store.state(w!.serverId);
+    await this.aiScore(w!.serverId, st, w!, false);
+    const rows = await this.db.select().from(aiScores).where(eq(aiScores.workId, workId)).orderBy(desc(aiScores.createdAt));
+    return { scores: rows.map((r) => ({ total: r.total, model: r.model, official: r.official, createdAt: r.createdAt.toISOString() })) };
+  }
+
+  private async aiScore(serverId: string, st: SeasonState, w: WorkRow, official = true): Promise<void> {
     const rubric = RUBRICS[await this.rubricOf(serverId, st, w)];
     const ids = (w.fileIds as string[]) ?? [];
     const fs = ids.length ? await this.db.select().from(files).where(inArray(files.id, ids)) : [];
@@ -141,10 +151,11 @@ export class Scoring {
         dims: r.dims,
         comment: r.comment,
         flags: r.flags,
-        official: true,
+        official,
         createdAt: this.clock.now(),
       });
     } catch (err) {
+      if (!official) throw err;
       // No AI score: reviewers score as usual; at the time limit an admin must rule (part 6 §5).
       await this.notifier.notifyAdmins({
         kind: "ai_failed",

@@ -1056,3 +1056,60 @@ export const seasonReviews = pgTable(
   },
   (t) => [uniqueIndex("season_reviews_child").on(t.childId, t.seasonId)],
 );
+
+// ---- AI gateway (part 2 §4.6; part 4 §10; part 6 §9) ---------------------------------------------
+
+/** Which provider and model each AI task uses; switched in the admin console. */
+export const aiConfigs = pgTable("ai_configs", {
+  /** daily_review | work_score | supply_score | summary | transcribe | … */
+  task: text("task").primaryKey(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  promptVersion: integer("prompt_version").notNull().default(1),
+  fallbackProvider: text("fallback_provider"),
+  fallbackModel: text("fallback_model"),
+  /** Shadow mode: also run this model, log it, never use it. */
+  shadowModel: text("shadow_model"),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: ts("updated_at").notNull(),
+});
+
+export const promptTemplates = pgTable(
+  "prompt_templates",
+  {
+    id: id(),
+    task: text("task").notNull(),
+    version: integer("version").notNull(),
+    content: text("content").notNull(),
+    note: text("note"),
+    createdBy: text("created_by").notNull(),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("prompt_templates_task_version").on(t.task, t.version)],
+);
+
+/** Every AI call (append-only): input, output, model, version, time, cost. */
+export const aiCalls = pgTable(
+  "ai_calls",
+  {
+    id: id(),
+    task: text("task").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    promptVersion: integer("prompt_version").notNull(),
+    /** primary | fallback | shadow */
+    role: text("role").notNull(),
+    input: jsonb("input").notNull(),
+    output: jsonb("output"),
+    tokensIn: integer("tokens_in"),
+    tokensOut: integer("tokens_out"),
+    /** Cost in 0.0001 yuan. */
+    cost: integer("cost"),
+    latencyMs: integer("latency_ms").notNull(),
+    /** ok | error */
+    status: text("status").notNull(),
+    error: text("error"),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [index("ai_calls_task_at").on(t.task, t.createdAt)],
+);
