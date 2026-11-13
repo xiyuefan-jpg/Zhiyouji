@@ -1,0 +1,16 @@
+{
+  "name": "@zhiyouji/sim",
+  "version": "0.1.0",
+  "private": true,
+  "description": "机器人小组跑完整赛季：检查规则引擎在整季里不出错、账本平衡、结果可重放",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "sim": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@zhiyouji/engine": "0.1.0"
+  }
+}

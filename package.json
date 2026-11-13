@@ -2,11 +2,17 @@
   "name": "zhiyouji",
   "private": true,
   "description": "智游记 S3：学生端 app、网页管理端、服务器",
-  "engines": { "node": ">=22" },
-  "workspaces": ["packages/*"],
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "tools/sim"
+  ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "sim": "npm run sim -w @zhiyouji/sim --"
   },
   "devDependencies": {
     "typescript": "^5.9.0",

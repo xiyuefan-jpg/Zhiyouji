@@ -10,7 +10,7 @@
 
 import { balanceOf, grainEntry, pointsEntry, type GrainSource, type LedgerEntry, type PointsSource } from "../ledger.js";
 import { ITEMS } from "../items.js";
-import type { SeasonParams } from "../params.js";
+import { landCounts, type SeasonParams } from "../params.js";
 import { rankTeams, type Ranked } from "../ranking.js";
 import { createRng, seedFromString, type Rng } from "../rng.js";
 import type { LandKind } from "../territory.js";
@@ -232,6 +232,15 @@ export interface CreateSeasonInput {
   at?: Instant;
 }
 
+/** The standard map for a server with `teams` teams: edge lands E1…En, center lands C1…Cn/2 (§4, §20.1). */
+export function standardLands(teams: number): { id: string; kind: LandKind }[] {
+  const { edge, center } = landCounts(teams);
+  return [
+    ...Array.from({ length: edge }, (_, i) => ({ id: `E${i + 1}`, kind: "edge" as const })),
+    ...Array.from({ length: center }, (_, i) => ({ id: `C${i + 1}`, kind: "center" as const })),
+  ];
+}
+
 /** A fresh season: every team gets the opening grain (§17: 60). */
 export function createSeasonState(i: CreateSeasonInput): SeasonState {
   const s: SeasonState = {
@@ -290,9 +299,16 @@ export function createSeasonState(i: CreateSeasonInput): SeasonState {
   return s;
 }
 
-/** Handlers work on a deep copy so the caller's state is never mutated. */
+/**
+ * Handlers work on a copy so the caller's state is never mutated. Append-only
+ * logs (ledger, task passes, used items) hold entries that are never changed
+ * after they are written, so the copy shares those entries and only copies the
+ * arrays; everything else is deep-copied.
+ */
 export function cloneState(s: SeasonState): SeasonState {
-  return JSON.parse(JSON.stringify(s)) as SeasonState;
+  const { ledger, taskPasses, usedItems, ...rest } = s;
+  const copy = JSON.parse(JSON.stringify(rest)) as Omit<SeasonState, "ledger" | "taskPasses" | "usedItems">;
+  return { ...copy, ledger: ledger.slice(), taskPasses: taskPasses.slice(), usedItems: usedItems.slice() };
 }
 
 export function nextId(s: SeasonState, prefix: string): string {
