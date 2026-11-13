@@ -38,6 +38,11 @@ export function watchRoutes(app: FastifyInstance, showcase: Showcase, family: Fa
     const p = z.object({ serverId: z.uuid(), teamId: z.uuid() }).parse(req.params);
     return showcase.team(p.serverId, p.teamId);
   });
+  app.post("/v1/watch/:serverId/showcase/:workId/report", async (req) => {
+    const { child } = await family.child(req);
+    const p = workParam.parse(req.params);
+    return showcase.report(p.serverId, p.workId, child.id, z.object({ reason: z.string().trim().min(1).max(200) }).parse(req.body).reason);
+  });
   app.get("/v1/watch/:serverId/showcase/:workId", async (req) => {
     await family.consented(req);
     const p = workParam.parse(req.params);

@@ -49,6 +49,7 @@ import { GRADE_LABELS, SEASON_STATUS_LABELS, type SeasonStatus } from "@zhiyouji
 import type { Clock } from "../clock.js";
 import { fail, HttpError } from "../http/errors.js";
 import type { SeasonStore } from "../seasonStore.js";
+import type { Notifier } from "../notify/notifier.js";
 import { refusalText } from "./refusals.js";
 
 type SeasonRow = typeof seasons.$inferSelect;
@@ -93,7 +94,38 @@ export class SeasonPlay {
     private readonly db: Db,
     private readonly clock: Clock,
     private readonly store: SeasonStore,
+    private readonly notifier?: Notifier,
   ) {}
+
+  /**
+   * 异常提醒 (PRD part 8 §3.4): the child who starts or joins an attack has a
+   * brother or sister on another side of the same contest — tell the admins
+   * (nothing is blocked; siblings are placed apart, so this can happen).
+   */
+  private async siblingAlert(ctx: PlayCtx, st: SeasonState, contestId: string): Promise<void> {
+    const c = st.contests[contestId];
+    if (!c || !this.notifier) return;
+    const others = [c.defender, ...c.attackers.map((a) => a.teamId)].filter((t) => t !== ctx.teamId);
+    const otherKids = others.flatMap((t) => st.teams[t]!.members.filter((m) => m.active).map((m) => ({ teamId: t, childId: m.childId })));
+    if (otherKids.length === 0) return;
+    const [me] = await this.db.select({ familyId: children.familyId }).from(children).where(eq(children.id, ctx.childId));
+    if (!me) return;
+    const sibs = await this.db
+      .select({ id: children.id, nickname: children.nickname })
+      .from(children)
+      .where(and(eq(children.familyId, me.familyId), inArray(children.id, otherKids.map((k) => k.childId))));
+    if (sibs.length === 0) return;
+    const team = (id: string) => st.teams[id]?.name ?? "";
+    const where = sibs.map((x) => `${x.nickname}（${team(otherKids.find((k) => k.childId === x.id)!.teamId)}）`).join("、");
+    await this.notifier.notifyAdmins({
+      kind: "sibling_contest",
+      title: "同一家庭的孩子在同一场争夺的两边",
+      body: `${team(ctx.teamId)}发起或加入了一场争夺，同一家庭的孩子在对面：${where}。请留意是否有串通。`,
+      link: `/servers/${ctx.serverId}`,
+      dedupeKey: `sibling_contest:${contestId}:${ctx.childId}`,
+      roles: ["admin"],
+    });
+  }
 
   private now(): number {
     return +this.clock.now();
@@ -427,6 +459,7 @@ export class SeasonPlay {
     const contestId = shortId("K");
     const r = await this.act(ctx, { type: "start_contest", contestId, teamId: ctx.teamId, landId, at: this.now(), by: ctx.childId });
     const c = r.state.contests[contestId]!;
+    await this.siblingAlert(ctx, r.state, contestId);
     return { contest: { id: c.id, landId: c.landId, promptId: c.promptId, joinDeadline: c.joinDeadline, deadline: c.deadline, paid: c.attackers[0]!.paid } };
   }
 
@@ -434,6 +467,7 @@ export class SeasonPlay {
     await this.leaderOnly(ctx);
     const r = await this.act(ctx, { type: "join_contest", contestId, teamId: ctx.teamId, at: this.now(), by: ctx.childId });
     const c = r.state.contests[contestId]!;
+    await this.siblingAlert(ctx, r.state, contestId);
     return { contest: { id: c.id, landId: c.landId, promptId: c.promptId, deadline: c.deadline, paid: c.attackers.find((a) => a.teamId === ctx.teamId)!.paid } };
   }
 

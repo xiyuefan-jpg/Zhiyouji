@@ -214,6 +214,23 @@ export class Showcase {
     return { ok: true };
   }
 
+  /**
+   * 举报 (PRD part 8 §2.5): any logged-in child can report a published work;
+   * it goes (back) into the safety queue with the reason and the admins hear
+   * once per work. The work stays up until an admin decides.
+   */
+  async report(serverId: string, workId: string, childId: string, reason: string) {
+    const [w] = await this.db.select().from(works).where(and(eq(works.id, workId), eq(works.serverId, serverId), eq(works.safety, "pass")));
+    if (!w) fail(404, "not_found");
+    const note = `孩子举报：${reason}`;
+    await this.db
+      .insert(safetyQueue)
+      .values({ objectKind: "work", objectId: workId, labels: ["举报"], status: "pending", forwardNote: note, forwardedBy: `child:${childId}`, createdAt: this.clock.now() })
+      .onConflictDoUpdate({ target: [safetyQueue.objectKind, safetyQueue.objectId], set: { status: "pending", forwardNote: note, forwardedBy: `child:${childId}`, handledAt: null, handledBy: null } });
+    await this.notifier.notifyAdmins({ kind: "work_reported", title: "有作品被举报了", body: note, link: "/safety", dedupeKey: `work_reported:${workId}`, roles: ["admin"] });
+    return { ok: true };
+  }
+
   /** A reviewer hands an item to the admins with one sentence. */
   async forward(id: string, note: string, by: string) {
     const [q] = await this.db.update(safetyQueue).set({ forwardNote: note, forwardedBy: by }).where(eq(safetyQueue.id, id)).returning();

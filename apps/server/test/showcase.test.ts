@@ -19,7 +19,7 @@ describe("观战, 作品展 and content safety (part 5 F5; part 6 §7; part 7 §
 
     // a free user (not in any season) watches
     const free = await t.family("13300000001", [{ nickname: "观众", grade: 4 }]);
-    const watch = (url: string) => t.call("GET", url, undefined, free.token);
+    const watch = (url: string, method: "GET" | "POST" = "GET", body?: unknown) => t.call(method, url, body, free.token);
     expect((await watch("/v1/watch/servers")).json().servers.map((s: { id: string }) => s.id)).toEqual([t.serverId]);
     const map = (await watch(`/v1/watch/${t.serverId}/map`)).json();
     expect(map.lands).toHaveLength(12);
@@ -55,6 +55,16 @@ describe("观战, 作品展 and content safety (part 5 F5; part 6 §7; part 7 §
     const bt = await boss.relogin();
     await t.call("POST", `/v1/admin/safety/${q[0].id}/pass`, undefined, bt);
     expect((await watch(`/v1/watch/${t.serverId}/showcase`)).json().works).toHaveLength(2);
+
+    // 举报 (part 8 §2.5): back into the queue with the reason; the admin removes it
+    await t.call("POST", "/v1/session/child", { childId: free.childIds[0] }, free.token);
+    expect((await watch(`/v1/watch/${t.serverId}/showcase/${show[0].id}/report`, "POST", { reason: "里面有同学的真名" })).json()).toEqual({ ok: true });
+    const q2 = (await t.call("GET", "/v1/admin/safety", undefined, bt)).json().items.filter((x: { status: string }) => x.status === "pending");
+    expect(q2).toHaveLength(1);
+    expect(q2[0]).toMatchObject({ objectId: show[0].id, labels: ["举报"], forwardNote: "孩子举报：里面有同学的真名" });
+    expect((await t.db.select().from(messages).where(eq(messages.type, "work_reported"))).length).toBeGreaterThan(0);
+    await t.call("POST", `/v1/admin/safety/${q2[0].id}/remove`, undefined, bt);
+    expect((await watch(`/v1/watch/${t.serverId}/showcase`)).json().works).toHaveLength(1);
     await t.close();
   });
 });

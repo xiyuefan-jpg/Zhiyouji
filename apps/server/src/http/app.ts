@@ -161,7 +161,7 @@ export function buildServices(d: AppDeps): Services {
   const gateway = new AiGateway(d.db, d.clock);
   const ai = d.ai ?? new FakeAiScorer();
   const aiDaily = d.aiDaily ?? new FakeAiDaily();
-  const play = new SeasonPlay(d.db, d.clock, store);
+  const play = new SeasonPlay(d.db, d.clock, store, notifier);
   const reports = new Reports(d.db, d.clock, store, notifier);
   const works = new Works(d.db, d.clock, d.cfg, store, storage, debates, ops);
   const mediaProcessor = d.media ?? new FakeMediaProcessor();

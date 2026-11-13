@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { messages } from "@zhiyouji/db";
 import { bj } from "./helpers.js";
 import { contestSetup, playSetup } from "./seasonHelpers.js";
 
@@ -353,6 +355,27 @@ describe("赛季日历 (B2) and 小组公开主页 (F4)", () => {
     expect(page.lands.length).toBeGreaterThan(0);
     expect(page.grades.reduce((n: number, g: { count: number }) => n + g.count, 0)).toBe(st.teams[t.defender]!.members.length);
     expect(JSON.stringify(page)).not.toMatch(/nickname|childId|items/);
+    await t.close();
+  });
+});
+
+describe("异常提醒 (part 8 §3.4)", () => {
+  it("attacking a land of the team a brother or sister is in tells the admins", async () => {
+    const t = await playSetup();
+    await t.adminUser();
+    t.clock.set(bj("2027-02-07", 19, 1));
+    await t.services.scheduler.runDue(t.serverId);
+    const a1 = await t.as("13800000001", t.a1);
+    await a1("POST", "/v1/season/roles/claim", { role: "leader" });
+    const st = await t.services.store.state(t.serverId);
+    const team2 = st.teamOrder.find((id) => st.teams[id]!.members.some((m) => m.childId === t.a2))!;
+    await t.services.control.intervene(t.serverId, { action: "set_land_owner", landId: "E3", teamId: team2, reason: "测试" }, "admin:test");
+    t.clock.set(bj("2027-02-09", 10));
+    const r = await a1("POST", "/v1/season/contests", { landId: "E3" });
+    expect(r.statusCode).toBe(200);
+    const msgs = await t.db.select().from(messages).where(eq(messages.type, "sibling_contest"));
+    expect(msgs.length).toBe(1);
+    expect(msgs[0]!.body).toContain("二毛");
     await t.close();
   });
 });

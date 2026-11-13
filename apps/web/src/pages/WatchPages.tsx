@@ -12,9 +12,9 @@
 
 import { useState } from "react";
 import { Link, useParams } from "react-router";
-import { Selector, Tabs } from "antd-mobile";
+import { Dialog, Selector, Tabs, TextArea, Toast } from "antd-mobile";
 import { RightOutline } from "antd-mobile-icons";
-import { request } from "../api";
+import { ApiError, request } from "../api";
 import { shortTime } from "../format";
 import { Empty, PageHeader } from "../components/ui";
 import { points, type FeedLine, type LandView } from "../seasonApi";
@@ -244,6 +244,40 @@ export function ShowcasePage() {
   );
 }
 
+/** 举报 (PRD part 8 §2.5): tell the organisers something in a public work is not right. */
+function ReportButton({ serverId, workId }: { serverId: string; workId: string }) {
+  const [done, setDone] = useState(false);
+  const report = async () => {
+    let reason = "";
+    const ok = await Dialog.confirm({
+      title: "举报这件作品",
+      content: <TextArea placeholder="哪里不对？例如：有同学的真名、不适合的内容" onChange={(v) => (reason = v)} rows={3} maxLength={200} />,
+      confirmText: "举报",
+      cancelText: "算了",
+    });
+    if (!ok) return;
+    if (!reason.trim()) return void Toast.show({ content: "写一句哪里不对" });
+    try {
+      await request("POST", `/v1/watch/${serverId}/showcase/${workId}/report`, { reason: reason.trim() });
+      setDone(true);
+      Toast.show({ content: "谢谢你，管理员会尽快查看" });
+    } catch (e) {
+      Toast.show({ content: e instanceof ApiError ? e.message : String(e) });
+    }
+  };
+  return (
+    <div style={{ textAlign: "right", marginBottom: 8 }}>
+      {done ? (
+        <span className="hint">已举报</span>
+      ) : (
+        <button type="button" onClick={() => void report()} style={{ border: "none", background: "none", color: "var(--ochre)", fontSize: 14 }}>
+          举报
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ShowWorkPage() {
   const { serverId = "", workId = "" } = useParams();
   const w = useLoad(() => request<{ team: string; kind: string; mediaKind: string; text: string | null; aiNote: string | null; files: { id: string; kind: string; url: string }[] }>("GET", `/v1/watch/${serverId}/showcase/${workId}`), [workId]);
@@ -261,6 +295,7 @@ export function ShowWorkPage() {
             {d.text && <p style={{ whiteSpace: "pre-wrap" }}>{d.text}</p>}
             {d.aiNote && <div className="hint">人机协作：{d.aiNote}</div>}
           </div>
+          <ReportButton serverId={serverId} workId={workId} />
           {d.files.map((f) =>
             f.kind === "image" ? (
               <img key={f.id} src={f.url} alt="作品图片" style={{ width: "100%", borderRadius: 8, marginBottom: 8 }} />
