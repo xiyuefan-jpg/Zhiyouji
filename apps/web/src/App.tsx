@@ -5,7 +5,7 @@
  */
 
 import { useState } from "react";
-import { Link, Outlet, Route, Routes } from "react-router";
+import { Link, Navigate, Outlet, Route, Routes, useParams } from "react-router";
 import { Button } from "antd-mobile";
 import { Empty } from "./components/ui";
 import { SessionProvider, useSession } from "./session";
@@ -19,6 +19,8 @@ import { Home, ReportTab } from "./pages/Tabs";
 import { LandPage, LedgerPage, SeasonMap, SeasonTeam } from "./pages/season/SeasonPages";
 import { DailyHome, DailyNew, DailyResult } from "./pages/DailyPages";
 import { WorkSlot, WorksList } from "./pages/season/WorksPages";
+import { ItemsPage } from "./pages/season/ItemsPage";
+import { ContestPage, RoundPage } from "./pages/season/TeamPages";
 
 export function App() {
   const [privacyOk, setPrivacyOk] = useState(privacyAccepted);
@@ -93,6 +95,15 @@ function Gate() {
       <Route path="team/ledger" element={<LedgerPage />} />
       <Route path="team/works" element={<WorksList />} />
       <Route path="team/works/:slot" element={<WorkSlot />} />
+      {/* Message links from the server use /season/… (apps/server notify). */}
+      <Route path="season" element={<Navigate to="/team" replace />} />
+      <Route path="season/team" element={<Navigate to="/team" replace />} />
+      <Route path="season/works" element={<WorksList />} />
+      <Route path="season/works/:slot" element={<WorkSlot />} />
+      <Route path="season/items" element={<ItemsPage />} />
+      <Route path="season/contests/:id" element={<ContestPage />} />
+      <Route path="season/rounds/:round" element={<RoundPage />} />
+      <Route path="season/reports/:id" element={<Navigate to="/report?tab=reports" replace />} />
       <Route path="choose" element={<ChooseChild />} />
       <Route path="children/new" element={<ChildForm />} />
       <Route element={<Plain />}>

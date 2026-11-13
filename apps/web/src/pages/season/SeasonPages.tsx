@@ -16,15 +16,16 @@ import { shortTime } from "../../format";
 import { Avatar, Empty, PageHeader, Seal } from "../../components/ui";
 import { points, seasonApi, type FeedLine, type LandView, type SeasonMe } from "../../seasonApi";
 import { useLoad, useSeasonMe } from "./useSeason";
+import { RolesPanel } from "./TeamPages";
 
-const ROLE_TEXT = { leader: "组长", deputy: "副组长", member: "组员" } as const;
+export const ROLE_TEXT = { leader: "组长", deputy: "副组长", member: "组员" } as const;
 
-function errText(e: unknown): string {
+export function errText(e: unknown): string {
   return e instanceof ApiError ? e.message : String(e);
 }
 
 /** Wraps a season page: not a player yet / waiting for the groups / playing. */
-function SeasonGate({ me, title, children }: { me: SeasonMe | null; title: string; children: (m: Extract<SeasonMe, { status: "playing" }>) => ReactNode }) {
+export function SeasonGate({ me, title, children }: { me: SeasonMe | null; title: string; children: (m: Extract<SeasonMe, { status: "playing" }>) => ReactNode }) {
   if (!me) return <div className="hint">正在加载……</div>;
   if (me.status === "none")
     return (
@@ -155,6 +156,7 @@ export function LandPage() {
               <div style={{ marginTop: 8 }}>
                 <div style={{ color: "var(--vermilion)" }}>争夺中，{shortTime(new Date(land.contest.deadline).toISOString())} 截止</div>
                 <div className="hint">进攻方：{land.contest.attackers.map((a) => a?.name).join("、")}</div>
+                <Link to={`/season/contests/${land.contest.id}`}>争夺详情（题目）</Link>
               </div>
             )}
           </div>
@@ -237,6 +239,7 @@ export function SeasonTeam() {
                 </div>
               </div>
             )}
+            <RolesPanel m={m} onChange={me.reload} />
             <h2 className="section-title">组员</h2>
             <div className="panel">
               {m.members.map((x) => (
@@ -260,6 +263,12 @@ export function SeasonTeam() {
               <RightOutline />
             </div>
             <div className="panel row">
+              <Link to="/season/items" className="grow" style={{ color: "inherit" }}>
+                法宝囊
+              </Link>
+              <RightOutline />
+            </div>
+            <div className="panel row">
               <Link to="/team/ledger" className="grow" style={{ color: "inherit" }}>
                 粮草和团队分明细
               </Link>
@@ -274,7 +283,7 @@ export function SeasonTeam() {
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+export function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div>
       <div className="hint">{label}</div>
@@ -284,7 +293,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-function FeedList({ lines, empty }: { lines: FeedLine[] | null; empty: string }) {
+export function FeedList({ lines, empty }: { lines: FeedLine[] | null; empty: string }) {
   if (!lines) return <div className="hint">正在加载……</div>;
   if (lines.length === 0) return <Empty title={empty} />;
   return (

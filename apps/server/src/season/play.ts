@@ -10,6 +10,7 @@
  * children (part 7 §7: 孩子之间保密).
  */
 
+import { itemGuide } from "./itemGuide.js";
 import { randomBytes } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { children, lands as landRows, plannedEvents, prompts as promptRows, roleTransfers, seasonPlayers, seasons, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
@@ -24,6 +25,7 @@ import {
   grainOf,
   isItemEnabled,
   itemDef,
+  taixuCopyTarget,
   landZeroed,
   pointsOf,
   quoteAttack,
@@ -292,7 +294,11 @@ export class SeasonPlay {
         passive: i.passive,
         negative: i.negative,
         bigBattle: i.bigBattle,
+        ...itemGuide(i.id, s.params),
       })),
+      punchDownFactor: s.params.items.punchDownFactor,
+      // 太虚幻镜 would copy this right now (its target is then that item's target).
+      taixuCopies: taixuCopyTarget([...s.usedItems].reverse().map((u) => u.itemId)),
     };
   }
 
@@ -447,28 +453,35 @@ export class SeasonPlay {
     ctx: PlayCtx,
     b: { itemId: string; uid?: string; targetTeamId?: string; landId?: string; contestId?: string; week?: number; line?: number },
   ) {
-    const s = await this.leaderOnly(ctx);
+    await this.leaderOnly(ctx);
     const def = ITEMS.find((i) => i.id === b.itemId);
     if (!def) refuse("unknown_item");
     const at = this.now();
-    if (def!.bigBattle) {
-      await this.act(ctx, { type: "use_battle_item", teamId: ctx.teamId, itemId: b.itemId as "zhencha", at, by: ctx.childId, uid: b.uid, line: b.line } as SeasonEvent);
-    } else {
-      await this.act(ctx, {
-        type: "use_item",
-        teamId: ctx.teamId,
-        itemId: b.itemId,
-        at,
-        by: ctx.childId,
-        uid: b.uid,
-        targetTeamId: b.targetTeamId,
-        landId: b.landId,
-        contestId: b.contestId,
-        week: b.week,
-      } as SeasonEvent);
+    const r = def!.bigBattle
+      ? await this.act(ctx, { type: "use_battle_item", teamId: ctx.teamId, itemId: b.itemId as "zhencha", at, by: ctx.childId, uid: b.uid, line: b.line } as SeasonEvent)
+      : await this.act(ctx, {
+          type: "use_item",
+          teamId: ctx.teamId,
+          itemId: b.itemId,
+          at,
+          by: ctx.childId,
+          uid: b.uid,
+          targetTeamId: b.targetTeamId,
+          landId: b.landId,
+          contestId: b.contestId,
+          week: b.week,
+        } as SeasonEvent);
+    // What happened to each target (§3.4 step 4: "被挡下了" / reflected), and what 太虚幻镜 copied.
+    const name = (id: string) => r.state.teams[id]?.name ?? "";
+    const used = r.notices.find((n) => n.kind === "item_used");
+    const outcomes: { teamId: string; team: string; outcome: "hit" | "blocked" | "reflected" }[] = [];
+    for (const n of r.notices.filter((x) => x.kind === "item_outcome")) {
+      const d = n.data as { targetTeamId?: string; outcome?: string; results?: { teamId: string; outcome: string }[] };
+      if (d.targetTeamId && d.outcome) outcomes.push({ teamId: d.targetTeamId, team: name(d.targetTeamId), outcome: d.outcome as "hit" });
+      for (const x of d.results ?? []) outcomes.push({ teamId: x.teamId, team: name(x.teamId), outcome: x.outcome as "hit" });
     }
-    void s;
-    return this.team(ctx);
+    const copied = (used?.data as { copied?: string | null } | undefined)?.copied ?? null;
+    return { ...(await this.team(ctx)), used: { itemId: b.itemId, copied: copied ? { id: copied, name: itemDef(copied).name } : null, outcomes } };
   }
 
   // center land after D8 (D2), shop (E10), epic auctions (E11)

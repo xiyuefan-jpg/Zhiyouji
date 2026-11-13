@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, api } from "../src/api";
-import { greeting, shortTime } from "../src/format";
+import { countdown, greeting, shortTime } from "../src/format";
 import { pickMimeType } from "../src/platform/recorder";
 import { chunkRanges } from "../src/platform/upload";
 import { vi } from "vitest";
@@ -10,6 +10,14 @@ describe("website helpers", () => {
     expect(greeting(new Date("2027-01-04T00:30:00Z"))).toBe("早上好"); // 08:30 Beijing
     expect(greeting(new Date("2027-01-04T12:30:00Z"))).toBe("晚上好"); // 20:30
     expect(shortTime("2027-01-04T13:05:00Z")).toBe("1月4日 21:05");
+  });
+
+  it("countdowns: time left and the Beijing weekday time", () => {
+    const wed21 = Date.parse("2027-01-06T13:00:00Z"); // Wednesday 21:00 Beijing
+    expect(countdown(wed21, wed21 - (27 * 60 + 5) * 60_000)).toBe("还剩 1 天 3 小时（周三 21:00）");
+    expect(countdown(wed21, wed21 - 125 * 60_000)).toBe("还剩 2 小时 5 分（周三 21:00）");
+    expect(countdown(wed21, wed21 - 20_000)).toBe("还剩 1 分钟（周三 21:00）");
+    expect(countdown(wed21, wed21)).toBe("已截止（周三 21:00）");
   });
 
   it("recording format and upload chunks", () => {

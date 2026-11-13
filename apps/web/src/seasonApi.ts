@@ -72,6 +72,102 @@ export interface Quote {
   grain: number;
 }
 
+export type ItemTarget = "none" | "team" | "own_land" | "contest" | "week" | "line" | "passive";
+
+export interface CatalogueItem {
+  id: string;
+  name: string;
+  tier: "common" | "rare" | "epic";
+  passive: boolean;
+  negative: boolean;
+  bigBattle: boolean;
+  when: string;
+  target: ItemTarget;
+  effect: string;
+  broadcast: boolean;
+}
+
+export interface HeldItem {
+  uid: string;
+  itemId: string;
+  name: string;
+  tier: string;
+  passive: boolean;
+  bigBattle: boolean;
+  negative: boolean;
+  source: string;
+}
+
+export interface TeamFull extends TeamView {
+  effects: { kind: string; teamId?: string; victim?: string; beneficiary?: string; landId?: string; until?: number; week?: number; endedAt?: number }[];
+  contests: (TeamView["contests"][number] & { joinDeadline: number; promptId: string; outcome: ContestOutcome | null })[];
+}
+
+export type ContestOutcome = { kind: "captured"; winner: string } | { kind: "defended" } | { kind: "nothing" } | { kind: "cancelled"; by: "xiuli" | "admin" };
+
+export interface ContestDetail {
+  id: string;
+  landId: string;
+  status: string;
+  prompt: { title: string; body: string; audience: string | null; questionType: string | null } | null;
+  defender: { id: string; name: string };
+  attackers: { id: string; name: string; order: number; joinedAt: number; paid?: number }[];
+  startedAt: number;
+  joinDeadline: number;
+  deadline: number;
+  involved: boolean;
+  outcome: ContestOutcome | null;
+  settledAt: number | null;
+}
+
+export type DebateView =
+  | { debate: false }
+  | {
+      debate: true;
+      mySide: "pro" | "con" | null;
+      sideBy: string | null;
+      sideDeadline: string;
+      openingDeadline: string;
+      deadline: string;
+      stage: "opening" | "rebuttal" | "closed";
+      noDefender: boolean;
+      openings: { teamId: string; team: string; text: string | null; files: { id: string; kind: string; url: string }[] }[];
+    };
+
+export type RoundName = "blind_auction" | "starter_items" | "center_round" | "rare_round";
+
+export interface RoundView {
+  round: RoundName;
+  opensAt: string | null;
+  deadline: string | null;
+  open: boolean;
+  closed: boolean;
+  submission: { bid: number | null; prefs: string[]; by: string; at: string } | null;
+}
+
+export interface UseItemBody {
+  itemId: string;
+  uid?: string;
+  targetTeamId?: string;
+  landId?: string;
+  contestId?: string;
+  week?: number;
+  line?: number;
+}
+
+export interface UseItemResult extends TeamFull {
+  used: { itemId: string; copied: { id: string; name: string } | null; outcomes: { teamId: string; team: string; outcome: "hit" | "blocked" | "reflected" }[] };
+}
+
+export interface Transfer {
+  id: string;
+  role: "leader" | "deputy";
+  from: string;
+  to: string;
+  createdAt: string;
+  forMe: boolean;
+}
+
 export const seasonApi = {
   me: () => request<SeasonMe>("GET", "/v1/season/me"),
   map: () => request<{ lands: LandView[]; teams: { id: string; name: string; mine: boolean }[] }>("GET", "/v1/season/map"),
@@ -87,6 +183,18 @@ export const seasonApi = {
   report: (id: string) => request<{ id: string; title: string; lines: FeedLine[]; ranking: { rank: number; name: string; points: number; mine: boolean }[] }>("GET", `/v1/season/reports/${id}`),
   broadcasts: () => request<{ lines: FeedLine[] }>("GET", "/v1/season/broadcasts"),
   teamFeed: () => request<{ lines: FeedLine[] }>("GET", "/v1/season/team-feed"),
+  teamFull: () => request<TeamFull>("GET", "/v1/season/team"),
+  catalogue: () => request<{ items: CatalogueItem[]; punchDownFactor: number; taixuCopies: string | null }>("GET", "/v1/season/items"),
+  useItem: (b: UseItemBody) => request<UseItemResult>("POST", "/v1/season/items/use", b),
+  contest: (id: string) => request<ContestDetail>("GET", `/v1/season/contests/${encodeURIComponent(id)}`),
+  debate: (id: string) => request<DebateView>("GET", `/v1/season/contests/${encodeURIComponent(id)}/debate`),
+  chooseSide: (id: string, side: "pro" | "con") => request<DebateView>("POST", `/v1/season/contests/${encodeURIComponent(id)}/side`, { side }),
+  transfers: () => request<{ transfers: Transfer[] }>("GET", "/v1/season/roles/transfers"),
+  offerRole: (role: "leader" | "deputy", to: string) => request<{ transfer: { id: string; status: string } }>("POST", "/v1/season/roles/offer", { role, to }),
+  answerTransfer: (id: string, accept: boolean) => request<SeasonMe>("POST", `/v1/season/roles/transfers/${id}`, { accept }),
+  takeOver: () => request<SeasonMe>("POST", "/v1/season/roles/take-over"),
+  round: (r: RoundName) => request<RoundView>("GET", `/v1/season/rounds/${r}`),
+  submitRound: (r: RoundName, b: { bid?: number; prefs: string[] }) => request<RoundView>("POST", `/v1/season/rounds/${r}`, b),
 };
 
 /** Team points are stored in hundredths; shown with one decimal (CLAUDE.md). */

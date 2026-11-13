@@ -49,6 +49,19 @@ export function slotTitle(s: Pick<Slot, "kind" | "slot" | "role" | "stage">): st
   return "大团战 · 主战场";
 }
 
+interface Version {
+  id: string;
+  version: number;
+  submittedBy: string;
+  submittedAt: string;
+  mediaKind: string;
+  fileIds: string[];
+  text: string | null;
+  members: string[];
+}
+
+const MEDIA_TEXT: Record<string, string> = { text: "文字", images: "图文", video: "视频", audio: "音频" };
+
 const BASIS = { human: "人工复核", ai_timeout: "超时，按 AI 分结算", admin: "管理员裁定" } as Record<string, string>;
 
 export function WorksList() {
@@ -80,6 +93,8 @@ export function WorkSlot() {
   const slots = useLoad(() => request<{ slots: Slot[] }>("GET", "/v1/season/works"));
   const mats = useLoad(() => request<{ materials: Material[] }>("GET", `/v1/season/works/${encodeURIComponent(slot)}/materials`), [slot]);
   const result = useLoad(() => request<Result>("GET", `/v1/season/works/${encodeURIComponent(slot)}/result`), [slot]);
+  const versions = useLoad(() => request<{ works: Version[] }>("GET", `/v1/season/works/${encodeURIComponent(slot)}/versions`), [slot]);
+  const contestId = slot.startsWith("contest:") ? slot.split(":")[1]! : null;
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [mediaKind, setMediaKind] = useState<"text" | "images" | "video" | "audio">("text");
@@ -89,6 +104,7 @@ export function WorkSlot() {
   const s = slots.data?.slots.find((x) => x.slot === slot);
   const playing = me.data?.status === "playing" ? me.data : null;
 
+  const nickname = (id: string) => playing?.members.find((x) => x.childId === id)?.nickname ?? "已注销";
   const fail = (e: unknown) => Toast.show({ content: e instanceof ApiError ? e.message : String((e as Error).message ?? e) });
 
   const addText = async () => {
@@ -122,6 +138,7 @@ export function WorkSlot() {
       const r = await request<{ work: { version: number } }>("POST", `/v1/season/works/${encodeURIComponent(slot)}`, { mediaKind, fileIds: picked, text, members });
       Toast.show({ content: `交上去了（第 ${r.work.version} 版）` });
       slots.reload();
+      versions.reload();
     } catch (e) {
       fail(e);
     } finally {
@@ -137,6 +154,13 @@ export function WorkSlot() {
           {s.open ? `${shortTime(new Date(s.deadline).toISOString())} 截止` : "已截止"}
           {s.submitted ? ` · 已交第 ${s.submitted.version} 版（以最后一次为准）` : ""}
         </p>
+      )}
+
+      {contestId && (
+        <Link to={`/season/contests/${contestId}`} className="panel row" style={{ textDecoration: "none", color: "inherit" }}>
+          <span className="grow">题目和争夺详情{s?.stage ? "（辩论的持方、对方立论）" : ""}</span>
+          <RightOutline />
+        </Link>
       )}
 
       {result.data?.settled && (
@@ -231,6 +255,23 @@ export function WorkSlot() {
         </>
       )}
       {s?.open && playing && !playing.canAct && <p className="hint">素材放好以后，请组长或副组长组装提交。</p>}
+
+      {versions.data && versions.data.works.length > 0 && (
+        <>
+          <h2 className="section-title">交过的版本（以最后一版为准）</h2>
+          {versions.data.works.map((w) => (
+            <details key={w.id} className="panel">
+              <summary style={{ cursor: "pointer" }}>
+                第 {w.version} 版 · {shortTime(w.submittedAt)} · {MEDIA_TEXT[w.mediaKind] ?? w.mediaKind}
+                {w.submittedBy ? ` · ${nickname(w.submittedBy)}交的` : ""}
+              </summary>
+              {w.text && <p style={{ whiteSpace: "pre-wrap" }}>{w.text}</p>}
+              {w.fileIds.length > 0 && <div className="hint">{w.fileIds.length} 个文件</div>}
+              <div className="hint">署名：{w.members.map(nickname).join("、") || "—"}</div>
+            </details>
+          ))}
+        </>
+      )}
     </div>
   );
 }

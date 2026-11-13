@@ -113,6 +113,45 @@ describe("season play on the student website (part 5 D–E)", () => {
     expect((await a2("GET", `/v1/season/contests/${c.id}`)).json().attackers[0].paid).toBeUndefined();
     await t.close();
   });
+
+  it("法宝图鉴: when, target and effect with the season's numbers", async () => {
+    const t = await playSetup();
+    t.clock.set(bj("2027-02-07", 19, 1));
+    await t.services.scheduler.runDue(t.serverId);
+    const a1 = await t.as("13800000001", t.a1);
+    const cat = (await a1("GET", "/v1/season/items")).json();
+    expect(cat.items).toHaveLength(21);
+    expect(cat.punchDownFactor).toBe(0.5);
+    const by = (id: string) => cat.items.find((i: { id: string }) => i.id === id);
+    expect(by("zijin")).toMatchObject({ target: "team", broadcast: true, effect: "选一个组：从它那里抢 5 分（目标排名比你们低时 × 0.5）。" });
+    expect(by("shengsi")).toMatchObject({ target: "own_land" });
+    expect(by("xiuli")).toMatchObject({ target: "contest" });
+    expect(by("yujing")).toMatchObject({ target: "week" });
+    expect(by("bihuo")).toMatchObject({ target: "passive", broadcast: false });
+    expect(by("zhencha")).toMatchObject({ broadcast: false });
+    expect(by("bagua").when).toBe("第 29 天之前");
+    await t.close();
+  });
+
+  it("using an item says what happened to the target (挡下了) and what 太虚幻镜 would copy", async () => {
+    const t = await playSetup();
+    t.clock.set(bj("2027-02-07", 19, 1));
+    await t.services.scheduler.runDue(t.serverId);
+    const a1 = await t.as("13800000001", t.a1);
+    await a1("POST", "/v1/season/roles/claim", { role: "leader" });
+    const mine = (await a1("GET", "/v1/season/me")).json().team.id as string;
+    const st = await t.services.store.state(t.serverId);
+    const other = st.teamOrder.find((x) => x !== mine)!;
+    await t.services.control.intervene(t.serverId, { action: "give_item", teamId: mine, itemId: "zijin", reason: "测试" }, "admin:test");
+    await t.services.control.intervene(t.serverId, { action: "give_item", teamId: other, itemId: "bihuo", reason: "测试" }, "admin:test");
+    expect((await a1("GET", "/v1/season/items")).json().taixuCopies).toBeNull();
+    t.clock.set(bj("2027-02-09", 10));
+    const r = (await a1("POST", "/v1/season/items/use", { itemId: "zijin", targetTeamId: other })).json();
+    expect(r.used).toMatchObject({ itemId: "zijin", copied: null, outcomes: [{ teamId: other, team: st.teams[other]!.name, outcome: "blocked" }] });
+    expect(r.items).toEqual([]);
+    expect((await a1("GET", "/v1/season/items")).json().taixuCopies).not.toBeNull();
+    await t.close();
+  });
 });
 
 describe("notifications, reports and feeds (part 8 §1.2; part 5 F1, F2, E1)", () => {
