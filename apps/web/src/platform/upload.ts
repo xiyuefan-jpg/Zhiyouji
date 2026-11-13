@@ -33,7 +33,8 @@ export function ticketUploader(prefix: "/v1/daily" | "/v1/season", request: <T>(
     async upload(file, opts) {
       const t = await request<{ fileId: string; upload: { url: string; method: "PUT"; headers: Record<string, string> } }>("POST", `${prefix}/uploads`, {
         kind: opts.purpose,
-        contentType: file.type || "application/octet-stream",
+        // "audio/webm;codecs=opus" → "audio/webm": the server checks the bare type.
+        contentType: (file.type || "application/octet-stream").split(";")[0]!.trim(),
         size: file.size,
       });
       opts.onProgress?.({ sent: 0, total: file.size });

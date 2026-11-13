@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { ConfigProvider } from "antd-mobile";
 import { dailySubmissions, knowledgeCards } from "@zhiyouji/db";
 import { App } from "../src/App";
 import { startBackend } from "./backend";
+import { recorder } from "../src/platform/recorder";
 
 const TEXT = "我今天用AI学了大气压。原来我以为空气没有重量，后来懂了空气也有重量会压在我们身上。我自己想到的例子是用吸管喝饮料，其实是外面的大气把饮料压进嘴里。";
 
@@ -81,6 +82,46 @@ describe("student website: 每日任务 (part 5 C1–C3)", () => {
     expect(await screen.findByText("一共 1 张知识卡片")).toBeTruthy();
     await user.click(screen.getByText("小结", { selector: ".adm-tabs-tab" }));
     expect(await screen.findByText("还没有小结")).toBeTruthy();
+    await be.stop();
+  });
+});
+
+describe("讲解录音 (part 5 §3.1 step 4)", () => {
+  it("hold to talk, release, play back, hand in a voice explanation", async () => {
+    const be = await startBackend();
+    await be.services.family.requestCode("13812345678", undefined);
+    const login = await be.services.family.login("13812345678", be.sms.lastCode("13812345678")!);
+    await be.services.family.consent(login.family.id, "agree", be.cfg.policyVersion);
+    const c = await be.services.family.createChild(login.family.id, { nickname: "小明", grade: 5, avatar: "a1", explainPref: "voice" });
+    await be.services.sessions.setChild((await be.db.query.sessions.findFirst())!.id, c.id);
+    const realFetch = be.fetchMock.getMockImplementation()!;
+    be.fetchMock.mockImplementation((input, init = {}) => realFetch(input, { ...init, headers: { ...(init.headers as Record<string, string>), authorization: `Bearer ${login.token}` } }));
+    localStorage.setItem("zyj_privacy_notice", "2027-01");
+    vi.spyOn(recorder, "supported").mockReturnValue(true);
+    vi.spyOn(recorder, "start").mockResolvedValue();
+    vi.spyOn(recorder, "stop").mockResolvedValue({ blob: new Blob(["voice"], { type: "audio/webm;codecs=opus" }), mimeType: "audio/webm;codecs=opus", durationMs: 12_000 });
+    const user = userEvent.setup();
+    render(
+      <ConfigProvider>
+        <MemoryRouter initialEntries={["/daily/new/1"]}>
+          <App />
+        </MemoryRouter>
+      </ConfigProvider>,
+    );
+    const hold = await screen.findByRole("button", { name: "按住说话" });
+    fireEvent.pointerDown(hold);
+    const release = await screen.findByRole("button", { name: "松开结束" });
+    fireEvent.pointerUp(release);
+    expect(await screen.findByText("录好了，12 秒")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "重录" })).toBeTruthy();
+    await user.upload(screen.getByLabelText("选择证据图片"), new File(["jpg"], "chat.jpg", { type: "image/jpeg" }));
+    await user.type(screen.getByPlaceholderText("一句话就好"), "我让 AI 举了三个例子");
+    await user.click(screen.getByRole("button", { name: "交上去" }));
+    expect(await screen.findByText("审核结果")).toBeTruthy();
+    const [sub] = await be.db.select().from(dailySubmissions);
+    expect(sub!.explainKind).toBe("voice");
+    expect(sub!.explainFileId).toBeTruthy();
+    vi.restoreAllMocks();
     await be.stop();
   });
 });

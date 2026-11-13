@@ -1,8 +1,8 @@
 /**
  * 每日任务 (PRD part 5 C1–C3, §3.1): choose a template, hand in evidence
  * pictures, an explanation and one line on how AI was used, then the result.
- * The explanation is written here (50–150 characters); recording a voice
- * explanation comes with the recorder page.
+ * The explanation is spoken (hold to talk, up to 90 seconds) or written
+ * (50–150 characters); the child's default comes from the profile.
  */
 
 import { useState } from "react";
@@ -12,6 +12,9 @@ import { DAILY_TEMPLATES, DAILY_TEXT_MAX, DAILY_TEXT_MIN, EXPLAIN_HINTS } from "
 import { ApiError, request } from "../api";
 import { Empty, PageHeader, ReadAloud, Seal } from "../components/ui";
 import { ticketUploader } from "../platform/upload";
+import type { Recording } from "../platform/recorder";
+import { VoiceRecorder } from "../components/VoiceRecorder";
+import { useChild } from "../session";
 import { useLoad } from "./season/useSeason";
 
 interface Today {
@@ -64,6 +67,9 @@ export function DailyNew() {
   const tpl = DAILY_TEMPLATES.find((t) => String(t.id) === templateId) ?? DAILY_TEMPLATES[0];
   const nav = useNavigate();
   const [files, setFiles] = useState<File[]>([]);
+  const child = useChild();
+  const [mode, setMode] = useState<"voice" | "text">(child.explainPref === "text" ? "text" : "voice");
+  const [voice, setVoice] = useState<Recording | null>(null);
   const [text, setText] = useState("");
   const [aiNote, setAiNote] = useState("");
   const [noAi, setNoAi] = useState(false);
@@ -74,16 +80,18 @@ export function DailyNew() {
   const submit = async () => {
     setError(null);
     if (files.length === 0) return setError("至少交一张证据图片");
-    if (n < DAILY_TEXT_MIN || n > DAILY_TEXT_MAX) return setError(`文字讲解要 ${DAILY_TEXT_MIN} 到 ${DAILY_TEXT_MAX} 个字`);
+    if (mode === "voice" && !voice) return setError("先按住说话，录一段讲解");
+    if (mode === "text" && (n < DAILY_TEXT_MIN || n > DAILY_TEXT_MAX)) return setError(`文字讲解要 ${DAILY_TEXT_MIN} 到 ${DAILY_TEXT_MAX} 个字`);
     if (!noAi && !aiNote.trim()) return setError("说一句你是怎么用 AI 的");
     setBusy(true);
     try {
       const ids: string[] = [];
       for (const f of files) ids.push((await uploader.upload(f, { purpose: "image" })).fileId);
+      const explain = mode === "voice" ? { kind: "voice" as const, fileId: (await uploader.upload(voice!.blob, { purpose: "audio" })).fileId } : { kind: "text" as const, text };
       const r = await request<Result>("POST", "/v1/daily/submissions", {
         templateId: tpl.id,
         evidenceFileIds: ids,
-        explain: { kind: "text", text },
+        explain,
         ...(noAi ? { noAi: true } : { aiNote }),
       });
       nav(`/daily/${r.id}`, { replace: true });
@@ -117,7 +125,16 @@ export function DailyNew() {
           </div>
         ))}
       </div>
-      <TextArea className="text-input" placeholder="写 50–150 个字" value={text} onChange={setText} rows={5} maxLength={DAILY_TEXT_MAX} showCount />
+      {mode === "voice" ? (
+        <VoiceRecorder maxSeconds={90} onChange={setVoice} onUseText={() => setMode("text")} />
+      ) : (
+        <>
+          <TextArea className="text-input" placeholder="写 50–150 个字" value={text} onChange={setText} rows={5} maxLength={DAILY_TEXT_MAX} showCount />
+          <button type="button" onClick={() => setMode("voice")} style={{ border: "none", background: "none", color: "var(--ochre)", marginTop: 6 }}>
+            改成说话
+          </button>
+        </>
+      )}
 
       <div className="field-label">你是怎么用 AI 的？</div>
       {!noAi && <Input className="text-input" placeholder="一句话就好" value={aiNote} onChange={setAiNote} />}
