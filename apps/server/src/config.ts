@@ -25,6 +25,8 @@ export interface ServerConfig {
     /** Reminder SMS per phone per Beijing day (part 8 §1.3). */
     remindersPerDay: number;
   };
+  /** Requests per minute per login (or per IP before login) on /v1 (PRD part 8 §3.3: no hammering the API). */
+  rateLimit: { perMinute: number };
   family: {
     /** Login stays valid this long after the last use (sliding). */
     sessionDays: number;
@@ -72,6 +74,7 @@ export function defaultConfig(env: Record<string, string | undefined> = {}): Ser
       captchaAfterFails: 3,
       remindersPerDay: 5,
     },
+    rateLimit: { perMinute: Number(env.RATE_LIMIT_PER_MINUTE ?? 600) },
     family: { sessionDays: 365, maxChildren: 6 },
     admin: { idleMinutes: 30, maxSessionHours: 12, maxFailedLogins: 5, lockMinutes: 15, inviteDays: 7 },
     uploads: {

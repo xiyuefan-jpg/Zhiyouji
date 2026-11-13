@@ -40,6 +40,7 @@ import { WarWords } from "../season/warWords.js";
 import { Home } from "../season/todo.js";
 import { FakeMediaProcessor, MediaPipeline, type MediaProcessor } from "../media.js";
 import { TagSuggestions } from "../daily/tagSuggestions.js";
+import { rateLimit } from "./rateLimit.js";
 import { QuestionBank } from "../content/questionBank.js";
 import { bankRoutes } from "./bankRoutes.js";
 import { Debates } from "../season/debates.js";
@@ -208,6 +209,8 @@ export function buildServices(d: AppDeps): Services {
 
 export function buildApp(d: AppDeps, services = buildServices(d)): { app: FastifyInstance; services: Services } {
   const app = Fastify({ logger: d.logger ?? false, trustProxy: d.trustProxy ?? false, bodyLimit: 256 * 1024 });
+
+  rateLimit(app, d.clock, d.cfg.rateLimit.perMinute);
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof HttpError) return reply.status(err.status).send(err.body());

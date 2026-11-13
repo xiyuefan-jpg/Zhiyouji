@@ -11,6 +11,7 @@ export const ERROR_TEXT = {
   too_soon: "验证码已发送，请稍后再试",
   daily_limit: "今天获取验证码的次数太多了，请明天再试",
   ip_limit: "操作太频繁了，请稍后再试",
+  too_many_requests: "操作太频繁了，请等一会儿再试",
   captcha_required: "请先完成图形验证",
   captcha_wrong: "图形验证没有通过，请再试一次",
   sms_failed: "短信发送失败，请稍后再试",
