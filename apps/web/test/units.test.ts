@@ -35,3 +35,17 @@ describe("website helpers", () => {
     vi.unstubAllGlobals();
   });
 });
+
+import { monthGrid, shiftMonth } from "../src/pages/JournalPages";
+
+describe("修行日志 calendar helpers", () => {
+  it("months shift across years; the grid starts on Monday", () => {
+    expect(shiftMonth("2027-01", -1)).toBe("2026-12");
+    expect(shiftMonth("2027-12", 1)).toBe("2028-01");
+    const g = monthGrid("2027-02"); // 1 Feb 2027 is a Monday
+    expect(g[0]).toBe("2027-02-01");
+    expect(g.filter(Boolean)).toHaveLength(28);
+    // 1 Jan 2027 is a Friday: four blanks first
+    expect(monthGrid("2027-01").slice(0, 5)).toEqual([null, null, null, null, "2027-01-01"]);
+  });
+});

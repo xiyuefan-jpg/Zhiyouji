@@ -18,6 +18,7 @@ import { Shell } from "./pages/Shell";
 import { Home, ReportTab } from "./pages/Tabs";
 import { LandPage, LedgerPage, SeasonMap, SeasonTeam } from "./pages/season/SeasonPages";
 import { DailyHome, DailyNew, DailyResult } from "./pages/DailyPages";
+import { CardPage, Journal, RealmPage, SeasonReviewPage, SummaryPage } from "./pages/JournalPages";
 import { WorkSlot, WorksList } from "./pages/season/WorksPages";
 import { ItemsPage } from "./pages/season/ItemsPage";
 import { ContestPage, RoundPage } from "./pages/season/TeamPages";
@@ -93,6 +94,11 @@ function Gate() {
       <Route path="daily" element={<DailyHome />} />
       <Route path="daily/new/:templateId" element={<DailyNew />} />
       <Route path="daily/:id" element={<DailyResult />} />
+      <Route path="journal" element={<Journal />} />
+      <Route path="journal/cards/:id" element={<CardPage />} />
+      <Route path="journal/summaries/:id" element={<SummaryPage />} />
+      <Route path="journal/realm" element={<RealmPage />} />
+      <Route path="season-review" element={<SeasonReviewPage />} />
       <Route path="team/ledger" element={<LedgerPage />} />
       <Route path="team/works" element={<WorksList />} />
       <Route path="team/works/:slot" element={<WorkSlot />} />

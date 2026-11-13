@@ -28,6 +28,15 @@ export function MeTab() {
       </div>
 
       <List>
+        <List.Item onClick={() => nav("/journal")}>修行日志</List.Item>
+        <List.Item onClick={() => nav("/journal/realm")} extra={<span className="hint">建设中</span>}>
+          修行境界
+        </List.Item>
+        <List.Item onClick={() => nav("/season-review")}>赛季回顾</List.Item>
+      </List>
+
+      <div style={{ height: 14 }} />
+      <List>
         <List.Item onClick={() => nav("/report?tab=messages")}>我的消息</List.Item>
         <List.Item onClick={() => nav("/me/edit")}>修改资料</List.Item>
         <List.Item onClick={() => nav("/choose")} extra={me.children.length > 1 ? `${me.children.length} 个孩子` : undefined}>

@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { ConfigProvider } from "antd-mobile";
-import { knowledgeCards } from "@zhiyouji/db";
+import { dailySubmissions, knowledgeCards } from "@zhiyouji/db";
 import { App } from "../src/App";
 import { startBackend } from "./backend";
 
@@ -46,6 +46,41 @@ describe("student website: 每日任务 (part 5 C1–C3)", () => {
     expect(screen.getByText("已经记进修行日志")).toBeTruthy();
     const [card] = await be.db.select().from(knowledgeCards);
     expect(screen.getByText(card!.title)).toBeTruthy();
+
+    // C7: the card in the journal, with the child's own explanation
+    await user.click(screen.getByText("在修行日志里看这张卡片"));
+    expect(await screen.findByText("我当时的讲解")).toBeTruthy();
+    expect(screen.getAllByText(TEXT).length).toBeGreaterThan(0);
+    expect(screen.getByAltText("证据图片")).toBeTruthy();
+    await be.stop();
+  });
+
+  it("修行日志: calendar month, subjects, search, summaries (C4–C8)", async () => {
+    const be = await startBackend();
+    await be.services.family.requestCode("13812345678", undefined);
+    const login = await be.services.family.login("13812345678", be.sms.lastCode("13812345678")!);
+    await be.services.family.consent(login.family.id, "agree", be.cfg.policyVersion);
+    const c = await be.services.family.createChild(login.family.id, { nickname: "小明", grade: 5, avatar: "a1", explainPref: "text" });
+    await be.services.sessions.setChild((await be.db.query.sessions.findFirst())!.id, c.id);
+    const realFetch = be.fetchMock.getMockImplementation()!;
+    be.fetchMock.mockImplementation((input, init = {}) => realFetch(input, { ...init, headers: { ...(init.headers as Record<string, string>), authorization: `Bearer ${login.token}` } }));
+    localStorage.setItem("zyj_privacy_notice", "2027-01");
+    const sub = await be.db.insert(dailySubmissions).values({ childId: c.id, templateId: 1, day: "2027-01-04", status: "passed", evidenceFileIds: [], explainKind: "text", explainText: TEXT, grade: 5, submittedAt: new Date() }).returning();
+    await be.db.insert(knowledgeCards).values({ childId: c.id, submissionId: sub[0]!.id, title: "大气压", summary: "空气有重量", tag: "物理与工程/力学", day: "2027-01-04", createdAt: new Date() });
+    const user = userEvent.setup();
+    render(
+      <ConfigProvider>
+        <MemoryRouter initialEntries={["/journal?tab=search"]}>
+          <App />
+        </MemoryRouter>
+      </ConfigProvider>,
+    );
+    await user.type(await screen.findByPlaceholderText("找以前的卡片"), "大气{Enter}");
+    expect(await screen.findByText("大气压")).toBeTruthy();
+    await user.click(screen.getByText("领域", { selector: ".adm-tabs-tab" }));
+    expect(await screen.findByText("一共 1 张知识卡片")).toBeTruthy();
+    await user.click(screen.getByText("小结", { selector: ".adm-tabs-tab" }));
+    expect(await screen.findByText("还没有小结")).toBeTruthy();
     await be.stop();
   });
 });

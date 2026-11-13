@@ -162,6 +162,7 @@ export function DailyResult() {
             <div style={{ fontFamily: "var(--serif)", fontSize: 20, fontWeight: 700 }}>{d.card?.title}</div>
             <div className="hint">{d.card?.tag}</div>
             <p>{d.card?.summary}</p>
+            {d.card && <Link to={`/journal/cards/${d.card.id}`}>在修行日志里看这张卡片</Link>}
           </div>
           <div className="panel">
             <p>{d.feedbackGood}</p>
