@@ -16,17 +16,19 @@ import {
   offerRoleRequest,
   roundParam,
   roundSubmission,
+  supplyEntryRequest,
   useItemRequest,
 } from "@zhiyouji/shared";
 import type { SeasonPlay } from "../season/play.js";
 import type { Reports } from "../season/reports.js";
+import type { Supply } from "../season/supply.js";
 import type { FamilyAuth } from "./familyRoutes.js";
 
 const idParam = z.object({ id: z.string().min(1).max(40) });
 
 const beforeQuery = z.object({ before: z.coerce.date().optional() });
 
-export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Reports, auth: FamilyAuth): void {
+export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Reports, supply: Supply, auth: FamilyAuth): void {
   const ctx = async (req: FastifyRequest) => play.ctx((await auth.child(req)).child.id);
 
   app.get("/v1/season/me", async (req) => play.me((await auth.child(req)).child.id));
@@ -78,4 +80,10 @@ export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Repo
   app.get("/v1/season/reports/:id", async (req) => reports.get(await ctx(req), z.uuid().parse((req.params as { id: string }).id)));
   app.get("/v1/season/broadcasts", async (req) => reports.broadcasts(await ctx(req), beforeQuery.parse(req.query).before));
   app.get("/v1/season/team-feed", async (req) => reports.teamFeed(await ctx(req)));
+
+  // 军需任务 (E9)
+  const supplyParam = z.object({ id: z.string().regex(/^\d[ab]$/) });
+  app.get("/v1/season/supply", async (req) => supply.list(await ctx(req)));
+  app.post("/v1/season/supply/:id/entry", async (req) => supply.submitEntry(await ctx(req), supplyParam.parse(req.params).id, supplyEntryRequest.parse(req.body)));
+  app.post("/v1/season/supply/:id/summary", async (req) => supply.submitSummary(await ctx(req), supplyParam.parse(req.params).id, supplyEntryRequest.parse(req.body)));
 }

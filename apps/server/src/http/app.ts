@@ -34,7 +34,8 @@ import { Scoring } from "../season/scoring.js";
 import { reviewRoutes } from "./reviewRoutes.js";
 import { DataRights } from "../accounts/dataRights.js";
 import { dataRoutes } from "./dataRoutes.js";
-import { FakeAiDaily, type AiDailyReviewer } from "../ai.js";
+import { FakeAiDaily, FakeAiSupply, type AiDailyReviewer, type AiSupplyScorer } from "../ai.js";
+import { Supply } from "../season/supply.js";
 import { DailyTasks } from "../daily/daily.js";
 import { dailyRoutes } from "./dailyRoutes.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
@@ -54,6 +55,8 @@ export interface AppDeps {
   ai?: AiScorer;
   /** AI review of daily tasks (default: the fake). */
   aiDaily?: AiDailyReviewer;
+  /** AI scoring of supply tasks (default: the fake). */
+  aiSupply?: AiSupplyScorer;
   logger?: boolean;
   trustProxy?: boolean;
 }
@@ -82,6 +85,7 @@ export interface Services {
   dataRights: DataRights;
   aiDaily: AiDailyReviewer;
   daily: DailyTasks;
+  supply: Supply;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -103,6 +107,7 @@ export function buildServices(d: AppDeps): Services {
   const aiDaily = d.aiDaily ?? new FakeAiDaily();
   const play = new SeasonPlay(d.db, d.clock, store);
   return {
+    supply: new Supply(d.db, d.clock, store, d.aiSupply ?? new FakeAiSupply(), notifier),
     aiDaily,
     daily: new DailyTasks(d.db, d.clock, d.cfg, storage, aiDaily, notifier, store, play),
     ai,
@@ -148,7 +153,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   adminRoutes(app, d.cfg, services.admin, services.sessions, services.adminAuth);
   messageRoutes(app, services.notifier, services.familyAuth, services.adminAuth);
   seasonAdminRoutes(app, services.seasons, services.adminAuth);
-  playRoutes(app, services.play, services.reports, services.familyAuth);
+  playRoutes(app, services.play, services.reports, services.supply, services.familyAuth);
   seasonControlRoutes(app, services.control, services.adminAuth);
   workRoutes(app, services.works, services.play, services.scoring, services.familyAuth);
   reviewRoutes(app, services.scoring, services.admin, services.adminAuth);

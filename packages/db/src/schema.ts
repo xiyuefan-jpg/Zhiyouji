@@ -805,3 +805,42 @@ export const knowledgeCards = pgTable(
   },
   (t) => [index("knowledge_cards_child").on(t.childId, t.day)],
 );
+
+// ---- supply tasks (part 3 §12; part 4 §5.4) ------------------------------------------------
+
+/** Each member's part (kind "member") and the leader's team summary (kind "summary"); every save is a new row, the latest counts. */
+export const supplyEntries = pgTable(
+  "supply_entries",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    teamId: uuid("team_id").notNull().references(() => teams.id),
+    /** "1a", "1b", … (planned events supply_publish / supply_deadline). */
+    supplyId: text("supply_id").notNull(),
+    childId: uuid("child_id").notNull(),
+    /** member | summary */
+    kind: text("kind").notNull(),
+    text: text("text").notNull(),
+    fileIds: jsonb("file_ids").notNull().default([]),
+    at: ts("at").notNull(),
+  },
+  (t) => [index("supply_entries_team").on(t.serverId, t.supplyId, t.teamId)],
+);
+
+/** The AI's scores per team and what the engine paid (part 4 §5.4 军需提交). */
+export const supplyResults = pgTable(
+  "supply_results",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    supplyId: text("supply_id").notNull(),
+    teamId: uuid("team_id").notNull().references(() => teams.id),
+    submittedMembers: integer("submitted_members").notNull(),
+    quality: integer("quality").notNull(),
+    summary: integer("summary").notNull(),
+    model: text("model").notNull(),
+    comment: text("comment"),
+    at: ts("at").notNull(),
+  },
+  (t) => [uniqueIndex("supply_results_team").on(t.serverId, t.supplyId, t.teamId)],
+);

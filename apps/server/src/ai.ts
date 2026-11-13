@@ -144,3 +144,32 @@ export class FakeAiDaily implements AiDailyReviewer {
     };
   }
 }
+
+// ---- T6 军需任务打分 (PRD part 6) ---------------------------------------------------------
+
+export interface SupplyScoreRequest {
+  task: { title: string; perPerson: string; summary: string };
+  /** Each member's latest text (no names). */
+  entries: string[];
+  summary: string | null;
+}
+
+export interface SupplyScoreResult {
+  model: string;
+  /** Content quality 0–40. */
+  quality: number;
+  /** Team summary 0–20 (0 without a summary). */
+  summary: number;
+  comment: string;
+}
+
+export interface AiSupplyScorer {
+  scoreSupply(r: SupplyScoreRequest): Promise<SupplyScoreResult>;
+}
+
+/** Stand-in: 8 quality points per member entry (up to 40), 15 for a summary. */
+export class FakeAiSupply implements AiSupplyScorer {
+  async scoreSupply(r: SupplyScoreRequest): Promise<SupplyScoreResult> {
+    return { model: "fake-supply", quality: Math.min(40, 8 * r.entries.length), summary: r.summary ? 15 : 0, comment: "示例评语（假的 AI）。" };
+  }
+}

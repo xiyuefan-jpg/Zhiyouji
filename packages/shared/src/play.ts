@@ -78,3 +78,27 @@ export const reviewSubmit = z.object({
 export const reassignRequest = z.object({ reviewerId: z.uuid() });
 export const leaveRequest = z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
 export const ruleRequest = z.object({ score: z.number().int().min(0).max(100), note: z.string().trim().min(1).max(300) });
+
+// ---- 军需任务 (part 3 §12; content library §6) ----------------------------------------------
+
+/** Draft supply tasks (content library §6, 【待补】) until the question bank is in the database. */
+export const SUPPLY_PRESETS = [
+  { id: "Q1", title: "好奇心接力", perPerson: "一个这周真实产生的问题，找答案的方法和找到的答案", summary: "最值得继续探索的问题，以及理由" },
+  { id: "Q2", title: "本周学习地图", perPerson: "从自己本周的每日任务里挑一条知识，用一句话讲给组员听", summary: "把大家的知识分成几类，画成一张图" },
+  { id: "Q3", title: "社区问题接力", perPerson: "一个身边真实的问题：地点、具体表现、影响了谁", summary: "选出最值得关注的一个，说明理由" },
+  { id: "Q4", title: "公共场所里的一个设计", perPerson: "一张照片，加上“它好在哪里”或“可以怎么改”", summary: "全组最好的一个设计" },
+  { id: "Q5", title: "长辈的过去", perPerson: "采访一位长辈，至少 3 个问题的问答记录", summary: "过去和现在最大的不同" },
+  { id: "Q6", title: "一个好用的工具", perPerson: "一个真实用过的工具（App、网站、AI、实物），截图或照片，以及它的优点和缺点", summary: "全组最推荐的一个，说明理由" },
+  { id: "Q7", title: "家乡的一种文化", perPerson: "方言、饮食、节日习俗或家规，照片或文字记录", summary: "这种文化为什么存在，现在有没有变化" },
+  { id: "Q8", title: "一次消费复盘", perPerson: "一次真实的消费：买了什么、为什么买、是否必要、有没有受到广告或别人的影响", summary: "什么情况下人最容易冲动消费" },
+  { id: "Q9", title: "自然变化记录", perPerson: "同一个对象观察 2 次（间隔至少 6 小时），照片或绘图", summary: "变化背后可能的原因" },
+  { id: "Q10", title: "一个网络说法的核查", perPerson: "一条网上看到的说法，以及至少 1 种验证方法", summary: "它为什么容易让人相信" },
+] as const;
+
+/** Suggested schedule (content library §6): supply id → preset. */
+export const SUPPLY_SCHEDULE: Readonly<Record<string, string>> = { "1a": "Q1", "1b": "Q2", "2a": "Q4", "2b": "Q5", "3a": "Q8", "3b": "Q3", "4a": "Q6", "4b": "Q7" };
+
+export const supplyEntryRequest = z.object({
+  text: z.string().trim().min(1).max(2000),
+  fileIds: z.array(z.uuid()).max(9).default([]),
+});
