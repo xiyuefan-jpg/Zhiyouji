@@ -6,8 +6,9 @@ import { useAdmin, useAuth } from "./auth";
 import { InvitePage, LoginPage } from "./pages/Auth";
 import { ConsoleLayout, NAV } from "./pages/Layout";
 import { ComingPage, DashboardPage, NotificationsPage, UsersPage, ViewLogPage } from "./pages/Pages";
+import { ReviewersPage, ReviewPage, ReviewWorkPage } from "./pages/ReviewPages";
 
-const BUILT = new Set(["/", "/users", "/view-log"]);
+const BUILT = new Set(["/", "/users", "/view-log", "/review", "/reviewers"]);
 
 export function App() {
   return (
@@ -40,6 +41,10 @@ function Console() {
         <Route path="notifications" element={<NotificationsPage />} />
         {me.role === "admin" && <Route path="users" element={<UsersPage />} />}
         {me.role === "admin" && <Route path="view-log" element={<ViewLogPage />} />}
+        <Route path="review" element={<ReviewPage />} />
+        <Route path="review/:id" element={<ReviewWorkPage />} />
+        <Route path="reviews/:id" element={<ReviewWorkPage />} />
+        {me.role === "admin" && <Route path="reviewers" element={<ReviewersPage />} />}
         {allowed
           .filter((n) => !BUILT.has(n.key))
           .map((n) => (

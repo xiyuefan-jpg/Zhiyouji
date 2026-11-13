@@ -7,34 +7,7 @@ import { App } from "../src/App";
 import { AuthProvider } from "../src/auth";
 import { dualTime } from "../src/time";
 import { startBackend } from "./backend";
-
-function renderConsole(path = "/") {
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </MemoryRouter>,
-  );
-}
-
-type Backend = Awaited<ReturnType<typeof startBackend>>;
-
-/** Create an active account directly on the server (like the command-line invite). */
-async function account(be: Backend, email: string, role: "admin" | "reviewer") {
-  const inv = await be.services.admin.invite("cli", { email, name: email.split("@")[0]!, role });
-  const { secret } = await be.services.admin.startInvite(inv.inviteToken, "a-long-password");
-  await be.services.admin.finishInvite(inv.inviteToken, totpAt(secret, +be.clock.now()));
-  be.clock.advance(TOTP_STEP_MS);
-  return { secret };
-}
-
-async function login(be: Backend, user: ReturnType<typeof userEvent.setup>, email: string, secret: string) {
-  await user.type(await screen.findByLabelText("邮箱"), email);
-  await user.type(screen.getByLabelText("密码"), "a-long-password");
-  await user.type(screen.getByLabelText("两步验证码"), totpAt(secret, +be.clock.now()));
-  await user.click(screen.getByRole("button", { name: "登 录" }));
-}
+import { account, login, renderConsole } from "./helpers";
 
 describe("admin console", () => {
   it("shows Beijing time and the viewer's local time", () => {
