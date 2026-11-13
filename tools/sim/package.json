@@ -4,7 +4,9 @@
   "private": true,
   "description": "机器人小组跑完整赛季：检查规则引擎在整季里不出错、账本平衡、结果可重放",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
@@ -12,5 +14,8 @@
   },
   "dependencies": {
     "@zhiyouji/engine": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5"
   }
 }
