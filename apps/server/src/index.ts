@@ -22,3 +22,6 @@ export * from "./season/control.js";
 export * from "./notify/reminders.js";
 export * from "./season/works.js";
 export * from "./storage.js";
+export * from "./season/scoring.js";
+export * from "./season/rubrics.js";
+export * from "./ai.js";

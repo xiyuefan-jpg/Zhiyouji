@@ -66,3 +66,15 @@ export const workSubmit = z.object({
   /** Members who took part (signature). */
   members: z.array(z.uuid()).min(1).max(20),
 });
+
+// ---- review (part 7 §5) ------------------------------------------------------------------------
+
+export const reviewSubmit = z.object({
+  /** Score per rubric dimension key, e.g. { accuracy: 20, teach: 25, … }. */
+  dims: z.record(z.string(), z.number().int().min(0).max(100)),
+  comment: z.string().trim().min(1).max(3000),
+  flags: z.array(z.enum(["plagiarism", "inappropriate", "needs_admin"])).max(3).optional(),
+});
+export const reassignRequest = z.object({ reviewerId: z.uuid() });
+export const leaveRequest = z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
+export const ruleRequest = z.object({ score: z.number().int().min(0).max(100), note: z.string().trim().min(1).max(300) });

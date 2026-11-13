@@ -11,6 +11,7 @@ import type { Notifier, SmsDispatcher } from "./notify/notifier.js";
 import type { Scheduler } from "./scheduler.js";
 import type { Reports } from "./season/reports.js";
 import type { Reminders } from "./notify/reminders.js";
+import type { Scoring } from "./season/scoring.js";
 
 /** Season states in which planned events run (part 4 §4). */
 export const LIVE_SEASON_STATES = ["grouped", "running", "big_battle", "final_pending"];
@@ -23,6 +24,8 @@ export interface TickReport {
   reports: number;
   /** Reminder messages sent this tick. */
   reminders: number;
+  /** Scoring rounds closed / settled and reviews timed out this tick. */
+  scoring: { closed: number; settled: number; timeouts: number };
   sms: { sent: number; dropped: number; failed: number; deferred: number };
 }
 
@@ -36,6 +39,7 @@ export class Worker {
     private readonly notifier: Notifier,
     private readonly reports?: Reports,
     private readonly reminders?: Reminders,
+    private readonly scoring?: Scoring,
   ) {}
 
   /** One pass. Skips if the previous pass is still running. */
@@ -49,7 +53,7 @@ export class Worker {
         .innerJoin(seasons, eq(servers.seasonId, seasons.id))
         .where(inArray(seasons.status, LIVE_SEASON_STATES));
       const ids = live.map((s) => s.id);
-      const report: TickReport = { servers: ids.length, ran: 0, failed: [], reports: 0, reminders: 0, sms: { sent: 0, dropped: 0, failed: 0, deferred: 0 } };
+      const report: TickReport = { servers: ids.length, ran: 0, failed: [], reports: 0, reminders: 0, scoring: { closed: 0, settled: 0, timeouts: 0 }, sms: { sent: 0, dropped: 0, failed: 0, deferred: 0 } };
       for (const serverId of ids) {
         const r = await this.scheduler.runDue(serverId);
         report.ran += r.ran.length;
@@ -67,6 +71,8 @@ export class Worker {
       }
       for (const serverId of ids) {
         try {
+          const sc = await this.scoring?.runDue(serverId);
+          if (sc) report.scoring = { closed: report.scoring.closed + sc.closed, settled: report.scoring.settled + sc.settled, timeouts: report.scoring.timeouts + sc.timeouts };
           report.reports += (await this.reports?.runDue(serverId)) ?? 0;
           report.reminders += (await this.reminders?.runDue(serverId)) ?? 0;
         } catch (err) {

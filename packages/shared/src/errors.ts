@@ -59,6 +59,11 @@ export const ERROR_TEXT = {
   work_empty: "作品还是空的",
   too_many_images: "图片最多 9 张",
   bad_members: "请勾选参与的组员",
+  review_timeout: "已经过了复核时限，这件作品按 AI 分结算了；需要更正请找管理员改判",
+  review_done: "这件作品已经复核过了",
+  bad_dims: "每个维度都要打分，而且不能超过满分",
+  not_closed: "这件作品还没到截止时间",
+  already_settled: "已经结算了",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_TEXT;

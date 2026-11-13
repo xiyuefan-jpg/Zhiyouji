@@ -36,7 +36,12 @@ export async function setup(start = bj("2027-01-04", 10), cfgPatch: (c: ServerCo
     await call("POST", "/v1/admin/auth/invite/finish", { token: inv.inviteToken, code: totpAt(secret, +clock.now()) });
     clock.advance(TOTP_STEP_MS);
     const login = await call("POST", "/v1/admin/auth/login", { email, password: "a-long-password", totp: totpAt(secret, +clock.now()) });
-    return { token: login.json().token as string, id: login.json().me.id as string };
+    /** Log in again (after the clock jumped past the idle limit). */
+    const relogin = async () => {
+      clock.advance(TOTP_STEP_MS);
+      return (await call("POST", "/v1/admin/auth/login", { email, password: "a-long-password", totp: totpAt(secret, +clock.now()) })).json().token as string;
+    };
+    return { token: login.json().token as string, id: login.json().me.id as string, relogin };
   }
 
   return { adminUser, db, close: async () => { await app.close(); await close(); }, clock, cfg, sms, app: app as FastifyInstance, services, call, family };

@@ -85,9 +85,9 @@ export class Notifier {
   }
 
   /** Message for every active admin console user (part 7 notification center); `roles` narrows it. */
-  async notifyAdmins(i: { kind: string; title: string; body: string; link?: string | null; dedupeKey: string; roles?: string[] }): Promise<number> {
+  async notifyAdmins(i: { kind: string; title: string; body: string; link?: string | null; dedupeKey: string; roles?: string[]; userIds?: string[] }): Promise<number> {
     const users = await this.db.select().from(adminUsers).where(eq(adminUsers.status, "active"));
-    const to = users.filter((u) => !i.roles || i.roles.includes(u.role));
+    const to = users.filter((u) => (!i.roles || i.roles.includes(u.role)) && (!i.userIds || i.userIds.includes(u.id)));
     if (to.length === 0) return 0;
     const now = this.clock.now();
     const rows = await this.db

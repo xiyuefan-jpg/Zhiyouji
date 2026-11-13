@@ -29,6 +29,9 @@ import { Reminders } from "../notify/reminders.js";
 import { Works } from "../season/works.js";
 import { LocalStorage, type ObjectStorage } from "../storage.js";
 import { devStorageRoutes, workRoutes } from "./workRoutes.js";
+import { FakeAiScorer, type AiScorer } from "../ai.js";
+import { Scoring } from "../season/scoring.js";
+import { reviewRoutes } from "./reviewRoutes.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
 import { SeasonAdmin } from "../season/seasons.js";
 import { SeasonStore } from "../seasonStore.js";
@@ -42,6 +45,8 @@ export interface AppDeps {
   captcha: CaptchaVerifier;
   /** Object storage for works (default: LocalStorage in memory). */
   storage?: ObjectStorage;
+  /** AI initial scoring of works (default: the fake). */
+  ai?: AiScorer;
   logger?: boolean;
   trustProxy?: boolean;
 }
@@ -65,6 +70,8 @@ export interface Services {
   reminders: Reminders;
   storage: ObjectStorage;
   works: Works;
+  ai: AiScorer;
+  scoring: Scoring;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -82,7 +89,10 @@ export function buildServices(d: AppDeps): Services {
   });
   const seasons = new SeasonAdmin(d.db, d.clock, store, notifier);
   const storage = d.storage ?? new LocalStorage(d.cfg.secret);
+  const ai = d.ai ?? new FakeAiScorer();
   return {
+    ai,
+    scoring: new Scoring(d.db, d.clock, store, ai, notifier, storage),
     storage,
     works: new Works(d.db, d.clock, d.cfg, store, storage),
     store,
@@ -125,7 +135,8 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   seasonAdminRoutes(app, services.seasons, services.adminAuth);
   playRoutes(app, services.play, services.reports, services.familyAuth);
   seasonControlRoutes(app, services.control, services.adminAuth);
-  workRoutes(app, services.works, services.play, services.familyAuth);
+  workRoutes(app, services.works, services.play, services.scoring, services.familyAuth);
+  reviewRoutes(app, services.scoring, services.admin, services.adminAuth);
   devStorageRoutes(app, services.storage, d.clock, Math.max(...Object.values(d.cfg.uploads.maxBytes)));
   return { app, services };
 }

@@ -9,13 +9,14 @@ import { materialRequest, slotParam, uploadRequest, workSubmit } from "@zhiyouji
 import type { Clock } from "../clock.js";
 import type { SeasonPlay } from "../season/play.js";
 import type { Works } from "../season/works.js";
+import type { Scoring } from "../season/scoring.js";
 import type { LocalStorage, ObjectStorage } from "../storage.js";
 import { fail } from "./errors.js";
 import type { FamilyAuth } from "./familyRoutes.js";
 
 const idParam = z.object({ id: z.uuid() });
 
-export function workRoutes(app: FastifyInstance, works: Works, play: SeasonPlay, auth: FamilyAuth): void {
+export function workRoutes(app: FastifyInstance, works: Works, play: SeasonPlay, scoring: Scoring, auth: FamilyAuth): void {
   const ctx = async (req: FastifyRequest) => play.ctx((await auth.child(req)).child.id);
 
   app.post("/v1/season/uploads", async (req) => works.requestUpload(await ctx(req), uploadRequest.parse(req.body)));
@@ -27,6 +28,10 @@ export function workRoutes(app: FastifyInstance, works: Works, play: SeasonPlay,
   app.post("/v1/season/works/:slot/materials", async (req) => works.addMaterial(await ctx(req), slotParam.parse(req.params).slot, materialRequest.parse(req.body)));
   app.delete("/v1/season/materials/:id", async (req) => works.removeMaterial(await ctx(req), idParam.parse(req.params).id));
   app.get("/v1/season/works/:slot/versions", async (req) => works.versions(await ctx(req), slotParam.parse(req.params).slot));
+  app.get("/v1/season/works/:slot/result", async (req) => {
+    const c = await ctx(req);
+    return scoring.results(c.serverId, c.teamId, slotParam.parse(req.params).slot);
+  });
   app.post("/v1/season/works/:slot", async (req) => works.submit(await ctx(req), slotParam.parse(req.params).slot, workSubmit.parse(req.body)));
 }
 
