@@ -9,6 +9,7 @@
  */
 
 import { balanceOf, grainEntry, pointsEntry, type GrainSource, type LedgerEntry, type PointsSource } from "../ledger.js";
+import { ITEMS } from "../items.js";
 import type { SeasonParams } from "../params.js";
 import { rankTeams, type Ranked } from "../ranking.js";
 import { createRng, seedFromString, type Rng } from "../rng.js";
@@ -116,6 +117,23 @@ export interface TaskPass {
   grain: number;
 }
 
+export interface EpicAuctionState {
+  itemId: string;
+  startAt: Instant;
+  endAt: Instant;
+  bids: { teamId: string; amount: number; at: Instant }[];
+  closed: boolean;
+  winner: string | null;
+}
+
+export interface ShopState {
+  /** Items each team bought in the mid-season shop (any tier, auctions included). */
+  bought: Record<string, string[]>;
+  /** Rare items left per kind (§13.3: 2 per kind per server). */
+  rareStock: Record<string, number>;
+  auctions: EpicAuctionState[];
+}
+
 export interface SeasonState {
   seasonId: string;
   seed: number;
@@ -145,6 +163,7 @@ export interface SeasonState {
   auctionOrder: string[] | null;
   /** Passed daily tasks as they were counted (§7). */
   taskPasses: TaskPass[];
+  shop: ShopState;
   paused: boolean;
   /** Counter for deterministic ids. */
   seq: number;
@@ -198,6 +217,11 @@ export function createSeasonState(i: CreateSeasonInput): SeasonState {
     done: [],
     auctionOrder: null,
     taskPasses: [],
+    shop: {
+      bought: Object.fromEntries(i.teams.map((t) => [t.id, []])),
+      rareStock: Object.fromEntries(ITEMS.filter((it) => it.tier === "rare").map((it) => [it.id, i.params.items.rareStockPerKind])),
+      auctions: [],
+    },
     paused: false,
     seq: 0,
   };
@@ -305,12 +329,20 @@ export function pointsOf(s: SeasonState, teamId: string): Pts {
   return balanceOf(s.ledger, teamId, "points");
 }
 
-/**
- * Grain held by open epic-auction bids cannot be spent (§13.3). The shop
- * module keeps auctions outside the core state for now, so callers pass it.
- */
-export function spendableGrain(s: SeasonState, teamId: string, frozen = 0): number {
-  return grainOf(s, teamId) - frozen;
+/** Grain frozen by the team's leading bids on open epic auctions (§13.3). */
+export function frozenGrain(s: SeasonState, teamId: string): number {
+  let sum = 0;
+  for (const a of s.shop.auctions) {
+    if (a.closed) continue;
+    const lead = a.bids[a.bids.length - 1];
+    if (lead && lead.teamId === teamId) sum += lead.amount;
+  }
+  return sum;
+}
+
+/** Grain the team can spend now: balance minus grain frozen by leading bids. */
+export function spendableGrain(s: SeasonState, teamId: string): number {
+  return grainOf(s, teamId) - frozenGrain(s, teamId);
 }
 
 // ---- queries ------------------------------------------------------------

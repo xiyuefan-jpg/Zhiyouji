@@ -18,6 +18,7 @@ import {
   eventRng,
   giveItem,
   grainOf,
+  spendableGrain,
   notice,
   rankingAt,
   type Notice,
@@ -105,7 +106,7 @@ export function runStarterItems(input: SeasonState, e: { at: Instant; prefs: Rea
  */
 export function runCenterRound(
   input: SeasonState,
-  e: { at: Instant; requests: readonly { teamId: string; prefs: readonly string[] }[]; frozenGrain?: Readonly<Record<string, number>> },
+  e: { at: Instant; requests: readonly { teamId: string; prefs: readonly string[] }[] },
 ): Result<RoundRefusal> {
   if (input.done.includes("center_round")) return { ok: false, refusal: "already_done" };
   if (e.at < deadlineOfDay(input, input.params.centerLand.openDay)) return { ok: false, refusal: "before_deadline" };
@@ -122,7 +123,7 @@ export function runCenterRound(
   for (const teamId of order) {
     const unsold = centerLands(s).filter((id) => s.lands[id]!.owner === null);
     if (unsold.length === 0) break;
-    if (grainOf(s, teamId) - (e.frozenGrain?.[teamId] ?? 0) < price) {
+    if (spendableGrain(s, teamId) < price) {
       skipped.push(teamId);
       continue;
     }
@@ -140,7 +141,7 @@ export function runCenterRound(
 /** After the D8 round any team may buy an unsold center land at the falling price, first come first served (§9.2). */
 export function buyCenterLand(
   input: SeasonState,
-  e: { teamId: string; landId: string; at: Instant; by?: string; frozenGrain?: number },
+  e: { teamId: string; landId: string; at: Instant; by?: string },
 ): Result<RoundRefusal> {
   if (!input.teams[e.teamId]) return { ok: false, refusal: "unknown_team" };
   if (!canActForTeam(input, e.teamId, e.by)) return { ok: false, refusal: "not_leader" };
@@ -152,7 +153,7 @@ export function buyCenterLand(
   if (day > input.params.time.seasonDays) return { ok: false, refusal: "out_of_season" };
   if (l0.owner !== null) return { ok: false, refusal: "sold" };
   const price = centerLandPrice(day, input.params);
-  if (grainOf(input, e.teamId) - (e.frozenGrain ?? 0) < price) return { ok: false, refusal: "not_enough_grain", detail: `needs ${price}` };
+  if (spendableGrain(input, e.teamId) < price) return { ok: false, refusal: "not_enough_grain", detail: `needs ${price}` };
   const s = cloneState(input);
   const l = s.lands[e.landId]!;
   l.owner = e.teamId;

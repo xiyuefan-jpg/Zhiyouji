@@ -10,6 +10,7 @@ import {
   settleDay,
   startContest,
   adminCancelContest,
+  cloneState,
 } from "../../src/season/index.js";
 import { at, defaultOwners, newSeason, ok, withOwners } from "./fixture.js";
 
@@ -75,7 +76,9 @@ describe("contests (§10)", () => {
     expect(startContest(s1, { contestId: "K", teamId: "T3", landId: "E4", at: at(2, 11) })).toMatchObject({ refusal: "duplicate_id" });
     const empty = withOwners(newSeason(undefined, 0), defaultOwners);
     expect(startContest(empty, { contestId: "K", teamId: "T1", landId: "E2", at: at(2, 10) })).toMatchObject({ refusal: "no_prompts" });
-    expect(startContest(s, { contestId: "K", teamId: "T1", landId: "E2", at: at(2, 10), frozenGrain: 30 })).toMatchObject({
+    const poor = cloneState(s);
+    poor.shop.auctions.push({ itemId: "bagua", startAt: 0, endAt: at(3, 0), bids: [{ teamId: "T1", amount: 30, at: 0 }], closed: false, winner: null });
+    expect(startContest(poor, { contestId: "K", teamId: "T1", landId: "E2", at: at(2, 10) })).toMatchObject({
       refusal: "not_enough_grain",
     });
   });

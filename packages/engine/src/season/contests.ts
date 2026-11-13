@@ -14,6 +14,7 @@ import {
   cloneState,
   eventRng,
   grainOf,
+  spendableGrain,
   jiuzhuanActive,
   landsOf,
   logUsedItem,
@@ -67,8 +68,6 @@ export interface StartContest {
   landId: string;
   at: Instant;
   by?: string;
-  /** Grain frozen by the team's open epic-auction bids (§13.3). */
-  frozenGrain?: number;
 }
 
 export function startContest(input: SeasonState, e: StartContest): Result<ContestRefusal> {
@@ -86,7 +85,7 @@ export function startContest(input: SeasonState, e: StartContest): Result<Contes
   const available = (input.prompts[e.landId] ?? []).filter((q) => !used.includes(q));
   if (available.length === 0) return { ok: false, refusal: "no_prompts" };
   const quote = quoteAttack(input, e.teamId, target.owner, e.at);
-  if (grainOf(input, e.teamId) - (e.frozenGrain ?? 0) < quote.cost)
+  if (spendableGrain(input, e.teamId) < quote.cost)
     return { ok: false, refusal: "not_enough_grain", detail: `needs ${quote.cost}` };
 
   const s = cloneState(input);
@@ -131,7 +130,6 @@ export interface JoinContest {
   teamId: string;
   at: Instant;
   by?: string;
-  frozenGrain?: number;
 }
 
 /** Join before day 1 21:00, paying the team's own full cost (§10.2). */
@@ -145,7 +143,7 @@ export function joinContest(input: SeasonState, e: JoinContest): Result<ContestR
   if (c0.defender === e.teamId) return { ok: false, refusal: "is_defender" };
   if (c0.attackers.some((a) => a.teamId === e.teamId)) return { ok: false, refusal: "already_in" };
   const quote = quoteAttack(input, e.teamId, c0.defender, e.at);
-  if (grainOf(input, e.teamId) - (e.frozenGrain ?? 0) < quote.cost)
+  if (spendableGrain(input, e.teamId) < quote.cost)
     return { ok: false, refusal: "not_enough_grain", detail: `needs ${quote.cost}` };
   const s = cloneState(input);
   const c = s.contests[e.contestId] as ContestState;
