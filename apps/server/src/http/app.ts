@@ -5,7 +5,7 @@
  */
 
 import Fastify, { type FastifyInstance } from "fastify";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import type { Db } from "@zhiyouji/db";
 import { errorText } from "@zhiyouji/shared";
 import { AdminAccounts } from "../accounts/admin.js";
@@ -46,6 +46,8 @@ import { Survey } from "../accounts/survey.js";
 import { Dashboard } from "../season/dashboard.js";
 import { Showcase } from "../season/showcase.js";
 import { watchRoutes } from "./watchRoutes.js";
+import { Summaries } from "../daily/summaries.js";
+import { FakeAiSummarizer, type AiSummarizer } from "../ai.js";
 import { FakeContentSafety, type ContentSafety } from "../providers.js";
 import { surveySubmit } from "@zhiyouji/shared";
 import { DailyTasks } from "../daily/daily.js";
@@ -71,6 +73,8 @@ export interface AppDeps {
   aiSupply?: AiSupplyScorer;
   /** Content safety (default: the fake). */
   safety?: ContentSafety;
+  /** Weekly / monthly look-backs and season reviews (default: the fake). */
+  aiSummary?: AiSummarizer;
   logger?: boolean;
   trustProxy?: boolean;
 }
@@ -107,6 +111,7 @@ export interface Services {
   survey: Survey;
   dashboard: Dashboard;
   showcase: Showcase;
+  summaries: Summaries;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -143,6 +148,7 @@ export function buildServices(d: AppDeps): Services {
   const play = new SeasonPlay(d.db, d.clock, store);
   const reports = new Reports(d.db, d.clock, store, notifier);
   return {
+    summaries: new Summaries(d.db, d.clock, d.aiSummary ?? new FakeAiSummarizer(), notifier, store),
     showcase: new Showcase(d.db, d.clock, store, d.safety ?? new FakeContentSafety(), notifier, storage, play, reports),
     supply: new Supply(d.db, d.clock, store, d.aiSupply ?? new FakeAiSupply(), notifier),
     aiDaily,
@@ -204,6 +210,21 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   bankRoutes(app, services.bank, services.adminAuth);
   opsRoutes(app, services.ops, services.play, services.familyAuth, services.adminAuth);
   watchRoutes(app, services.showcase, services.familyAuth, services.adminAuth);
+  app.get("/v1/journal/summaries", async (req) => services.summaries.list((await services.familyAuth.child(req)).child.id));
+  app.get("/v1/season-reviews", async (req) => services.summaries.seasonReviewsOf((await services.familyAuth.child(req)).child.id));
+  const seasonIdParam = z.object({ id: z.uuid() });
+  app.post("/v1/admin/seasons/:id/reviews/generate", async (req) => {
+    await services.adminAuth.user(req, ["admin"]);
+    return services.summaries.generateSeasonReviews(seasonIdParam.parse(req.params).id);
+  });
+  app.get("/v1/admin/seasons/:id/reviews", async (req) => {
+    await services.adminAuth.user(req, ["admin"]);
+    return services.summaries.previewSeasonReviews(seasonIdParam.parse(req.params).id);
+  });
+  app.post("/v1/admin/seasons/:id/reviews/release", async (req) => {
+    await services.adminAuth.user(req, ["admin"]);
+    return services.summaries.releaseSeasonReviews(seasonIdParam.parse(req.params).id);
+  });
   app.get("/v1/admin/dashboard", async (req) => {
     const { user } = await services.adminAuth.user(req);
     return services.dashboard.view(user.id, user.role);

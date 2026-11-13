@@ -183,6 +183,14 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
     expect(stats.daily).toBeGreaterThan(50);
     expect(stats.works).toBeGreaterThan(20);
     expect(stats.supply).toBeGreaterThan(20);
+    // 赛季回顾: generated, previewed, released
+    expect((await s.summaries.generateSeasonReviews(season.id)).generated).toBe(32);
+    const preview = (await s.summaries.previewSeasonReviews(season.id)).reviews;
+    expect(preview.every((r) => r.releasedAt === null)).toBe(true);
+    expect((await s.summaries.seasonReviewsOf(kids[0]!)).reviews).toEqual([]);
+    expect((await s.summaries.releaseSeasonReviews(season.id)).released).toBe(32);
+    const mine = (await s.summaries.seasonReviewsOf(kids[0]!)).reviews[0]!.content as { rank: number; numbers: { works: number } };
+    expect(mine.rank).toBeGreaterThan(0);
     const total = st.teamOrder.reduce((n, id) => n + balanceOf(st.ledger, id, "points"), 0);
     expect(total).toBeGreaterThan(0);
     await t.close();

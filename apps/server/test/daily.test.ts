@@ -138,4 +138,25 @@ describe("每日任务 and 修行日志 (part 5 C1–C7; part 6 T4)", () => {
     expect((await t.call("POST", `/v1/admin/daily/${r.id}/decide`, { passed: false, expression: 0, aiLevel: 0, mainTag: "数学/数与代数", difficulty: 1 }, token)).json().error).toBe("not_reviewing");
     await t.close();
   });
+
+  it("周小结 on Monday and 月报告 on the 1st, with the numbers and how many cards were above the child's grade", async () => {
+    const t = await setup(bj("2027-03-10", 16)); // Wednesday
+    const k = await kid(t);
+    for (let i = 0; i < 2; i++) {
+      const pic = await picture(t, k.call);
+      await k.call("POST", "/v1/daily/submissions", { templateId: 1, evidenceFileIds: [pic], explain: { kind: "text", text: TEXT }, aiNote: "问了 AI" });
+    }
+    expect(await t.services.summaries.runDue()).toBe(0); // nothing in last week yet
+    t.clock.set(bj("2027-03-15", 8)); // next Monday
+    expect(await t.services.summaries.runDue()).toBe(1);
+    expect(await t.services.summaries.runDue()).toBe(0);
+    const list = (await k.call("GET", "/v1/journal/summaries")).json().summaries;
+    expect(list[0]).toMatchObject({ kind: "week", period: "2027-03-08", content: { cards: 2, aboveGrade: 2, subjects: { 物理与天文: 2 } } });
+    expect(list[0].content.text).toContain("2 张知识卡片");
+    t.clock.set(bj("2027-04-01", 8));
+    expect(await t.services.summaries.runDue()).toBe(1);
+    expect((await k.call("GET", "/v1/journal/summaries")).json().summaries[0]).toMatchObject({ kind: "month", period: "2027-03" });
+    expect((await k.call("GET", "/v1/messages")).json().messages[0].title).toBe("你的月报告来了");
+    await t.close();
+  });
 });

@@ -173,3 +173,24 @@ export class FakeAiSupply implements AiSupplyScorer {
     return { model: "fake-supply", quality: Math.min(40, 8 * r.entries.length), summary: r.summary ? 15 : 0, comment: "示例评语（假的 AI）。" };
   }
 }
+
+// ---- T8 周小结、月报告 / T9 赛季回顾 (PRD part 6) -------------------------------------------
+
+export interface SummaryRequest {
+  kind: "week" | "month" | "season";
+  grade: number;
+  cards: { title: string; summary: string; tag: string | null; crossing: number | null }[];
+}
+
+export interface AiSummarizer {
+  /** A few warm, specific sentences for the child about what they learned (only what they said). */
+  summarize(r: SummaryRequest): Promise<{ model: string; text: string }>;
+}
+
+export class FakeAiSummarizer implements AiSummarizer {
+  async summarize(r: SummaryRequest) {
+    const period = r.kind === "week" ? "这周" : r.kind === "month" ? "这个月" : "这一季";
+    const subjects = [...new Set(r.cards.map((c) => c.tag?.split("/")[0]).filter(Boolean))];
+    return { model: "fake-summary", text: `${period}你记下了 ${r.cards.length} 张知识卡片，走进了${subjects.join("、") || "新的领域"}。` };
+  }
+}

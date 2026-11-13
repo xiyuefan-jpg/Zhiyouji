@@ -1026,3 +1026,33 @@ export const safetyQueue = pgTable(
   },
   (t) => [index("safety_queue_status").on(t.status), uniqueIndex("safety_queue_object").on(t.objectKind, t.objectId)],
 );
+
+/** 周小结 / 月报告 (part 4 §8; part 6 T8). */
+export const childSummaries = pgTable(
+  "child_summaries",
+  {
+    id: id(),
+    childId: uuid("child_id").notNull().references(() => children.id),
+    /** week | month */
+    kind: text("kind").notNull(),
+    /** "2027-02-08" (the week's Monday) or "2027-02" */
+    period: text("period").notNull(),
+    content: jsonb("content").notNull(),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("child_summaries_period").on(t.childId, t.kind, t.period)],
+);
+
+/** 赛季回顾 (part 4 §10; part 5 G6): generated after the final settlement, released by an admin. */
+export const seasonReviews = pgTable(
+  "season_reviews",
+  {
+    id: id(),
+    childId: uuid("child_id").notNull().references(() => children.id),
+    seasonId: uuid("season_id").notNull().references(() => seasons.id),
+    content: jsonb("content").notNull(),
+    createdAt: ts("created_at").notNull(),
+    releasedAt: ts("released_at"),
+  },
+  (t) => [uniqueIndex("season_reviews_child").on(t.childId, t.seasonId)],
+);
