@@ -4,6 +4,8 @@
  *   but it keeps its place in the order;
  * - 点化之术: +1 per held land per day, not diminished;
  * - 八卦炉: +1.5 a day while the team still holds the chosen land, through D28;
+ *   nothing while 生死簿 zeroes that land; gone once the land changes owner
+ *   (both as in the simulator);
  * - 三昧真火: the victim's chosen land's income that day × share moves to the
  *   beneficiary, until the land changes owner.
  * Runs for D1 … D33 (first payout D1 24:00, last D33 24:00). Paused seasons
@@ -63,7 +65,14 @@ export function settleDay(input: SeasonState, day: number): Result<DailyRefusal>
     for (const e of s.effects) {
       if (e.kind === "dianhua" && e.teamId === teamId && effectActive(e, at))
         addPoints(s, teamId, pts(e.bonusPerLand * owned.length), "item_effect", at, { refId: "dianhua", note: `D${day}` });
-      if (e.kind === "bagua" && e.teamId === teamId && day <= p.items.bagua.lastDay && owned.some((l) => l.id === e.landId))
+      if (
+        e.kind === "bagua" &&
+        e.teamId === teamId &&
+        e.endedAt === undefined &&
+        day <= p.items.bagua.lastDay &&
+        owned.some((l) => l.id === e.landId) &&
+        !landZeroed(s, e.landId, at)
+      )
         addPoints(s, teamId, pts(p.items.bagua.dailyBonus), "item_effect", at, { refId: "bagua", note: `D${day}` });
     }
   }

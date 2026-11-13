@@ -193,7 +193,7 @@ export function adminSetLandOwner(input: SeasonState, e: { landId: string; teamI
   const from = land.owner;
   land.owner = e.teamId;
   land.ownedSince = e.teamId === null ? null : e.at;
-  for (const eff of s.effects) if (eff.kind === "sanmei" && eff.landId === e.landId && eff.endedAt === undefined) eff.endedAt = e.at;
+  for (const eff of s.effects) if ((eff.kind === "sanmei" || eff.kind === "bagua") && eff.landId === e.landId && eff.endedAt === undefined) eff.endedAt = e.at;
   return { ok: true, state: s, notices: [notice("land_owner_set", e.at, true, { landId: e.landId, from, to: e.teamId, reason: e.reason })] };
 }
 

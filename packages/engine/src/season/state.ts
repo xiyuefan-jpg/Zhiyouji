@@ -82,7 +82,14 @@ export type Effect =
   | { kind: "dianhua"; teamId: string; bonusPerLand: number; from: Instant; until: Instant }
   | { kind: "jiuzhuan"; teamId: string; from: Instant; until: Instant }
   | { kind: "shengsi"; teamId: string; landId: string; from: Instant; until: Instant }
-  | { kind: "bagua"; teamId: string; landId: string; from: Instant }
+  | {
+      kind: "bagua";
+      teamId: string;
+      landId: string;
+      from: Instant;
+      /** Set when the land changes owner: the furnace is gone for good (same as the simulator). */
+      endedAt?: Instant;
+    }
   | {
       kind: "sanmei";
       victim: string;

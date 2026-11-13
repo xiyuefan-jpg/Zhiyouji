@@ -217,7 +217,7 @@ export function settleContest(input: SeasonState, e: SettleContest): Result<Cont
       addPoints(s, c.defender, -moved, "territory_transfer", e.at, { refId: c.id });
       addPoints(s, winner, moved, "territory_transfer", e.at, { refId: c.id });
     }
-    for (const eff of s.effects) if (eff.kind === "sanmei" && eff.landId === c.landId && eff.endedAt === undefined) eff.endedAt = e.at;
+    for (const eff of s.effects) if ((eff.kind === "sanmei" || eff.kind === "bagua") && eff.landId === c.landId && eff.endedAt === undefined) eff.endedAt = e.at;
     c.outcome = { kind: "captured", winner };
     notices.push(notice("contest_captured", e.at, false, { contestId: c.id, landId: c.landId, winner, loser: c.defender, merit, movedIncome: moved, scores: e.scores }));
   } else if (outcome.kind === "defended") {

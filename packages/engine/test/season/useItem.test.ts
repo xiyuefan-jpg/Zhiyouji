@@ -186,3 +186,27 @@ describe("太虚幻镜 (§20.4)", () => {
     expect(useItem(s, { teamId: "T6", itemId: "taixu", at: at(3, 12) })).toMatchObject({ refusal: "too_few_lands" });
   });
 });
+
+describe("八卦炉 edge cases (as in the simulator)", () => {
+  it("pays nothing while 生死簿 zeroes its land", () => {
+    let s = give(base(), "T1", "bagua", "shengsi");
+    s.lands.C1!.owner = "T1";
+    s = ok(useItem(s, { teamId: "T1", itemId: "bagua", at: at(3, 10), landId: "E1" }));
+    s = ok(useItem(s, { teamId: "T1", itemId: "shengsi", at: at(3, 11), landId: "E1" }));
+    const b = pointsOf(s, "T1");
+    s = ok(settleDay(s, 3));
+    expect(pointsOf(s, "T1") - b).toBe(pts(2));
+  });
+  it("is gone once the land changes owner, even if the team takes it back", async () => {
+    const { settleContest } = await import("../../src/season/index.js");
+    let s = give(base(), "T1", "bagua");
+    s = ok(useItem(s, { teamId: "T1", itemId: "bagua", at: at(2, 9), landId: "E1" }));
+    s = ok(startContest(s, { contestId: "K1", teamId: "T2", landId: "E1", at: at(2, 10) }));
+    s = ok(settleContest(s, { contestId: "K1", at: at(5, 21), scores: { T2: 90 } }));
+    s = ok(startContest(s, { contestId: "K2", teamId: "T1", landId: "E1", at: at(6, 10) }));
+    s = ok(settleContest(s, { contestId: "K2", at: at(9, 21), scores: { T1: 90 } }));
+    const b = pointsOf(s, "T1");
+    s = ok(settleDay(s, 10));
+    expect(pointsOf(s, "T1") - b).toBe(pts(1));
+  });
+});
