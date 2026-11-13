@@ -91,3 +91,29 @@ describe("scheduler", () => {
     await close();
   });
 });
+
+describe("pause shift (§16)", () => {
+  it("resuming pushes later shiftable planned events back by the paused time", async () => {
+    const { createPgliteDb: fresh } = await import("@zhiyouji/db");
+    const { db, close } = await fresh();
+    const { SeasonStore: Store, Scheduler: Sched, SimClock: Clock } = await import("../src/index.js");
+    const store = new Store(db);
+    const teams = Array.from({ length: 8 }, (_, i) => ({ name: `组${i + 1}`, members: [{ childId: `T${i + 1}`, grade: 4 }] }));
+    const { serverId } = await store.createSeason({ name: "S", opening: "2027-01-03", seed: 1, createdBy: "a", teams, at: at(0, 19) });
+    const clock = new Clock(at(3, 10));
+    const sched = new Sched(db, store, clock);
+    await store.apply(serverId, { type: "pause", at: +at(3, 10), reason: "维护" }, "admin");
+    const { plannedEvents } = await import("@zhiyouji/db");
+    const { eq, and } = await import("drizzle-orm");
+    const before = await db.select().from(plannedEvents).where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.key, "war_pairing:1")));
+    const DAY = 24 * 3600 * 1000;
+    await store.apply(serverId, { type: "resume", at: +at(4, 10) }, "admin");
+    await sched.shiftAfter(serverId, at(3, 10), DAY);
+    const after = await db.select().from(plannedEvents).where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.key, "war_pairing:1")));
+    expect(+after[0]!.runAt - +before[0]!.runAt).toBe(DAY);
+    // the daily settlement (not shiftable) did not move
+    const day5 = await db.select().from(plannedEvents).where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.key, "settle_day:5")));
+    expect(day5[0]!.runAt).toEqual(new Date(at(6, 0)));
+    await close();
+  });
+});
