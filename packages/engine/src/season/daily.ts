@@ -7,7 +7,8 @@
  * - 三昧真火: the victim's chosen land's income that day × share moves to the
  *   beneficiary, until the land changes owner.
  * Runs for D1 … D33 (first payout D1 24:00, last D33 24:00). Paused seasons
- * pay nothing for that day (§16). Each day runs once (idempotent).
+ * pay nothing for a day whose 24:00 falls inside a pause (§16). Each day runs
+ * once (idempotent).
  */
 
 import { dateOfSeasonDay, addDays, beijingInstant, type Instant } from "../time.js";
@@ -41,7 +42,7 @@ export function settleDay(input: SeasonState, day: number): Result<DailyRefusal>
   const at = endOfSeasonDay(s, day);
   s.settledDays.push(day);
   const notices: Notice[] = [];
-  if (s.paused) {
+  if (s.paused || s.pauses.some((x) => at >= x.from && (x.until === null || at < x.until))) {
     notices.push(notice("daily_skipped_paused", at, false, { day }));
     return { ok: true, state: s, notices };
   }

@@ -8,3 +8,5 @@ export * from "./shop.js";
 export * from "./war.js";
 export * from "./bigBattle.js";
 export * from "./admin.js";
+export * from "./events.js";
+export * from "./schedule.js";
