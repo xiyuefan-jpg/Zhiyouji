@@ -21,8 +21,8 @@ describe("worker loop", () => {
     const { secret } = await t.services.admin.startInvite(inv.inviteToken, "a-long-password");
     await t.services.admin.finishInvite(inv.inviteToken, totpAt(secret, +t.clock.now()));
 
-    // a planned event that cannot run (no epic auction is open)
-    await t.db.insert(plannedEvents).values({ serverId, key: "broken", kind: "close_epic_auction", runAt: bj(OPENING, 18), params: { engineEvent: "close_epic_auction" } });
+    // a planned event that cannot run (there is no week 9)
+    await t.db.insert(plannedEvents).values({ serverId, key: "broken", kind: "war_pairing", runAt: bj(OPENING, 18), params: { engineEvent: "pair_war", week: 9 } });
 
     t.clock.set(bj(dateOfSeasonDay(OPENING, 1), 21, 1));
     const r = (await worker.tick())!;
@@ -38,7 +38,7 @@ describe("worker loop", () => {
     expect(await t.db.select().from(messages)).toHaveLength(1);
     // the admin re-runs it by hand; it still cannot run and stays failed
     const rerun = await new Scheduler(t.db, store, t.clock).rerun(serverId, "broken");
-    expect(rerun.ran).toEqual([{ key: "broken", engineEvent: "close_epic_auction", ok: false, refusal: expect.any(String) }]);
+    expect(rerun.ran).toEqual([{ key: "broken", engineEvent: "pair_war", ok: false, refusal: expect.any(String) }]);
     await t.close();
   });
 });
