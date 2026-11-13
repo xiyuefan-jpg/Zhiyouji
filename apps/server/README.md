@@ -110,6 +110,42 @@ npm run invite-admin -w @zhiyouji/server -- boss@example.com 名字 admin   # �
 | POST | `/v1/admin/works/:id/rule` | 管理员：裁定 `{ score, note }`（结算前） |
 | GET | `/v1/admin/reviewers/dashboard` | 复核员看板 |
 
+### 学生端 · 每日任务、修行日志、问卷、公告
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/v1/daily/today` | 今天交了几次、通过几次、还能重交几次；赛季玩家另有"今天已计 x/2、本周 y/4"；6 个模板 |
+| POST | `/v1/daily/uploads` → PUT → POST `/v1/daily/uploads/:id/complete` | 证据图片（`image`）、讲解录音（`audio`） |
+| POST | `/v1/daily/submissions` | `{ templateId, evidenceFileIds, explain: { kind: "voice", fileId } \| { kind: "text", text }, aiNote?, noAi? }`，立即审核 |
+| GET | `/v1/daily/submissions/:id` | 结果：通过（做得好的 / 可以更好的、粮草、知识卡片）或不通过（原因和改法） |
+| GET | `/v1/journal/calendar?month=2027-03`、`/journal/subjects`、`/journal/cards?tag=&q=`、`/journal/cards/:id` | 修行日志：日历、学科、筛选和搜索、卡片详情（讲解、证据） |
+| GET / POST | `/v1/survey` | 土地公问卷（好奇心二选一、爱好、AI、游戏风格、30 秒挑战） |
+| GET | `/v1/announcements` | 能看到的公告 |
+
+### 学生端 · 赛季（续）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/v1/season/supply`；POST `/supply/:id/entry`、`/supply/:id/summary` | 军需任务：任务、进度、我的那份、小结、结果；交自己那份（任何组员）；小结（组长副组长） |
+| GET | `/v1/season/wars/:week`；POST `/wars/:week/card` | 本周主题、词条（固定 / 3 选 1 送对手）、对手情报、收到的词条 |
+| GET | `/v1/season/contests/:id/debate`；POST `/contests/:id/side` | 辩论：持方、阶段、对方的立论；守方选持方 `{ side: "pro" \| "con" }` |
+| GET | `/v1/season/qr` | 本组、本阵营的微信群二维码 |
+| GET / POST | `/v1/season/big-battle/envoys`；DELETE `/big-battle/envoys/:childId` | 使者登记 |
+
+作品位还包括 `contest:<id>:open`（辩论的立论）。
+
+### 管理端 · 题库、运营、看板
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/v1/admin/dashboard` | 看板 |
+| GET / PATCH | `/v1/admin/land-templates`、`/land-templates/:id`；POST `/land-templates/seed-defaults` | 地块模板（一键导入内容库的 12 个） |
+| GET / POST / PATCH | `/v1/admin/prompts`、`/prompts/:id`；POST `/prompts/import`；GET `/prompts/low-stock` | 题目（草稿 / 启用 / 停用；启用和停用会同步到进行中的服）、批量导入、题库不足的地块 |
+| GET / POST | `/v1/admin/announcements`；POST `/announcements/:id/withdraw` | 公告 `{ scope: "all" \| "season" \| "server", seasonId?, serverId?, title, body, publishAt }` |
+| POST | `/v1/admin/teams/:id/qr/ticket` → PUT → POST `/teams/:id/qr` | 小组微信群二维码 `{ key }` |
+| POST | `/v1/admin/servers/:id/camps/:camp/qr/ticket` → PUT → POST `/servers/:id/camps/:camp/qr` | 阵营微信群二维码 |
+| GET | `/v1/admin/daily/exceptions`；POST `/daily/:id/decide` | 每日任务异常队列（管理员和复核员） |
+
 ### 开发用的存储
 
 `/v1/dev-storage/*`：本地假存储的上传（PUT）和下载（GET），网址带签名、1 小时有效。正式环境换成阿里云 OSS 的直传网址，网站的调用方式不变。
@@ -121,5 +157,6 @@ npm run invite-admin -w @zhiyouji/server -- boss@example.com 名字 admin   # �
 2. 评分流水线：到了截止时间的争夺、周战争、大团战 → AI 初评、分派复核员；复核时限前 6 小时提醒，到时按 AI 分结算；都有分了就结算；
 3. 战报（每个公布时刻一份）；
 4. 偏好、战线截止前 3 小时的提醒；
-5. 到期的删除申请、连续 2 年不登录的清理；
-6. 发到点的短信提醒：夜间 21:30–07:00 不发，顺延到 07:00；同一手机号、同一种提醒还没发出去时合并；每个手机号每天最多 5 条。
+5. 每日任务的重试和异常、军需任务的提醒和打分、辩论的持方和立论交换、公告、二维码提醒；
+6. 到期的删除申请、连续 2 年不登录的清理；
+7. 发到点的短信提醒：夜间 21:30–07:00 不发，顺延到 07:00；同一手机号、同一种提醒还没发出去时合并；每个手机号每天最多 5 条。
