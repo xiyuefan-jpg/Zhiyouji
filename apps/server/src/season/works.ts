@@ -21,6 +21,7 @@ import type { SeasonStore } from "../seasonStore.js";
 import type { ObjectStorage } from "../storage.js";
 import { refuse, type PlayCtx } from "./play.js";
 import type { Debates } from "./debates.js";
+import type { Operations } from "./operations.js";
 
 export type FileKind = "video" | "audio" | "image" | "pdf";
 export type MediaKind = "video" | "audio" | "images" | "text";
@@ -77,6 +78,7 @@ export class Works {
     private readonly store: SeasonStore,
     private readonly storage: ObjectStorage,
     private readonly debates?: Debates,
+    private readonly ops?: Operations,
   ) {}
 
   private now(): number {
@@ -213,7 +215,9 @@ export class Works {
     const t = st.teams[ctx.teamId]!;
     const me = t.members.find((m) => m.childId === ctx.childId);
     if (!me?.active) fail(403, "withdrawn");
-    if (t.leader !== ctx.childId && t.deputy !== ctx.childId) refuse("not_leader");
+    // The main field: also the camp's registered envoys (part 3 §20.5).
+    const envoy = s!.kind === "main" && !!this.ops && (await this.ops.isEnvoy(ctx.serverId, slot.slice(5), ctx.childId));
+    if (t.leader !== ctx.childId && t.deputy !== ctx.childId && !envoy) refuse("not_leader");
 
     const ids = [...new Set(b.fileIds)];
     const fs = ids.length ? await this.db.select().from(files).where(and(inArray(files.id, ids), eq(files.teamId, ctx.teamId))) : [];

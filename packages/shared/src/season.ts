@@ -173,3 +173,16 @@ export const landTemplateUpdate = z.object({
   status: z.enum(["enabled", "pending"]).optional(),
   sort: z.number().int().min(0).max(100).optional(),
 });
+
+// ---- 公告, QR codes (part 7 §3, §8) ------------------------------------------------------------
+
+export const announcementCreate = z.object({
+  scope: z.enum(["all", "season", "server"]),
+  seasonId: z.uuid().nullable().optional(),
+  serverId: z.uuid().nullable().optional(),
+  title: z.string().trim().min(1).max(60),
+  body: z.string().trim().min(1).max(3000),
+  publishAt: z.coerce.date(),
+});
+export const qrTicketRequest = z.object({ contentType: z.string().min(1).max(40), size: z.number().int().positive() });
+export const qrSetRequest = z.object({ key: z.string().min(1).max(300) });

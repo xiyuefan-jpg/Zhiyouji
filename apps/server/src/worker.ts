@@ -16,6 +16,7 @@ import type { DataRights } from "./accounts/dataRights.js";
 import type { DailyTasks } from "./daily/daily.js";
 import type { Supply } from "./season/supply.js";
 import type { Debates } from "./season/debates.js";
+import type { Operations } from "./season/operations.js";
 
 /** Season states in which planned events run (part 4 §4). */
 export const LIVE_SEASON_STATES = ["grouped", "running", "big_battle", "final_pending"];
@@ -52,6 +53,7 @@ export class Worker {
     private readonly daily?: DailyTasks,
     private readonly supply?: Supply,
     private readonly debates?: Debates,
+    private readonly ops?: Operations,
   ) {}
 
   /** One pass. Skips if the previous pass is still running. */
@@ -93,6 +95,12 @@ export class Worker {
         } catch (err) {
           console.error("report failed", serverId, err);
         }
+      }
+      try {
+        await this.ops?.publishDue();
+        await this.ops?.qrReminders();
+      } catch (err) {
+        console.error("announcements / QR reminders failed", err);
       }
       try {
         report.daily = (await this.daily?.runDue()) ?? report.daily;

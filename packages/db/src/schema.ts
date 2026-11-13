@@ -110,6 +110,8 @@ export const teams = pgTable("teams", {
   /** Admin-uploaded WeChat group QR code (part 4 v0.6). */
   qrImage: text("qr_image"),
   qrUploadedAt: ts("qr_uploaded_at"),
+  /** Admins were reminded that the QR code expires (WeChat group codes last 7 days). */
+  qrRemindedAt: ts("qr_reminded_at"),
 });
 
 /** Season players (赛季玩家). childId refers to the child profile (accounts come in a later phase). */
@@ -929,4 +931,56 @@ export const debates = pgTable(
     openingsSharedAt: ts("openings_shared_at"),
   },
   (t) => [uniqueIndex("debates_contest").on(t.serverId, t.contestId)],
+);
+
+// ---- operations: announcements, camp QR codes, envoys (part 4 §4, §9; part 7 §8) ----------------
+
+/** 公告: written by an admin, published at a chosen time to everyone, a season or a server. */
+export const announcements = pgTable(
+  "announcements",
+  {
+    id: id(),
+    /** all | season | server */
+    scope: text("scope").notNull(),
+    seasonId: uuid("season_id").references(() => seasons.id),
+    serverId: uuid("server_id").references(() => servers.id),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    publishAt: ts("publish_at").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: ts("created_at").notNull(),
+    sentAt: ts("sent_at"),
+    withdrawnAt: ts("withdrawn_at"),
+  },
+  (t) => [index("announcements_publish").on(t.publishAt)],
+);
+
+/** WeChat group QR codes of the big-battle camps (teams keep theirs on the team row). */
+export const campQrCodes = pgTable(
+  "camp_qr_codes",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    /** a | b */
+    camp: text("camp").notNull(),
+    image: text("image").notNull(),
+    uploadedAt: ts("uploaded_at").notNull(),
+    remindedAt: ts("reminded_at"),
+  },
+  (t) => [uniqueIndex("camp_qr_codes_camp").on(t.serverId, t.camp)],
+);
+
+/** 使者 of the big battle's main field: registered by leaders and deputies (part 4 §5.6). */
+export const envoys = pgTable(
+  "envoys",
+  {
+    id: id(),
+    serverId: uuid("server_id").notNull().references(() => servers.id),
+    camp: text("camp").notNull(),
+    teamId: uuid("team_id").notNull().references(() => teams.id),
+    childId: uuid("child_id").notNull(),
+    registeredBy: uuid("registered_by").notNull(),
+    at: ts("at").notNull(),
+  },
+  (t) => [uniqueIndex("envoys_child").on(t.serverId, t.childId)],
 );

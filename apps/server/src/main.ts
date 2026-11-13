@@ -24,7 +24,7 @@ async function main() {
   const storage = new LocalStorage(cfg.secret, env.STORAGE_DIR ?? ".storage");
   const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha(), storage, logger: true, trustProxy: env.TRUST_PROXY === "1" });
 
-  const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier, services.reports, services.reminders, services.scoring, services.dataRights, services.daily, services.supply, services.debates);
+  const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier, services.reports, services.reminders, services.scoring, services.dataRights, services.daily, services.supply, services.debates, services.ops);
   const tickMs = Number(env.TICK_MS ?? 30_000);
   setInterval(() => {
     worker.tick().then(

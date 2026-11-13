@@ -75,6 +75,7 @@ export const ERROR_TEXT = {
   bad_card: "只能从给你们的 3 张词条里选",
   not_debate: "这不是辩论区的争夺",
   side_chosen: "持方已经选好了",
+  already_sent: "已经发出去了，不能撤回",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_TEXT;

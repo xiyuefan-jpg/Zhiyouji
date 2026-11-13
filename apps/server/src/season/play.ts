@@ -163,7 +163,7 @@ export class SeasonPlay {
       status: "playing" as const,
       season: { ...seasonView(ctx.season), day: seasonDayOf(s.opening, this.now()), paused: s.paused },
       server: { id: ctx.serverId, name: ctx.serverName },
-      team: { id: t.id, name: t.name, wechatQr: qr?.qrImage ?? null },
+      team: { id: t.id, name: t.name, hasWechatQr: !!qr?.qrImage },
       role,
       active: me?.active ?? false,
       canAct: (role === "leader" || role === "deputy") && !!me?.active && ACTIVE.includes(ctx.season.status as SeasonStatus),

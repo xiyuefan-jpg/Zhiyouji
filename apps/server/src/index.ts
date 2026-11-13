@@ -31,3 +31,4 @@ export * from "./season/supply.js";
 export * from "./season/warWords.js";
 export * from "./content/questionBank.js";
 export * from "./season/debates.js";
+export * from "./season/operations.js";

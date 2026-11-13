@@ -40,6 +40,8 @@ import { WarWords } from "../season/warWords.js";
 import { QuestionBank } from "../content/questionBank.js";
 import { bankRoutes } from "./bankRoutes.js";
 import { Debates } from "../season/debates.js";
+import { Operations } from "../season/operations.js";
+import { opsRoutes } from "./opsRoutes.js";
 import { DailyTasks } from "../daily/daily.js";
 import { dailyRoutes } from "./dailyRoutes.js";
 import { seasonControlRoutes } from "./seasonControlRoutes.js";
@@ -93,6 +95,7 @@ export interface Services {
   warWords: WarWords;
   bank: QuestionBank;
   debates: Debates;
+  ops: Operations;
 }
 
 export function buildServices(d: AppDeps): Services {
@@ -107,6 +110,7 @@ export function buildServices(d: AppDeps): Services {
   const bank = new QuestionBank(d.db, d.clock, store, notifier);
   const storage = d.storage ?? new LocalStorage(d.cfg.secret);
   const debates = new Debates(d.db, d.clock, store, notifier, storage);
+  const ops = new Operations(d.db, d.clock, store, notifier, storage);
   store.onApplied(async (serverId, _seq, notices, state) => {
     for (const n of notices) if (n.kind === "contest_started") await debates.onContestStarted(serverId, state, String(n.data.contestId));
   });
@@ -133,7 +137,8 @@ export function buildServices(d: AppDeps): Services {
     dataRights: new DataRights(d.db, d.clock, storage, notifier),
     scoring: new Scoring(d.db, d.clock, store, ai, notifier, storage),
     storage,
-    works: new Works(d.db, d.clock, d.cfg, store, storage, debates),
+    works: new Works(d.db, d.clock, d.cfg, store, storage, debates, ops),
+    ops,
     debates,
     store,
     scheduler,
@@ -181,6 +186,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   reviewRoutes(app, services.scoring, services.admin, services.adminAuth);
   dataRoutes(app, d.db, services.dataRights, services.familyAuth, services.adminAuth);
   bankRoutes(app, services.bank, services.adminAuth);
+  opsRoutes(app, services.ops, services.play, services.familyAuth, services.adminAuth);
   dailyRoutes(app, services.daily, services.admin, services.familyAuth, services.adminAuth);
   devStorageRoutes(app, services.storage, d.clock, Math.max(...Object.values(d.cfg.uploads.maxBytes)));
   return { app, services };

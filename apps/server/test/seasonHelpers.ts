@@ -45,7 +45,7 @@ export async function playSetup(opts: { landNames?: Record<string, string> } = {
     await t.call("POST", "/v1/auth/sms-code", { phone });
     const token = (await t.call("POST", "/v1/auth/login", { phone, code: t.sms.lastCode(phone) })).json().token as string;
     await t.call("POST", "/v1/session/child", { childId }, token);
-    return (m: "GET" | "POST", url: string, body?: unknown) => t.call(m, url, body, token);
+    return (m: "GET" | "POST" | "DELETE", url: string, body?: unknown) => t.call(m, url, body, token);
   }
   return { ...t, seasonId: season.id, serverId, a1, a2, b1, as, A, B };
 }
