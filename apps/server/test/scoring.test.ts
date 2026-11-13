@@ -151,6 +151,29 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
   });
 });
 
+describe("改判 after settlement (part 3 §16, §20.4)", () => {
+  it("records the new score, works the outcome out again and lists the interventions for the admin", async () => {
+    const t = await scoringSetup(0);
+    const w = (await t.a1api("POST", `/v1/season/works/contest:${t.contestId}`, { mediaKind: "text", text: "作品", members: [t.a1] })).json().work;
+    t.ai.fixed.set(w.id, 70);
+    t.clock.set(bj("2027-02-12", 21, 1));
+    await t.services.scoring.runDue(t.serverId);
+    t.clock.set(bj("2027-02-13", 21, 2)); // nobody reviews: AI 70 → captured
+    await t.services.scoring.runDue(t.serverId);
+    expect((await t.services.store.state(t.serverId)).lands[t.target]!.owner).toBe(t.myTeam);
+    const boss = await t.boss.relogin();
+    const r = (await t.call("POST", `/v1/admin/works/${w.id}/rejudge`, { score: 40, note: "抄袭" }, boss)).json();
+    expect(r).toMatchObject({ before: { kind: "captured", winner: t.myTeam }, after: { kind: "nothing" }, changed: true });
+    expect(r.suggestions.join("；")).toContain("冲正账目");
+    expect(r.suggestions.join("；")).toContain(`把 ${t.target} 的主人改为`);
+    expect((await t.a1api("GET", `/v1/season/works/contest:${t.contestId}/result`)).json().mine).toMatchObject({ score: 40, basis: "admin" });
+    // the same score again: nothing changes
+    const same = (await t.call("POST", `/v1/admin/works/${w.id}/rejudge`, { score: 70, note: "复查后维持" }, boss)).json();
+    expect(same.changed).toBe(false);
+    await t.close();
+  });
+});
+
 describe("看板 (part 7 §1)", () => {
   it("today's numbers, what needs handling, live servers", async () => {
     const { contestSetup: cs } = await import("./seasonHelpers.js");

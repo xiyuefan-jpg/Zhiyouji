@@ -46,6 +46,12 @@ export function reviewRoutes(app: FastifyInstance, scoring: Scoring, accounts: A
     return scoring.rule(idParam.parse(req.params).id, b.score, b.note, `admin:${user.id}`);
   });
 
+  app.post("/v1/admin/works/:id/rejudge", async (req) => {
+    const { user } = await auth.user(req, ["admin"]);
+    const b = ruleRequest.parse(req.body);
+    return scoring.rejudge(idParam.parse(req.params).id, b.score, b.note, `admin:${user.id}`);
+  });
+
   app.get("/v1/admin/reviewers/dashboard", async (req) => {
     await auth.user(req, ["admin"]);
     return scoring.dashboard();

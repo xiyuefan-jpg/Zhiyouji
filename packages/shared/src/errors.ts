@@ -76,6 +76,7 @@ export const ERROR_TEXT = {
   not_debate: "这不是辩论区的争夺",
   side_chosen: "持方已经选好了",
   already_sent: "已经发出去了，不能撤回",
+  not_settled: "还没结算，请用裁定",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_TEXT;

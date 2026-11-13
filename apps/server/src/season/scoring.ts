@@ -34,7 +34,7 @@ import {
   works,
   type Db,
 } from "@zhiyouji/db";
-import { battleDeadline, beijingDate, campsFormAt, warDeadline, type SeasonEvent, type SeasonState } from "@zhiyouji/engine";
+import { battleDeadline, beijingDate, campsFormAt, resolveContest, warDeadline, type SeasonEvent, type SeasonState } from "@zhiyouji/engine";
 import { formatBeijing } from "@zhiyouji/shared";
 import type { AiScorer } from "../ai.js";
 import type { Clock } from "../clock.js";
@@ -343,6 +343,59 @@ export class Scoring {
     await this.db.insert(settledScores).values({ workId, score, basis: "admin", decidedAt: this.clock.now(), decidedBy: by, note });
     await this.trySettle(w!.serverId);
     return { ok: true };
+  }
+
+  /**
+   * 改判 after settlement (part 3 §16, §20.4): the new score is recorded (the
+   * team's result page shows it), the contest outcome is worked out again, and
+   * the admins get the list of interventions that would bring the season in
+   * line (land owner, merit points, income moved) — they apply them by hand in
+   * 人工干预, since later events may have built on the old result.
+   */
+  async rejudge(workId: string, score: number, note: string, by: string) {
+    const [w] = await this.db.select().from(works).where(eq(works.id, workId));
+    if (!w) fail(404, "not_found");
+    const round = await this.roundOfWork(w!);
+    if (!round || round.status !== "settled") fail(409, "not_settled");
+    await this.db.insert(settledScores).values({ workId, score, basis: "admin", decidedAt: this.clock.now(), decidedBy: by, note: `改判：${note}` });
+    const st = await this.store.state(w!.serverId);
+    const suggestions: string[] = [];
+    let before: unknown = null;
+    let after: unknown = null;
+    if (round!.key.startsWith("contest:")) {
+      const c = st.contests[round!.key.slice(8)]!;
+      const ws = await this.countingWorks(w!.serverId, round!.key);
+      const settled = await this.settledOf(ws.map((x) => x.id));
+      const sc = (t: string) => {
+        const x = ws.find((y) => y.teamId === t);
+        return x ? (settled.get(x.id)?.score ?? null) : null;
+      };
+      const outcome = resolveContest({ attackers: c.attackers.map((a) => ({ teamId: a.teamId, score: sc(a.teamId), order: a.order })), defender: { teamId: c.defender, score: sc(c.defender) } }, st.params);
+      before = c.outcome ?? null;
+      after = outcome.kind === "captured" ? { kind: "captured", winner: outcome.winner } : { kind: outcome.kind };
+      const name = (id: string) => st.teams[id]?.name ?? id;
+      const oldWinner = c.outcome?.kind === "captured" ? c.outcome.winner : null;
+      const newWinner = outcome.kind === "captured" ? outcome.winner : null;
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        const laterContest = Object.values(st.contests).some((x) => x.landId === c.landId && x.id !== c.id && x.startedAt > (c.settledAt ?? 0));
+        if (laterContest) suggestions.push(`这块地之后又被争夺过，请先核对后来的结果，再手动调整。`);
+        const merit = st.ledger.filter((e) => e.refId === c.id && (e.source === "merit_capture" || e.source === "merit_defend" || e.source === "territory_transfer" || e.source === "item_effect") && !e.reverses);
+        for (const e of merit) suggestions.push(`冲正账目 ${e.id}（${name(e.teamId)}，${e.source}，${e.amount}）`);
+        const owner = newWinner ?? c.defender;
+        if ((oldWinner ?? c.defender) !== owner) suggestions.push(`把 ${c.landId} 的主人改为 ${name(owner)}`);
+        if (outcome.kind === "captured") suggestions.push(`给 ${name(outcome.winner)} 加夺地战功（团队分 ${st.params.contest.meritCapture}，九转兵劫印期间加倍），并转移截止后已发的领地收益`);
+        if (outcome.kind === "defended") suggestions.push(`给 ${name(c.defender)} 加守地战功（团队分 ${st.params.contest.meritDefend}）`);
+      }
+    } else suggestions.push("周战争 / 大团战的改判请按新分数手动调整团队分。");
+    await this.notifier.notifyAdmins({
+      kind: "rejudged",
+      title: "改判已记录",
+      body: suggestions.length ? `结果有变化，需要手动处理：${suggestions.join("；")}` : "结果没有变化，只更新了分数。",
+      link: `/reviews/works/${workId}`,
+      dedupeKey: `rejudge:${workId}:${+this.clock.now()}`,
+      roles: ["admin"],
+    });
+    return { before, after, changed: suggestions.length > 0, suggestions };
   }
 
   /** Move an open review to another reviewer. */
