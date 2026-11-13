@@ -20,7 +20,14 @@ npm run build -w @zhiyouji/web    # 打包到 apps/web/dist（静态文件，和
 | F6 | 我的消息（未读标记、全部已读、翻页） | `src/pages/Messages.tsx` |
 | G1、G3–G5 | 我、设置（讲解方式、自动朗读、通知说明）、协议与隐私、关于与 AI 公示 | `src/pages/Me.tsx` |
 
-地图、小组、战报、排行榜现在是空状态页，等服务器的赛季接口做好后接上。
+| D1 | 赛季地图（中心地、边缘地，主人、争夺、本组的地） | `src/pages/season/SeasonPages.tsx` |
+| D2、D3 | 地块详情；发起 / 加入进攻（费用明细、二次确认）；买中心地 | 同上 |
+| E1、E3 | 小组（名次、团队分、粮草、组员、认领组长 / 副组长、组内动态） | 同上 |
+| E6 | 粮草和团队分明细 | 同上 |
+| F1–F3 | 战报（一天三份）、全服广播、排行榜 | 同上，挂在 `src/pages/Tabs.tsx` 的战报标签里 |
+| C1–C3 | 去修行：选模板、交任务（证据、讲解、人机协作）、审核结果 | `src/pages/DailyPages.tsx` |
+
+不是赛季玩家的孩子在地图、小组里只看到"仅赛季玩家可用"和玩法介绍，不出现价格和报名方式。赛季接口的调用在 `src/seasonApi.ts`；上传用 `src/platform/upload.ts` 的 `ticketUploader`。
 
 ## 约定
 
