@@ -104,6 +104,18 @@ export interface UsedItem {
   triggered: boolean;
 }
 
+export interface TaskPass {
+  id: string;
+  childId: string;
+  teamId: string;
+  submittedAt: Instant;
+  /** Beijing date of submission: the day the task counts for (§7). */
+  date: DateStr;
+  week: number;
+  counted: boolean;
+  grain: number;
+}
+
 export interface SeasonState {
   seasonId: string;
   seed: number;
@@ -127,6 +139,12 @@ export interface SeasonState {
   ledger: LedgerEntry[];
   /** Days whose 24:00 territory settlement has run (idempotency, §16). */
   settledDays: number[];
+  /** Keys of one-off events that have run, e.g. "auction", "starter", "center_round", "participation:1" (idempotency). */
+  done: string[];
+  /** D1 auction processing order, highest bid first (starter items are picked in reverse, §8). */
+  auctionOrder: string[] | null;
+  /** Passed daily tasks as they were counted (§7). */
+  taskPasses: TaskPass[];
   paused: boolean;
   /** Counter for deterministic ids. */
   seq: number;
@@ -177,6 +195,9 @@ export function createSeasonState(i: CreateSeasonInput): SeasonState {
     usedPrompts: Object.fromEntries(i.lands.map((l) => [l.id, []])),
     ledger: [],
     settledDays: [],
+    done: [],
+    auctionOrder: null,
+    taskPasses: [],
     paused: false,
     seq: 0,
   };
@@ -365,6 +386,12 @@ export function jiuzhuanActive(s: SeasonState, teamId: string, at: Instant): boo
 /** 生死簿 zeroes a land for 4 days (§6). */
 export function landZeroed(s: SeasonState, landId: string, at: Instant): boolean {
   return s.effects.some((e) => e.kind === "shengsi" && e.landId === landId && effectActive(e, at));
+}
+
+/** The team a child plays for, or null. */
+export function teamOfChild(s: SeasonState, childId: string): string | null {
+  for (const id of s.teamOrder) if (s.teams[id]!.members.some((m) => m.childId === childId)) return id;
+  return null;
 }
 
 export function notice(kind: string, at: Instant, broadcast: boolean, data: Record<string, unknown> = {}): Notice {
