@@ -11,6 +11,7 @@
  */
 
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { scoreInstructions, withFlag } from "./aiGuard.js";
 import { aiCalls, aiConfigs, aiScores, humanScores, promptTemplates, type Db } from "@zhiyouji/db";
 import type { AiDailyReviewer, AiScorer, AiSummarizer, AiSupplyScorer } from "./ai.js";
 import type { Clock } from "./clock.js";
@@ -125,16 +126,36 @@ export class AiGateway {
     }
   }
 
+  // Children's words are data (PRD part 8 §3.3; part 6 §3): lines aimed at the grader are
+  // found here, whatever the model does with them, and the result is flagged.
   wrapScorer(inner: AiScorer): AiScorer {
-    return { score: (r) => this.call("work_score", { workId: r.workId, rubric: r.rubric.id, promptId: r.promptId, mediaKind: r.mediaKind }, () => inner.score(r)) };
+    return {
+      score: async (r) => {
+        const hits = scoreInstructions(r.text, r.aiNote, r.transcript);
+        const out = await this.call("work_score", { workId: r.workId, rubric: r.rubric.id, promptId: r.promptId, mediaKind: r.mediaKind, ...(hits.length ? { scoreInstructions: hits } : {}) }, () => inner.score(r));
+        return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
+      },
+    };
   }
 
   wrapDaily(inner: AiDailyReviewer): AiDailyReviewer {
-    return { reviewDaily: (r) => this.call("daily_review", { submissionId: r.submissionId, templateId: r.templateId, grade: r.grade }, () => inner.reviewDaily(r)) };
+    return {
+      reviewDaily: async (r) => {
+        const hits = scoreInstructions(r.explainText, r.transcript, r.aiNote);
+        const out = await this.call("daily_review", { submissionId: r.submissionId, templateId: r.templateId, grade: r.grade, ...(hits.length ? { scoreInstructions: hits } : {}) }, () => inner.reviewDaily(r));
+        return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
+      },
+    };
   }
 
   wrapSupply(inner: AiSupplyScorer): AiSupplyScorer {
-    return { scoreSupply: (r) => this.call("supply_score", { task: r.task.title, entries: r.entries.length, summary: !!r.summary }, () => inner.scoreSupply(r)) };
+    return {
+      scoreSupply: async (r) => {
+        const hits = scoreInstructions(...r.entries, r.summary);
+        const out = await this.call("supply_score", { task: r.task.title, entries: r.entries.length, summary: !!r.summary, ...(hits.length ? { scoreInstructions: hits } : {}) }, () => inner.scoreSupply(r));
+        return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
+      },
+    };
   }
 
   wrapSummary(inner: AiSummarizer): AiSummarizer {

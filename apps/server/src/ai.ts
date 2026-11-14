@@ -123,6 +123,8 @@ export interface DailyReviewResult {
   /** L1–L6 → 1–6 */
   difficulty: number;
   card: { title: string; summary: string };
+  /** e.g. "疑似打分指令" (the child's text asked for a pass or a score; reviewed as usual). */
+  flags?: string[];
 }
 
 export interface AiDailyReviewer {
@@ -177,6 +179,8 @@ export interface SupplyScoreResult {
   /** Team summary 0–20 (0 without a summary). */
   summary: number;
   comment: string;
+  /** e.g. "疑似打分指令". */
+  flags?: string[];
 }
 
 export interface AiSupplyScorer {
