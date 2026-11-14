@@ -61,6 +61,7 @@ export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Repo
   app.post("/v1/season/roles/take-over", async (req) => play.takeOver(await ctx(req)));
 
   // contests (D2, D3, E7)
+  app.get("/v1/season/lands/:id/history", async (req) => play.landHistory(await ctx(req), idParam.parse(req.params).id));
   app.get("/v1/season/lands/:id/quote", async (req) => play.quote(await ctx(req), idParam.parse(req.params).id));
   app.post("/v1/season/contests", async (req) => play.startContest(await ctx(req), landRequest.parse(req.body).landId));
   app.get("/v1/season/contests/:id", async (req) => play.contest(await ctx(req), idParam.parse(req.params).id));

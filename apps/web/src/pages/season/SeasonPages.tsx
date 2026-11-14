@@ -210,6 +210,7 @@ export function LandPage() {
               </div>
             )}
           </div>
+          <LandHistory landId={land.id} />
           {!me.data.canAct && <p className="hint">请组长或副组长操作。</p>}
           <div style={{ marginTop: 18, display: "grid", gap: 10 }}>
             {land.owner && !land.mine && !land.contest && (
@@ -233,6 +234,32 @@ export function LandPage() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+const HOW: Record<string, string> = { auction: "盲拍拿到", center_round: "中心地购买", bought: "买下", captured: "进攻夺下", rejudged: "改判后归还", admin: "老师调整" };
+
+/** 归属历史 (D2): who held the land and how it changed hands, newest first. */
+function LandHistory({ landId }: { landId: string }) {
+  const h = useLoad(() => request<{ history: { at: number; from: { name: string } | null; to: { name: string } | null; how: string; contestId: string | null }[] }>("GET", `/v1/season/lands/${landId}/history`), [landId]);
+  if (!h.data || h.data.history.length === 0) return null;
+  return (
+    <div className="panel" style={{ marginTop: 12 }}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>归属历史</div>
+      {h.data.history.map((x, i) => (
+        <div key={i} className="row">
+          <span className="grow">
+            {x.to ? x.to.name : "没有主人"}
+            <span className="hint">
+              {" "}
+              · {HOW[x.how] ?? x.how}
+              {x.from && x.how !== "rejudged" ? `（从${x.from.name}手里）` : ""}
+            </span>
+          </span>
+          <span className="hint">{shortTime(new Date(x.at).toISOString())}</span>
+        </div>
+      ))}
     </div>
   );
 }

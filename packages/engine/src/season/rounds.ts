@@ -24,6 +24,7 @@ import {
   type Notice,
   type Result,
   type SeasonState,
+  setLandOwner,
 } from "./state.js";
 
 export type RoundRefusal =
@@ -65,9 +66,7 @@ export function runBlindAuction(input: SeasonState, e: { at: Instant; bids: read
     rng: eventRng(s, "auction"),
   });
   for (const a of res.assignments) {
-    const l = s.lands[a.landId]!;
-    l.owner = a.teamId;
-    l.ownedSince = e.at;
+    setLandOwner(s, a.landId, a.teamId, e.at, "auction");
     addGrain(s, a.teamId, -a.paid, "auction_bid", e.at, { refId: "auction", note: a.landId });
   }
   s.auctionOrder = res.order;
@@ -128,9 +127,7 @@ export function runCenterRound(
       continue;
     }
     const landId = completePrefs(reqs.get(teamId)!.prefs, unsold, rng)[0]!;
-    const l = s.lands[landId]!;
-    l.owner = teamId;
-    l.ownedSince = e.at;
+    setLandOwner(s, landId, teamId, e.at, "center_round");
     addGrain(s, teamId, -price, "center_land", e.at, { refId: "center_round", note: landId });
     bought.push({ teamId, landId, paid: price });
   }
@@ -155,9 +152,7 @@ export function buyCenterLand(
   const price = centerLandPrice(day, input.params);
   if (spendableGrain(input, e.teamId) < price) return { ok: false, refusal: "not_enough_grain", detail: `needs ${price}` };
   const s = cloneState(input);
-  const l = s.lands[e.landId]!;
-  l.owner = e.teamId;
-  l.ownedSince = e.at;
+  setLandOwner(s, e.landId, e.teamId, e.at, "bought");
   addGrain(s, e.teamId, -price, "center_land", e.at, { refId: e.landId });
   const notices: Notice[] = [notice("center_bought", e.at, true, { teamId: e.teamId, landId: e.landId, price, day })];
   return { ok: true, state: s, notices };

@@ -29,6 +29,7 @@ import {
   type Result,
   type SeasonState,
   afterPauses,
+  setLandOwner,
 } from "./state.js";
 
 export type ContestRefusal =
@@ -203,9 +204,7 @@ export function settleContest(input: SeasonState, e: SettleContest): Result<Cont
 
   if (outcome.kind === "captured") {
     const winner = outcome.winner;
-    const l = s.lands[c.landId]!;
-    l.owner = winner;
-    l.ownedSince = e.at;
+    setLandOwner(s, c.landId, winner, e.at, "captured", c.id);
     const merit = meritPoints("capture", jiuzhuanActive(s, winner, e.at), p);
     addPoints(s, winner, pts(merit), "merit_capture", e.at, { refId: c.id });
     s.teams[winner]!.meritCount += 1;
@@ -345,8 +344,7 @@ export function resettleContest(input: SeasonState, e: ResettleContest): Result<
       addPoints(s, oldOwner, -since, "territory_transfer", e.at, { refId: c.id, note });
       addPoints(s, newOwner, since, "territory_transfer", e.at, { refId: c.id, note });
     }
-    land.owner = newOwner;
-    land.ownedSince = e.at;
+    setLandOwner(s, c.landId, newOwner, e.at, "rejudged", c.id);
     for (const eff of s.effects) if ((eff.kind === "sanmei" || eff.kind === "bagua") && eff.landId === c.landId && eff.endedAt === undefined) eff.endedAt = e.at;
   }
   c.outcome = after;

@@ -194,6 +194,8 @@ export interface SeasonState {
   prompts: Record<string, string[]>;
   usedPrompts: Record<string, string[]>;
   ledger: LedgerEntry[];
+  /** Every change of a land's owner, append-only (part 5 D2 "归属历史"). Older saved states may lack it. */
+  landHistory: LandHistoryEntry[];
   /** Days whose 24:00 territory settlement has run (idempotency, §16). */
   settledDays: number[];
   /** Keys of one-off events that have run, e.g. "auction", "starter", "center_round", "participation:1" (idempotency). */
@@ -269,6 +271,7 @@ export function createSeasonState(i: CreateSeasonInput): SeasonState {
     prompts: Object.fromEntries(i.lands.map((l) => [l.id, [...(i.prompts?.[l.id] ?? [])]])),
     usedPrompts: Object.fromEntries(i.lands.map((l) => [l.id, []])),
     ledger: [],
+    landHistory: [],
     settledDays: [],
     done: [],
     auctionOrder: null,
@@ -329,9 +332,30 @@ export function afterPauses(s: Pick<SeasonState, "pauses">, t: Instant): Instant
 }
 
 export function cloneState(s: SeasonState): SeasonState {
-  const { ledger, taskPasses, usedItems, ...rest } = s;
-  const copy = JSON.parse(JSON.stringify(rest)) as Omit<SeasonState, "ledger" | "taskPasses" | "usedItems">;
-  return { ...copy, ledger: ledger.slice(), taskPasses: taskPasses.slice(), usedItems: usedItems.slice() };
+  const { ledger, taskPasses, usedItems, landHistory, ...rest } = s;
+  const copy = JSON.parse(JSON.stringify(rest)) as Omit<SeasonState, "ledger" | "taskPasses" | "usedItems" | "landHistory">;
+  return { ...copy, ledger: ledger.slice(), taskPasses: taskPasses.slice(), usedItems: usedItems.slice(), landHistory: (landHistory ?? []).slice() };
+}
+
+/** How a land changed hands. */
+export type LandChange = "auction" | "center_round" | "bought" | "captured" | "rejudged" | "admin";
+
+export interface LandHistoryEntry {
+  landId: string;
+  from: string | null;
+  to: string | null;
+  at: Instant;
+  how: LandChange;
+  /** The contest, for "captured" and "rejudged". */
+  contestId?: string;
+}
+
+/** The one place a land's owner changes: sets owner and `ownedSince` and writes the history. */
+export function setLandOwner(s: SeasonState, landId: string, to: string | null, at: Instant, how: LandChange, contestId?: string): void {
+  const l = s.lands[landId]!;
+  (s.landHistory ??= []).push({ landId, from: l.owner, to, at, how, ...(contestId ? { contestId } : {}) });
+  l.owner = to;
+  l.ownedSince = to === null ? null : at;
 }
 
 export function nextId(s: SeasonState, prefix: string): string {

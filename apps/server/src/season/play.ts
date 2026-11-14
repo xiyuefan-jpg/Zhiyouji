@@ -505,6 +505,19 @@ export class SeasonPlay {
 
   // contests (D3)
 
+  /** 归属历史 (part 5 D2): who held the land and how it changed hands, newest first. */
+  async landHistory(ctx: PlayCtx, landId: string) {
+    const s = await this.state(ctx);
+    if (!s.lands[landId]) fail(404, "not_found");
+    const team = (id: string | null) => (id ? { id, name: s.teams[id]?.name ?? "" } : null);
+    return {
+      history: (s.landHistory ?? [])
+        .filter((h) => h.landId === landId)
+        .map((h) => ({ at: h.at, from: team(h.from), to: team(h.to), how: h.how, contestId: h.contestId ?? null }))
+        .reverse(),
+    };
+  }
+
   /** Cost preview for attacking a land (or joining its contest). */
   async quote(ctx: PlayCtx, landId: string) {
     const s = await this.state(ctx);

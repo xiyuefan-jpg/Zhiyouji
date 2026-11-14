@@ -28,6 +28,7 @@ import {
   type Result,
   type SeasonState,
   type TeamState,
+  setLandOwner,
 } from "./state.js";
 
 export type AdminRefusal =
@@ -231,10 +232,8 @@ export function adminSetLandOwner(input: SeasonState, e: { landId: string; teamI
   if (input.contestOrder.some((id) => input.contests[id]!.status === "active" && input.contests[id]!.landId === e.landId))
     return { ok: false, refusal: "contest_active" };
   const s = cloneState(input);
-  const land = s.lands[e.landId]!;
-  const from = land.owner;
-  land.owner = e.teamId;
-  land.ownedSince = e.teamId === null ? null : e.at;
+  const from = s.lands[e.landId]!.owner;
+  setLandOwner(s, e.landId, e.teamId, e.at, "admin");
   for (const eff of s.effects) if ((eff.kind === "sanmei" || eff.kind === "bagua") && eff.landId === e.landId && eff.endedAt === undefined) eff.endedAt = e.at;
   return { ok: true, state: s, notices: [notice("land_owner_set", e.at, true, { landId: e.landId, from, to: e.teamId, reason: e.reason })] };
 }
