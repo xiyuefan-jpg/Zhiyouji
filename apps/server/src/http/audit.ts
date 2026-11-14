@@ -110,6 +110,7 @@ export const ADMIN_AUDIT: Record<string, AuditPolicy> = {
   // daily tasks (part 7 §5)
   "GET /v1/admin/daily/exceptions": view("daily_task"),
   "POST /v1/admin/daily/:id/decide": route("daily_decide", "daily:{id}"),
+  "POST /v1/admin/daily/:id/ai-rerun": route("daily_ai_rerun", "daily:{id}"),
 
   // question bank (part 7 §4)
   "GET /v1/admin/land-templates": READ,

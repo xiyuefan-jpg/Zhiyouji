@@ -351,6 +351,9 @@ interface Review {
     highlights?: string[];
     map: Record<string, number>;
     hardest: { title: string; tag: string | null; crossing: number | null } | null;
+    hardestCards?: { title: string; tag: string | null; crossing: number | null }[];
+    /** Subjects first entered this season ("新"). */
+    newSubjects?: string[];
     works: { kind: string; slot: string; title?: string | null; land?: string | null; subject?: string | null; result?: string | null }[];
     numbers: { dailyTasks: number; cards: number; works: number; aboveGrade: number };
   };
@@ -403,14 +406,33 @@ export function SeasonReviewPage() {
               </div>
             </div>
             <div className="field-label">我的探索地图</div>
-            <div className="panel">{subjects.length ? `你探索了${subjects.map(([k, v]) => `${k}（${v} 次）`).join("、")}` : "这一季还没有知识卡片。"}</div>
-            {r.content.hardest && (
+            <div className="panel">
+              {subjects.length ? (
+                <>
+                  你探索了
+                  {subjects.map(([k, v], i) => (
+                    <span key={k}>
+                      {i > 0 ? "、" : ""}
+                      {k}（{v} 次）
+                      {r.content.newSubjects?.includes(k) && <Seal text="新" size={20} tilt={0} />}
+                    </span>
+                  ))}
+                </>
+              ) : (
+                "这一季还没有知识卡片。"
+              )}
+            </div>
+            {(r.content.hardestCards?.length ? r.content.hardestCards : r.content.hardest ? [r.content.hardest] : []).length > 0 && (
               <>
                 <div className="field-label">我讲明白过的最难的知识</div>
                 <div className="panel">
-                  {r.content.hardest.title}
-                  {r.content.hardest.tag ? `（${r.content.hardest.tag.replace("/", " · ")}）` : ""}
-                  {r.content.hardest.crossing && r.content.hardest.crossing > 0 ? `，比你的年级高 ${r.content.hardest.crossing} 级` : ""}
+                  {(r.content.hardestCards?.length ? r.content.hardestCards : [r.content.hardest!]).map((c, i) => (
+                    <div key={i}>
+                      {c.title}
+                      {c.tag ? `（${c.tag.replace("/", " · ")}）` : ""}
+                      {c.crossing && c.crossing > 0 ? `，比你的年级高 ${c.crossing} 级` : ""}
+                    </div>
+                  ))}
                 </div>
               </>
             )}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { dailyReviews, messages, plannedEvents } from "@zhiyouji/db";
+import { aiCalls, dailyReviews, messages, plannedEvents } from "@zhiyouji/db";
 import type { FakeAiDaily, FakeAiSummarizer } from "../src/index.js";
 import { bj, setup } from "./helpers.js";
 import { contestSetup } from "./seasonHelpers.js";
@@ -248,6 +248,23 @@ describe("每日任务 and 修行日志 (part 5 C1–C7; part 6 T4)", () => {
     list = (await k.call("GET", "/v1/journal/summaries")).json().summaries;
     expect(list[0].content.text).toContain("走进了");
     expect(list[0].content.heldText).toBeUndefined();
+    await t.close();
+  });
+
+  it("an admin re-runs the AI on one daily task: the answer comes back and is logged; the task does not change (part 6 §9)", async () => {
+    const t = await setup(bj("2027-03-10", 16));
+    const k = await kid(t);
+    const boss = await t.adminUser();
+    const pic = await picture(t, k.call);
+    const r = (await k.call("POST", "/v1/daily/submissions", { templateId: 1, evidenceFileIds: [pic], explain: { kind: "text", text: TEXT }, aiNote: "问了 AI" })).json();
+    const before = (await t.db.select().from(dailyReviews)).length;
+    const res = (await t.call("POST", `/v1/admin/daily/${r.id}/ai-rerun`, undefined, boss.token)).json();
+    expect(res.result.passed).toBe(true);
+    expect(res.official.status).toBe("passed");
+    expect((await t.db.select().from(dailyReviews)).length).toBe(before);
+    expect((await t.db.select().from(aiCalls)).filter((c) => c.task === "daily_review")).toHaveLength(2);
+    const reviewer = await t.adminUser("rev2@example.com", "reviewer");
+    expect((await t.call("POST", `/v1/admin/daily/${r.id}/ai-rerun`, undefined, reviewer.token)).json().error).toBe("forbidden");
     await t.close();
   });
 

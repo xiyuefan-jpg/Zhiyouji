@@ -357,6 +357,20 @@ const SUBJECTS = Object.keys(TAXONOMY);
 function DecideModal({ task, onClose }: { task: DailyTask; onClose: (done: boolean) => void }) {
   const [form] = Form.useForm();
   const [busy, setBusy] = useState(false);
+  const me = useAdmin();
+  // part 6 §9 单条重跑: the answer is only shown (and logged); nothing is decided by it
+  const [aiDraft, setAiDraft] = useState<{ passed: boolean; failReason: string | null; expression: number; mainTag: string; difficulty: number } | null>(null);
+  const [rerunning, setRerunning] = useState(false);
+  const rerun = async () => {
+    setRerunning(true);
+    try {
+      setAiDraft((await request<{ result: NonNullable<typeof aiDraft> }>("POST", `/v1/admin/daily/${task.id}/ai-rerun`)).result);
+    } catch (e) {
+      message.error(errText(e));
+    } finally {
+      setRerunning(false);
+    }
+  };
   const subject = Form.useWatch("subject", form) as string | undefined;
   const passed = Form.useWatch("passed", form) as boolean | undefined;
   const save = async () => {
@@ -387,6 +401,18 @@ function DecideModal({ task, onClose }: { task: DailyTask; onClose: (done: boole
       <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>{task.explainText ?? "（语音讲解，见下面的录音和转写）"}</Typography.Paragraph>
       {task.aiNote && <Typography.Paragraph type="secondary">人机协作：{task.aiNote}</Typography.Paragraph>}
       <Files files={task.files.map((f) => ({ ...f, contentType: "" }))} />
+      {me.role === "admin" && (
+        <Space style={{ marginBottom: 8 }}>
+          <Button size="small" loading={rerunning} onClick={() => void rerun()}>
+            再让 AI 看一次（只做参考）
+          </Button>
+          {aiDraft && (
+            <Typography.Text type="secondary">
+              AI：{aiDraft.passed ? "通过" : `不通过（${aiDraft.failReason ?? ""}）`}，表达 {aiDraft.expression} 档，{aiDraft.mainTag}，难度 L{aiDraft.difficulty}
+            </Typography.Text>
+          )}
+        </Space>
+      )}
       <Form form={form} layout="vertical" initialValues={{ passed: true, expression: 2, aiLevel: 2, difficulty: 2 }}>
         <Form.Item name="passed" label="结果">
           <Radio.Group

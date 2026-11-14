@@ -30,7 +30,7 @@ import {
   type DailyDecide,
   type DailySubmit,
 } from "@zhiyouji/shared";
-import type { AiDailyReviewer, DailyReviewResult } from "../ai.js";
+import type { AiDailyReviewer, DailyReviewRequest, DailyReviewResult } from "../ai.js";
 import type { ChildRow } from "../accounts/family.js";
 import type { Clock } from "../clock.js";
 import type { ServerConfig } from "../config.js";
@@ -198,41 +198,57 @@ export class DailyTasks {
     return { reviewed, errors };
   }
 
-  private async tryReview(id: string): Promise<"done" | "retry" | "error" | "skip"> {
-    const [s] = await this.db.select().from(dailySubmissions).where(eq(dailySubmissions.id, id));
-    if (!s || s.status !== "reviewing") return "skip";
+  /** What T4 gets: the explanation (transcribed first), the evidence pictures and the template (part 6 §1 T4). */
+  private async reviewRequest(s: SubRow): Promise<DailyReviewRequest> {
     const tpl = DAILY_TEMPLATES.find((t) => t.id === s.templateId)!;
     const evidence = s.evidenceFileIds as string[];
     let transcript: string | null = null;
+    // the voice explanation is transcribed first ("材料齐了", part 6 §2)
+    if (s.explainFileId) {
+      await this.media?.ensure([s.explainFileId]);
+      transcript = (await this.db.select({ t: files.transcript }).from(files).where(eq(files.id, s.explainFileId)))[0]?.t ?? null;
+    }
+    // the evidence pictures go to the model too: "讲解和证据是同一件事" (part 6 §3)
+    const now0 = this.now();
+    const evidenceRows = evidence.length ? await this.db.select().from(files).where(inArray(files.id, evidence)) : [];
+    const evidenceImages = await Promise.all(
+      evidence
+        .map((id) => evidenceRows.find((f) => f.id === id))
+        .filter((f): f is NonNullable<typeof f> => !!f && f.kind === "image" && f.status !== "deleted")
+        .map((f) => this.storage.downloadUrl(f.storageKey, now0)),
+    );
+    return {
+      submissionId: s.id,
+      templateId: s.templateId,
+      templateName: tpl.name,
+      templatePrompt: tpl.prompt,
+      evidenceExpected: tpl.evidence,
+      evidenceImages,
+      grade: s.grade,
+      explainText: s.explainText,
+      transcript,
+      aiNote: s.aiNote,
+      noAi: s.noAi,
+      evidenceCount: evidence.length,
+    };
+  }
+
+  /**
+   * 单条重跑 (part 6 §9 "对某件作品或某条每日任务重新跑一次 AI（不覆盖原记录）"): the answer
+   * comes back to the admin and stays in the AI call log; the task's result does not change.
+   */
+  async rerunAi(id: string) {
+    const [s] = await this.db.select().from(dailySubmissions).where(eq(dailySubmissions.id, id));
+    if (!s) fail(404, "not_found");
+    const r = await this.ai.reviewDaily(await this.reviewRequest(s!));
+    return { result: r, official: { status: s!.status, failReason: s!.failReason } };
+  }
+
+  private async tryReview(id: string): Promise<"done" | "retry" | "error" | "skip"> {
+    const [s] = await this.db.select().from(dailySubmissions).where(eq(dailySubmissions.id, id));
+    if (!s || s.status !== "reviewing") return "skip";
     try {
-      // the voice explanation is transcribed first ("材料齐了", part 6 §2)
-      if (s.explainFileId) {
-        await this.media?.ensure([s.explainFileId]);
-        transcript = (await this.db.select({ t: files.transcript }).from(files).where(eq(files.id, s.explainFileId)))[0]?.t ?? null;
-      }
-      // the evidence pictures go to the model too: "讲解和证据是同一件事" (part 6 §3)
-      const now0 = this.now();
-      const evidenceRows = evidence.length ? await this.db.select().from(files).where(inArray(files.id, evidence)) : [];
-      const evidenceImages = await Promise.all(
-        evidence
-          .map((id) => evidenceRows.find((f) => f.id === id))
-          .filter((f): f is NonNullable<typeof f> => !!f && f.kind === "image" && f.status !== "deleted")
-          .map((f) => this.storage.downloadUrl(f.storageKey, now0)),
-      );
-      const r = await this.ai.reviewDaily({
-        submissionId: s.id,
-        templateId: s.templateId,
-        templateName: tpl.name,
-        templatePrompt: tpl.prompt,
-        evidenceExpected: tpl.evidence,
-        evidenceImages,
-        grade: s.grade,
-        explainText: s.explainText,
-        transcript,
-        aiNote: s.aiNote,
-        noAi: s.noAi,
-        evidenceCount: evidence.length,
-      });
+      const r = await this.ai.reviewDaily(await this.reviewRequest(s));
       await this.decideWith(s, r, `ai:${r.model}`);
       return "done";
     } catch (err) {

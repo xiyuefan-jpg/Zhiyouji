@@ -42,14 +42,14 @@ import {
 } from "@zhiyouji/db";
 import { battleDeadline, beijingDate, campsFormAt, resolveContest, warDeadline, type SeasonEvent, type SeasonState } from "@zhiyouji/engine";
 import { formatBeijing } from "@zhiyouji/shared";
-import type { AiScorer } from "../ai.js";
+import type { AiScorer, ScoreRequest } from "../ai.js";
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
 import type { Notifier } from "../notify/notifier.js";
 import type { SeasonStore } from "../seasonStore.js";
 import type { ObjectStorage } from "../storage.js";
 import { refusalText } from "./refusals.js";
-import { checkDims, RUBRICS, rubricFor, rubricWithGuide, type RubricId } from "./rubrics.js";
+import { checkDims, RUBRIC_GUIDE, RUBRICS, rubricFor, rubricWithGuide, type RubricId } from "./rubrics.js";
 import { workRubric, workTask } from "./taskInfo.js";
 
 const HOUR = 3_600_000;
@@ -154,6 +154,28 @@ export class Scoring {
     return true;
   }
 
+  /** For a debate rebuttal: the team's own opening and the other side's openings (part 6 §4.7). */
+  private async debateContext(serverId: string, st: SeasonState, w: WorkRow): Promise<ScoreRequest["debate"]> {
+    if (w.kind !== "contest" || w.slot.endsWith(":open")) return null;
+    const contestId = baseSlot(w.slot).slice("contest:".length);
+    const [d] = await this.db.select().from(debates).where(and(eq(debates.serverId, serverId), eq(debates.contestId, contestId)));
+    if (!d) return null;
+    const c = st.contests[contestId];
+    const rows = await this.db.select().from(works).where(and(eq(works.serverId, serverId), eq(works.slot, `${baseSlot(w.slot)}:open`))).orderBy(asc(works.submittedAt), asc(works.version));
+    const latest = new Map<string, WorkRow>();
+    for (const r of rows) latest.set(r.teamId, r);
+    const brief = async (x: WorkRow) => {
+      const ids = (x.fileIds as string[]) ?? [];
+      const fs = ids.length ? await this.db.select().from(files).where(inArray(files.id, ids)) : [];
+      return { text: x.text, transcript: fs.map((f) => f.transcript).filter(Boolean).join("\n") || null };
+    };
+    const mine = latest.get(w.teamId);
+    const defenderSide = c?.defender === w.teamId;
+    // the other side: the defender's opening for an attacker; every attacker's for the defender
+    const others = [...latest.values()].filter((x) => x.teamId !== w.teamId && (defenderSide || x.teamId === c?.defender));
+    return { opening: mine ? await brief(mine) : null, otherSide: await Promise.all(others.map(brief)), noDefender: !!d.noDefender };
+  }
+
   /** 单条重跑 (part 6 §9): score a work again; kept as an extra record, the official score stays. */
   async rerunAi(workId: string) {
     const [w] = await this.db.select().from(works).where(eq(works.id, workId));
@@ -177,7 +199,22 @@ export class Scoring {
     try {
       const subject = await this.subjectOf(serverId, st, w);
       const task = await workTask(this.db, serverId, st, w);
-      const r = await this.ai.score({ workId: w.id, rubric, promptId: w.promptId, task, mediaKind: w.mediaKind, text: w.text, aiNote: w.aiNote, transcript, images, subject });
+      const guide = RUBRIC_GUIDE[rubric.id as RubricId];
+      const debate = await this.debateContext(serverId, st, w);
+      const r = await this.ai.score({
+        workId: w.id,
+        rubric,
+        promptId: w.promptId,
+        task,
+        mediaKind: w.mediaKind,
+        text: w.text,
+        aiNote: w.aiNote,
+        transcript,
+        images,
+        subject,
+        anchors: guide ? { at50: guide.at50, at75: guide.at75 } : undefined,
+        debate,
+      });
       // T7: the work's knowledge tags (for the season review's exploration map, part 5 §4.1)
       if (official) {
         const tags = (r.tags ?? []).filter(isKnownTag).slice(0, 3);

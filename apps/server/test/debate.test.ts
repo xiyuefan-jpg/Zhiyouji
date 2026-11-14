@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { reviewAssignments, works } from "@zhiyouji/db";
 import { teamSlots } from "../src/season/works.js";
+import type { FakeAiScorer } from "../src/index.js";
 import { bj } from "./helpers.js";
 import { contestSetup } from "./seasonHelpers.js";
 
@@ -57,6 +58,10 @@ describe("异步辩论 on debate lands (part 3 §10.4)", () => {
     await t.services.scoring.runDue(t.serverId);
     const as = await t.db.select().from(reviewAssignments);
     expect(as).toHaveLength(1);
+    // the AI sees the opening with the rebuttal, that the defender did not answer, and the 50/75 anchors (part 6 §4.2, §4.7)
+    const req = (t.services.ai as FakeAiScorer).last!;
+    expect(req.debate).toMatchObject({ opening: { text: "我方立论：……" }, otherSide: [], noDefender: true });
+    expect(req.anchors?.at50).toBeTruthy();
     const token = await reviewer.relogin();
     const view = (await t.call("GET", `/v1/admin/reviews/${as[0]!.id}`, undefined, token)).json();
     expect(view.work.text).toBe("我方驳论：对方可能会说……");

@@ -264,6 +264,10 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
     expect(ws.filter((w) => !w.slot.startsWith("contest:")).every((w) => w.title)).toBe(true); // (this test's contest prompts are bare ids)
     expect(ws.filter((w) => w.result).length).toBeGreaterThan(ws.length / 2);
     expect(all.some((r) => r.highlights.length > 0)).toBe(true);
+    // part 5 §4.1: up to 3 hardest cards, and subjects first entered this season marked "新" (no earlier cards here)
+    const withCards = all.map((r) => r as unknown as { hardestCards: unknown[]; newSubjects: string[]; map: Record<string, number> }).filter((r) => r.hardestCards.length > 0);
+    expect(withCards.length).toBeGreaterThan(0);
+    expect(withCards.every((r) => r.hardestCards.length <= 3 && r.newSubjects.every((x) => x in r.map))).toBe(true);
     const total = st.teamOrder.reduce((n, id) => n + balanceOf(st.ledger, id, "points"), 0);
     expect(total).toBeGreaterThan(0);
     await t.close();

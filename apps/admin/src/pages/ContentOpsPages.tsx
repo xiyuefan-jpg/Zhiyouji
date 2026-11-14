@@ -570,7 +570,13 @@ export function FinalPage() {
   const [pool, setPool] = useState<number | null>(null);
   const [finalVersion, setFinalVersion] = useState(0);
   const [reviewSeason, setReviewSeason] = useState<string | null>(null);
-  const reviews = useLoad(() => (reviewSeason ? request<{ reviews: { id: string; childId: string; releasedAt: string | null }[] }>("GET", `/v1/admin/seasons/${reviewSeason}/reviews`) : Promise.resolve({ reviews: [] })), [reviewSeason]);
+  const reviews = useLoad(
+    () =>
+      reviewSeason
+        ? request<{ reviews: { id: string; childId: string; content: { heldText?: string }; releasedAt: string | null }[] }>("GET", `/v1/admin/seasons/${reviewSeason}/reviews`)
+        : Promise.resolve({ reviews: [] }),
+    [reviewSeason],
+  );
   const requests = useLoad(() => request<{ requests: { id: string; kind: string; status: string; requestedAt: string; dueAt: string }[] }>("GET", "/v1/admin/data-requests"));
   const dl = (path: string, name: string) => void downloadText(path, name).catch((e) => message.error(errText(e)));
   return (
@@ -612,6 +618,11 @@ export function FinalPage() {
               <Typography.Text type="secondary">
                 已生成 {reviews.data?.reviews.length ?? 0} 份，已发 {reviews.data?.reviews.filter((r) => r.releasedAt).length ?? 0} 份
               </Typography.Text>
+              {!!reviews.data?.reviews.filter((r) => r.content?.heldText).length && (
+                <Typography.Text type="warning">
+                  其中 {reviews.data.reviews.filter((r) => r.content?.heldText).length} 份的 AI 文字没通过内容安全检查，发出去的是一句通用的话
+                </Typography.Text>
+              )}
             </>
           )}
         </Space>

@@ -38,6 +38,10 @@ export function dailyRoutes(app: FastifyInstance, daily: DailyTasks, accounts: A
     for (const t of r.tasks) await accounts.recordView(user.id, { childId: t.childId, contentKind: "daily_task", objectId: t.id, action: "view" });
     return r;
   });
+  app.post("/v1/admin/daily/:id/ai-rerun", async (req) => {
+    await admin.user(req, ["admin"]);
+    return daily.rerunAi(idParam.parse(req.params).id);
+  });
   app.post("/v1/admin/daily/:id/decide", async (req) => {
     const { user } = await admin.user(req);
     return daily.decide(idParam.parse(req.params).id, dailyDecide.parse(req.body), `admin:${user.id}`);

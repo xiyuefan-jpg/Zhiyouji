@@ -24,6 +24,17 @@ export interface ScoreRequest {
   aiNote: string | null;
   /** Speech-to-text of the video or audio, when ready. */
   transcript: string | null;
+  /** The rubric's 50- and 75-point anchors (part 6 §4.2 "提示词里有 50/75 分的样子"). */
+  anchors?: { at50: string; at75: string };
+  /**
+   * Debates (part 3 §10.4, part 6 §4.7 "立论和驳论一起送进去"): this team's opening, and the other
+   * side's openings the rebuttal has to answer (none when the defender did not take up the debate).
+   */
+  debate?: {
+    opening: { text: string | null; transcript: string | null } | null;
+    otherSide: { text: string | null; transcript: string | null }[];
+    noDefender: boolean;
+  } | null;
 }
 
 export interface ScoreResult {
@@ -78,9 +89,12 @@ export class FakeAiScorer implements AiScorer {
   fixed = new Map<string, number>();
   fail = false;
   calls = 0;
+  /** The last request (tests check what the model is given). */
+  last: ScoreRequest | null = null;
 
   async score(r: ScoreRequest): Promise<ScoreResult> {
     this.calls++;
+    this.last = r;
     if (this.fail) throw new Error("fake AI failure");
     const h = createHash("sha256").update(r.workId).digest().readUInt32BE(0);
     const total = this.fixed.get(r.workId) ?? 40 + (h % 46);
@@ -219,6 +233,8 @@ export interface SummaryRequest {
   kind: "week" | "month" | "season";
   grade: number;
   cards: { title: string; summary: string; tag: string | null; crossing: number | null }[];
+  /** T9 赛季回顾: the team works the child signed (part 6 T9 input "全部卡片、作品、标签"). */
+  works?: { title: string | null; kind: string; tags: string[] }[];
 }
 
 export interface AiSummarizer {

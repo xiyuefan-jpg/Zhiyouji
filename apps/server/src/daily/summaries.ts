@@ -177,7 +177,11 @@ export class Summaries {
       const st = await this.store.state(m.serverId);
       const cards = await this.db.select().from(knowledgeCards).where(and(eq(knowledgeCards.childId, m.childId), gte(knowledgeCards.day, from), lt(knowledgeCards.day, to)));
       const crossing = await this.crossingOf(cards);
-      const hardest = [...cards].sort((a, b) => (crossing.get(b.submissionId) ?? -9) - (crossing.get(a.submissionId) ?? -9) || (b.difficulty ?? 0) - (a.difficulty ?? 0))[0];
+      const byCrossing = [...cards].sort((a, b) => (crossing.get(b.submissionId) ?? -9) - (crossing.get(a.submissionId) ?? -9) || (b.difficulty ?? 0) - (a.difficulty ?? 0));
+      const hardest = byCrossing[0];
+      // subjects the child had never been in before this season (part 5 §4.1 "第一次走进的学科标'新'")
+      const earlier = await this.db.select({ tag: knowledgeCards.tag }).from(knowledgeCards).where(and(eq(knowledgeCards.childId, m.childId), lt(knowledgeCards.day, from)));
+      const before = new Set(earlier.map((x) => x.tag?.split("/")[0]).filter(Boolean));
       // Each work the child signed, once per slot (its latest version; part 5 §4.1 我参与的作品).
       const signed = (await this.db.select().from(works).where(eq(works.serverId, m.serverId))).filter((w) => (w.members as string[]).includes(m.childId));
       const latest = new Map<string, (typeof signed)[number]>();
@@ -192,9 +196,18 @@ export class Summaries {
       const tasks = await this.db.select({ id: dailySubmissions.id }).from(dailySubmissions).where(and(eq(dailySubmissions.childId, m.childId), eq(dailySubmissions.status, "passed"), gte(dailySubmissions.day, from), lt(dailySubmissions.day, to)));
       const rank = st.final?.ranking.find((r) => r.teamId === m.teamId)?.rank ?? null;
       const scholarshipYuan = st.final ? (st.final.scholarship.find((r) => r.teamId === m.teamId)?.yuan ?? 0) : null;
-      const ai = await this.ai.summarize({ kind: "season", grade: kid.grade, cards: cards.map((c) => ({ title: c.title, summary: c.summary, tag: c.tag, crossing: crossing.get(c.submissionId) ?? null })) });
+      const workTasks = await Promise.all(mine.map((w) => workTask(this.db, m.serverId, st, w)));
+      const ai = await this.ai.summarize({
+        kind: "season",
+        grade: kid.grade,
+        cards: cards.map((c) => ({ title: c.title, summary: c.summary, tag: c.tag, crossing: crossing.get(c.submissionId) ?? null })),
+        works: mine.map((w, i) => ({ title: workTasks[i]?.title ?? null, kind: w.kind, tags: (w.tags as string[] | null) ?? [] })),
+      });
+      // part 6 §7: checked before the admin releases it; if blocked the review goes out with a plain line
+      const check = this.safety ? await this.safety.check({ texts: [ai.text], files: [] }) : { pass: true, labels: [] };
       const content = {
-        text: ai.text,
+        text: check.pass ? ai.text : `这一季你记下了 ${cards.length} 张知识卡片，参与了 ${mine.length} 件团队作品。`,
+        ...(check.pass ? {} : { heldText: ai.text, heldLabels: check.labels }),
         team: st.teams[m.teamId]?.name ?? "",
         rank,
         scholarshipYuan,
@@ -209,6 +222,9 @@ export class Summaries {
           return m;
         })(),
         hardest: hardest ? { title: hardest.title, tag: hardest.tag, crossing: crossing.get(hardest.submissionId) ?? null } : null,
+        // "跨越度最高的几张知识卡片"
+        hardestCards: byCrossing.slice(0, 3).map((c) => ({ title: c.title, tag: c.tag, crossing: crossing.get(c.submissionId) ?? null })),
+        newSubjects: [...new Set(cards.map((c) => c.tag?.split("/")[0]).filter((x): x is string => !!x && !before.has(x)))],
         works: await Promise.all(
           mine.map(async (w) => {
             const task = await workTask(this.db, m.serverId, st, w);
@@ -242,7 +258,12 @@ export class Summaries {
 
   async seasonReviewsOf(childId: string) {
     const rows = await this.db.select({ r: seasonReviews, name: seasons.name }).from(seasonReviews).innerJoin(seasons, eq(seasonReviews.seasonId, seasons.id)).where(eq(seasonReviews.childId, childId));
-    return { reviews: rows.filter((x) => x.r.releasedAt).map((x) => ({ id: x.r.id, season: x.name, content: x.r.content, releasedAt: x.r.releasedAt!.toISOString() })) };
+    // text held back by the content check never reaches the child
+    const shown = (c: unknown) => {
+      const { heldText: _t, heldLabels: _l, ...rest } = (c ?? {}) as { heldText?: string; heldLabels?: string[] };
+      return rest;
+    };
+    return { reviews: rows.filter((x) => x.r.releasedAt).map((x) => ({ id: x.r.id, season: x.name, content: shown(x.r.content), releasedAt: x.r.releasedAt!.toISOString() })) };
   }
 }
 
