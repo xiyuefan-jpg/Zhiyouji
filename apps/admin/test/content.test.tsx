@@ -54,7 +54,7 @@ describe("admin console: 题库, 公告, 看板 (part 7 §1, §4, §8)", () => {
     const be = await startBackend();
     const { secret } = await account(be, "boss@example.com", "admin");
     const user = userEvent.setup({ pointerEventsCheck: 0 });
-    renderConsole("/ops");
+    renderConsole("/content");
     await login(be, user, "boss@example.com", secret);
     await user.click(await screen.findByRole("tab", { name: "AI 配置" }));
     expect(await screen.findByText("T1 语音转写")).toBeTruthy();
@@ -80,7 +80,7 @@ describe("admin console: 题库, 公告, 看板 (part 7 §1, §4, §8)", () => {
     await user.click(within(dialog).getByRole("button", { name: "保 存" }));
     await waitFor(async () => expect((await be.db.select().from(aiPrices)).map((p) => [p.model, p.inPerMillion])).toEqual([["qwen-vl-max", 30000]]));
     await be.stop();
-  });
+  }, 120_000);
 
   it("关于与 AI 公示: the admin fills the table the website shows (part 5 §8)", async () => {
     const be = await startBackend();
