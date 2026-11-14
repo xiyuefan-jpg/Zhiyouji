@@ -5,6 +5,7 @@ API + 后台任务（Fastify + PostgreSQL）。按 PRD 第 2、4、8 部分实�
 ```bash
 npm run dev -w @zhiyouji/server            # 本地启动（不设 DATABASE_URL 时用内存里的 PGlite）
 npm run invite-admin -w @zhiyouji/server -- boss@example.com 名字 admin   # 建第一个管理员，打印邀请码
+npm run revoke-sessions -w @zhiyouji/server -- all "原因"               # 出事时让所有人重新登录（docs/security/数据泄露处置手册.md）
 ```
 
 环境变量：`DATABASE_URL`（正式环境的 PostgreSQL）、`SERVER_SECRET`（正式环境必填）、`POLICY_VERSION`（三份协议的版本，改了家长要重新确认）、`PORT`、`TICK_MS`（worker 间隔）、`TRUST_PROXY=1`（在负载均衡后面时）。

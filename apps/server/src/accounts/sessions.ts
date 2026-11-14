@@ -84,6 +84,21 @@ export class Sessions {
     if (ref.adminUserId) await this.db.update(sessions).set({ revokedAt: now }).where(and(eq(sessions.adminUserId, ref.adminUserId), isNull(sessions.revokedAt)));
   }
 
+  /**
+   * Incident response (PRD part 8 §3.5): end every open login of one side or
+   * both at once; everyone logs in again. Returns how many were ended.
+   */
+  async revokeKind(kind: "admin" | "family" | "all"): Promise<number> {
+    const now = this.clock.now();
+    const open = isNull(sessions.revokedAt);
+    const rows = await this.db
+      .update(sessions)
+      .set({ revokedAt: now })
+      .where(kind === "all" ? open : and(open, eq(sessions.kind, kind)))
+      .returning({ id: sessions.id });
+    return rows.length;
+  }
+
   async setChild(sessionId: string, childId: string | null): Promise<void> {
     await this.db.update(sessions).set({ childId }).where(eq(sessions.id, sessionId));
   }

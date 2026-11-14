@@ -135,3 +135,19 @@ describe("a family reaches only its own children", () => {
     await t.close();
   });
 });
+
+describe("incident response (PRD part 8 §3.5)", () => {
+  it("ends every open login of one side; the other side keeps working", async () => {
+    const t = await setup();
+    const a = await t.adminUser();
+    const f = await t.family("13900000003", [{ nickname: "丙", grade: 5 }]);
+    expect((await t.call("GET", "/v1/me", undefined, f.token)).statusCode).toBe(200);
+    expect(await t.services.sessions.revokeKind("family")).toBe(1);
+    expect((await t.call("GET", "/v1/me", undefined, f.token)).statusCode).toBe(401);
+    expect((await t.call("GET", "/v1/admin/me", undefined, a.token)).statusCode).toBe(200);
+    expect(await t.services.sessions.revokeKind("all")).toBe(1);
+    expect((await t.call("GET", "/v1/admin/me", undefined, a.token)).statusCode).toBe(401);
+    expect(await t.services.sessions.revokeKind("all")).toBe(0);
+    await t.close();
+  });
+});
