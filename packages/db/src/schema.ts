@@ -1243,6 +1243,45 @@ export const contentTodos = pgTable("content_todos", {
   createdAt: ts("created_at").notNull(),
 });
 
+/**
+ * 校准 (PRD part 7 §4; part 6 §4.1): sample works (no child data — the user's
+ * own examples), scored independently by several people and by candidate AI
+ * set-ups, to compare AI and human by rubric family before launch and after
+ * each season.
+ */
+export const calibSamples = pgTable("calib_samples", {
+  id: id(),
+  title: text("title").notNull(),
+  /** Rubric family A–E. */
+  family: text("family").notNull(),
+  taskTitle: text("task_title").notNull(),
+  taskBody: text("task_body"),
+  audience: text("audience"),
+  mediaKind: text("media_kind").notNull().default("text"),
+  /** The work's text, or the transcript of its video or audio. */
+  text: text("text").notNull(),
+  aiNote: text("ai_note"),
+  createdBy: text("created_by").notNull(),
+  createdAt: ts("created_at").notNull(),
+});
+
+export const calibScores = pgTable(
+  "calib_scores",
+  {
+    id: id(),
+    sampleId: uuid("sample_id").notNull().references(() => calibSamples.id),
+    /** human | ai */
+    kind: text("kind").notNull(),
+    /** An admin user id (human) or a run label "model · 提示词第 N 版" (ai). */
+    scorer: text("scorer").notNull(),
+    total: integer("total").notNull(),
+    dims: jsonb("dims").notNull(),
+    rubric: text("rubric").notNull(),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("calib_scores_one").on(t.sampleId, t.kind, t.scorer)],
+);
+
 /** Every AI call (append-only): input, output, model, version, time, cost. */
 export const aiCalls = pgTable(
   "ai_calls",

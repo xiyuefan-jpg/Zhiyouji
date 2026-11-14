@@ -82,6 +82,7 @@ export function ContentPage() {
           { key: "cards", label: "约束词条", children: <WarCards canEdit={me.role === "admin"} /> },
           { key: "daily", label: "每日任务模板", children: <DailyTemplates canEdit={me.role === "admin"} /> },
           { key: "rubrics", label: "评分族", children: <Rubrics canEdit={me.role === "admin"} /> },
+          { key: "calibration", label: "校准", children: <Calibration isAdmin={me.role === "admin"} /> },
           // part 7 §0: reviewers read the AI configuration and prompts, only admins change them
           { key: "ai", label: "AI 配置", children: <AiConfig canEdit={me.role === "admin"} /> },
         ]}
@@ -270,6 +271,184 @@ function DailyTemplates({ canEdit }: { canEdit: boolean }) {
           保存
         </Button>
       )}
+    </Space>
+  );
+}
+
+interface CalibSample {
+  id: string;
+  title: string;
+  family: string;
+  taskTitle: string;
+  taskBody: string | null;
+  audience: string | null;
+  mediaKind: string;
+  text: string;
+  rubric: { dims: { key: string; name: string; max: number; hint: string }[]; at50: string; at75: string };
+  mine: { total: number; dims: Record<string, number> } | null;
+}
+interface CalibReport {
+  goal: number;
+  families: { family: string; samples: number; scoredByPeople: number; people: number; peopleGap: number | null; ai: { label: string; compared: number; aiMinusPeople: number | null; absGap: number | null; withinGoal: boolean }[] }[];
+}
+
+/**
+ * 校准 (part 7 §4; part 6 §4.1): sample works, everyone scores them on their
+ * own, AI set-ups score them too; the report compares AI and people by family.
+ */
+function Calibration({ isAdmin }: { isAdmin: boolean }) {
+  const l = useLoad(() => request<{ samples: CalibSample[] }>("GET", "/v1/admin/calibration/samples"));
+  const rep = useLoad(() => (isAdmin ? request<CalibReport>("GET", "/v1/admin/calibration/report") : Promise.resolve(null)));
+  const [scoring, setScoring] = useState<CalibSample | null>(null);
+  const [dims, setDims] = useState<Record<string, number>>({});
+  const [adding, setAdding] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [form] = Form.useForm();
+  const [runForm] = Form.useForm();
+  const sum = Object.values(dims).reduce((a, b) => a + (b || 0), 0);
+  const saveScore = () =>
+    scoring &&
+    run(() => request("POST", `/v1/admin/calibration/samples/${scoring.id}/score`, { dims }), `已记 ${sum} 分`, () => {
+      setScoring(null);
+      l.reload();
+      rep.reload();
+    });
+  const add = async () => {
+    const v = await form.validateFields();
+    await run(() => request("POST", "/v1/admin/calibration/samples", v), "已加入", () => {
+      setAdding(false);
+      form.resetFields();
+      l.reload();
+    });
+  };
+  const runAi = async () => {
+    const v = await runForm.validateFields();
+    await run(
+      async () => {
+        const r = await request<{ scored: number; failed: string[] }>("POST", "/v1/admin/calibration/run", { label: v.label, ...(v.family ? { family: v.family } : {}), ...(v.model ? { model: v.model } : {}), ...(v.prompt ? { prompt: v.prompt } : {}) });
+        if (r.failed.length) message.warning(`${r.failed.length} 件没跑成：${r.failed[0]}`);
+      },
+      "AI 打完了",
+      () => {
+        setRunning(false);
+        rep.reload();
+      },
+    );
+  };
+  return (
+    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary">
+        用你手里的样例作品（以前赛季的，或者自己写的）：每个人各自打分，看不到别人的分；再用不同的模型和提示词让 AI 打。目标是 AI 和大家平均分的差距在 ±8 分以内。视频、音频请把讲的内容贴成文字。
+      </Typography.Paragraph>
+      <Space>
+        {isAdmin && <Button onClick={() => setAdding(true)}>加样例</Button>}
+        {isAdmin && (
+          <Button type="primary" disabled={!l.data?.samples.length} onClick={() => setRunning(true)}>
+            让 AI 打一遍
+          </Button>
+        )}
+      </Space>
+      <Table<CalibSample>
+        rowKey="id"
+        size="small"
+        pagination={false}
+        dataSource={l.data?.samples ?? []}
+        locale={{ emptyText: "还没有样例" }}
+        columns={[
+          { title: "样例", dataIndex: "title" },
+          { title: "评分族", dataIndex: "family" },
+          { title: "题目", dataIndex: "taskTitle" },
+          { title: "我的分", render: (_, r) => (r.mine ? r.mine.total : "—") },
+          { title: "", render: (_, r) => <Button size="small" onClick={() => (setDims(r.mine?.dims ?? Object.fromEntries(r.rubric.dims.map((d) => [d.key, 0]))), setScoring(r))}>{r.mine ? "改分" : "打分"}</Button> },
+        ]}
+      />
+      {rep.data && (
+        <Card size="small" title="AI 和人工的差距（按评分族）">
+          <Table
+            rowKey={(r) => `${r.family}-${r.label}`}
+            size="small"
+            pagination={false}
+            dataSource={rep.data.families.filter((f) => f.samples > 0).flatMap((f) => (f.ai.length ? f.ai : [null]).map((a) => ({ ...f, ...(a ?? { label: "（还没让 AI 打）", compared: 0, aiMinusPeople: null, absGap: null, withinGoal: false }) })))}
+            columns={[
+              { title: "评分族", dataIndex: "family" },
+              { title: "样例 / 有人打的", render: (_, r) => `${r.samples} / ${r.scoredByPeople}` },
+              { title: "打分的人", dataIndex: "people" },
+              { title: "人和人差", render: (_, r) => r.peopleGap ?? "—" },
+              { title: "AI 配置", dataIndex: "label" },
+              { title: "AI − 人（平均）", render: (_, r) => (r.aiMinusPeople === null ? "—" : `${r.aiMinusPeople > 0 ? "+" : ""}${r.aiMinusPeople}`) },
+              { title: "差距（绝对值）", render: (_, r) => (r.absGap === null ? "—" : <Typography.Text type={r.withinGoal ? "success" : "danger"}>{r.absGap}</Typography.Text>) },
+            ]}
+          />
+        </Card>
+      )}
+      <Modal open={!!scoring} width={760} title={scoring ? `打分：${scoring.title}` : ""} okText={`交 ${sum} 分`} cancelText="取消" onOk={() => void saveScore()} onCancel={() => setScoring(null)}>
+        {scoring && (
+          <Space direction="vertical" style={{ width: "100%" }}>
+            <Typography.Text strong>{scoring.taskTitle}</Typography.Text>
+            {scoring.taskBody && <Typography.Text type="secondary">{scoring.taskBody}</Typography.Text>}
+            <Typography.Text type="secondary">受众：{scoring.audience ?? "一个没学过这个知识的初中生或普通成年人"}</Typography.Text>
+            <Typography.Paragraph style={{ whiteSpace: "pre-wrap", maxHeight: 240, overflow: "auto", background: "#faf7f0", padding: 8 }}>{scoring.text}</Typography.Paragraph>
+            <Typography.Text type="secondary">
+              50 分：{scoring.rubric.at50}　75 分：{scoring.rubric.at75}
+            </Typography.Text>
+            {scoring.rubric.dims.map((d) => (
+              <Space key={d.key}>
+                <span style={{ width: 120, display: "inline-block" }}>
+                  {d.name}（{d.max}）
+                </span>
+                <InputNumber aria-label={`校准 ${d.key}`} min={0} max={d.max} value={dims[d.key] ?? 0} onChange={(v) => setDims({ ...dims, [d.key]: v ?? 0 })} />
+                <Typography.Text type="secondary">{d.hint}</Typography.Text>
+              </Space>
+            ))}
+          </Space>
+        )}
+      </Modal>
+      <Modal open={adding} width={720} title="加一件样例" okText="保存" cancelText="取消" onOk={() => void add()} onCancel={() => setAdding(false)}>
+        <Form form={form} layout="vertical" initialValues={{ family: "A", mediaKind: "text" }}>
+          <Form.Item name="title" label="样例名（自己认得出就行，不要写孩子的名字）" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Space>
+            <Form.Item name="family" label="评分族">
+              <Select style={{ width: 100 }} options={["A", "B", "C", "D", "E"].map((x) => ({ value: x, label: x }))} />
+            </Form.Item>
+            <Form.Item name="mediaKind" label="形式">
+              <Select style={{ width: 140 }} options={[{ value: "text", label: "文字" }, { value: "images", label: "图文" }, { value: "video", label: "视频（贴转写）" }, { value: "audio", label: "音频（贴转写）" }]} />
+            </Form.Item>
+          </Space>
+          <Form.Item name="taskTitle" label="题目" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="taskBody" label="题目说明">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="audience" label="受众">
+            <Input placeholder="一个没学过这个知识的初中生或普通成年人" />
+          </Form.Item>
+          <Form.Item name="text" label="作品的文字或转写" rules={[{ required: true }]}>
+            <Input.TextArea rows={8} />
+          </Form.Item>
+          <Form.Item name="aiNote" label="人机协作说明">
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
+      <Modal open={running} title="让 AI 打一遍" okText="开始" cancelText="取消" onOk={() => void runAi()} onCancel={() => setRunning(false)}>
+        <Form form={runForm} layout="vertical">
+          <Form.Item name="label" label="这次叫什么（报告里按它分开）" rules={[{ required: true }]}>
+            <Input placeholder="例如：通义千问 VL · 提示词第 2 版" />
+          </Form.Item>
+          <Form.Item name="family" label="只跑一个评分族（不选 = 全部）">
+            <Select allowClear options={["A", "B", "C", "D", "E"].map((x) => ({ value: x, label: x }))} />
+          </Form.Item>
+          <Form.Item name="model" label="模型（不填 = 正在用的）">
+            <Input />
+          </Form.Item>
+          <Form.Item name="prompt" label="提示词草稿（不填 = 正在用的版本）">
+            <Input.TextArea rows={4} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Space>
   );
 }

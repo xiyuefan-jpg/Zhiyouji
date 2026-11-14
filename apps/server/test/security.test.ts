@@ -66,6 +66,8 @@ const REVIEWER = new Set([
   "GET /v1/admin/rubrics",
   "GET /v1/admin/content/war-cards",
   "GET /v1/admin/content/todos",
+  "GET /v1/admin/calibration/samples",
+  "POST /v1/admin/calibration/samples/:id/score",
   "GET /v1/admin/content/daily-templates",
 ]);
 

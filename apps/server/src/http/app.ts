@@ -38,6 +38,8 @@ import { FakeAiDaily, FakeAiSupply, type AiDailyReviewer, type AiSupplyScorer } 
 import { Supply } from "../season/supply.js";
 import { supplyAdminRoutes } from "./supplyAdminRoutes.js";
 import { todoRoutes } from "./todoRoutes.js";
+import { calibrationRoutes } from "./calibrationRoutes.js";
+import { Calibration } from "../content/calibration.js";
 import { ContentTodos } from "../content/todos.js";
 import { WarWords } from "../season/warWords.js";
 import { Home } from "../season/todo.js";
@@ -103,6 +105,7 @@ export interface Services {
   smsDispatcher: SmsDispatcher;
   emailDispatcher: EmailDispatcher;
   todos: ContentTodos;
+  calibration: Calibration;
   /** The email provider in use (tests read the fake's outbox). */
   email: EmailProvider;
   familyAuth: FamilyAuth;
@@ -225,6 +228,7 @@ export function buildServices(d: AppDeps): Services {
     smsDispatcher: new SmsDispatcher(d.db, d.clock, d.cfg, d.sms),
     emailDispatcher: new EmailDispatcher(d.db, d.clock, email),
     todos: new ContentTodos(d.db, d.clock, notifier),
+    calibration: new Calibration(d.db, d.clock, gateway.wrapScorer(ai)),
     email,
     familyAuth: new FamilyAuth(d.cfg, sessions, family),
     adminAuth: new AdminAuth(d.cfg, sessions, admin),
@@ -276,6 +280,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   aiRoutes(app, services.gateway, services.scoring, services.daily, services.adminAuth);
   supplyAdminRoutes(app, services.supply, services.adminAuth);
   todoRoutes(app, services.todos, services.adminAuth);
+  calibrationRoutes(app, services.calibration, services.adminAuth);
   exportRoutes(app, d.db, services.admin, services.adminAuth);
   app.get("/v1/journal/summaries", async (req) => services.summaries.list((await services.familyAuth.child(req)).child.id));
   app.get("/v1/season-reviews", async (req) => services.summaries.seasonReviewsOf((await services.familyAuth.child(req)).child.id));
