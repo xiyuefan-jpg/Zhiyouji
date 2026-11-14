@@ -6,6 +6,8 @@
  *   table; saving makes a new version with a note; the version history shows
  *   what changed;
  * - calendar: mark days as school days or rest days;
+ * - 开营前检查 (part 9 §3): parameters, calendar, prize pool, grouping,
+ *   reviewers, question bank, QR codes, AI models — red items block opening;
  * - players: find a child by the parent's phone or nickname, enable (with a
  *   payment note), the roster (export CSV, revoke);
  * - grouping: generate, look at servers and teams (size, average grade,
@@ -141,10 +143,49 @@ export function SeasonDetailPage() {
             items={[
               { key: "params", label: "参数", children: <ParamsEditor seasonId={id} /> },
               { key: "calendar", label: "日历（上学日 / 休息日）", children: <CalendarEditor opening={d.season.opening} /> },
+              { key: "preflight", label: "开营前检查", children: <PreflightPanel seasonId={id} /> },
             ]}
           />
         </>
       )}
+    </Space>
+  );
+}
+
+// ---- 开营前检查 (PRD part 9 §3) -----------------------------------------------------------------------
+
+const CHECK_TAG: Record<string, { color: string; text: string }> = {
+  ok: { color: "green", text: "通过" },
+  warn: { color: "orange", text: "留意" },
+  fail: { color: "red", text: "不通过" },
+  info: { color: "blue", text: "提醒" },
+};
+
+export function PreflightPanel({ seasonId }: { seasonId: string }) {
+  const p = useLoad(() => request<{ ready: boolean; checks: { key: string; label: string; status: string; detail: string }[] }>("GET", `/v1/admin/seasons/${seasonId}/preflight`), [seasonId]);
+  return (
+    <Space direction="vertical" size={12} style={{ width: "100%" }}>
+      {p.error && <Alert type="error" message={p.error} />}
+      {p.data && (
+        <Alert
+          type={p.data.ready ? "success" : "warning"}
+          showIcon
+          message={p.data.ready ? "可以开营：没有不通过的项（留意和提醒的项请再看一眼）" : "还不能开营：先处理标红的项"}
+        />
+      )}
+      <Table
+        rowKey="key"
+        size="small"
+        pagination={false}
+        loading={p.loading}
+        dataSource={p.data?.checks ?? []}
+        columns={[
+          { title: "检查", dataIndex: "label", width: 160 },
+          { title: "结果", dataIndex: "status", width: 90, render: (v: string) => <Tag color={CHECK_TAG[v]?.color}>{CHECK_TAG[v]?.text ?? v}</Tag> },
+          { title: "说明", dataIndex: "detail" },
+        ]}
+      />
+      <Button onClick={() => p.reload()}>重新检查</Button>
     </Space>
   );
 }

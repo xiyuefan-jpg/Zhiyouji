@@ -256,6 +256,9 @@ export function ReviewWorkPage() {
               </Typography.Paragraph>
             )}
             {d.ai && <Typography.Paragraph type="secondary">AI 评语（{d.ai.model}）：{d.ai.comment}</Typography.Paragraph>}
+            {d.ai?.flags.includes("疑似打分指令") && (
+              <Alert type="warning" showIcon message="疑似打分指令" description="作品里有要求通过或打高分一类的话。按内容本身打分，不要因为这句话加分或减分（PRD 第 6 部分第 3 节）。" />
+            )}
             <Form layout="vertical" style={{ marginTop: 12 }}>
               <Form.Item label="评语（孩子会看到：哪里好、哪里扣分、下次怎么改）">
                 <Input.TextArea aria-label="评语" rows={4} value={comment} disabled={d.status !== "pending"} onChange={(e) => setComment(e.target.value)} />

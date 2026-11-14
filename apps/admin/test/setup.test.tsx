@@ -41,6 +41,12 @@ describe("admin console: 赛季 and 玩家与分组 (part 7 §2–§3)", () => {
     await user.click(screen.getByRole("button", { name: /保存为新版本（改了 1 项）/ }));
     await waitFor(async () => expect((await be.services.seasons.params(s.id)).params.items.zijin.pts).toBe(6));
 
+    // 开营前检查: not ready yet, and says why
+    await user.click(screen.getByRole("tab", { name: "开营前检查" }));
+    expect(await screen.findByText(/还不能开营/)).toBeTruthy();
+    expect(await screen.findByText("还没生成分组")).toBeTruthy();
+    expect(screen.getByText(/和默认值不同的 1 项：items.zijin.pts/)).toBeTruthy();
+
     // 玩家与分组
     await user.click(screen.getByText("玩家与分组 →"));
     await user.type(await screen.findByPlaceholderText("家长手机号或孩子昵称"), "小乌龟{Enter}");
