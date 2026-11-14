@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { totpAt, TOTP_STEP_MS } from "@zhiyouji/server";
+import { opLog } from "@zhiyouji/db";
 import { App } from "../src/App";
 import { AuthProvider } from "../src/auth";
 import { dualTime } from "../src/time";
@@ -85,6 +86,12 @@ describe("admin console", () => {
     await user.click(within(screen.getByRole("menu")).getByText("查看记录"));
     expect(await screen.findByText("W9")).toBeTruthy();
     expect(screen.getByText("下载")).toBeTruthy();
+
+    // the operation log lists changes: who, what, before and after, why (part 7 §7)
+    await be.db.insert(opLog).values({ actor: `admin:${boss.id}`, action: "intervene_adjust_ledger", object: "server:S1", before: null, after: { amount: 15 }, reason: "补发军需" });
+    await user.click(within(screen.getByRole("menu")).getByText("操作日志"));
+    expect(await screen.findByText("补发军需")).toBeTruthy();
+    expect(screen.getByText("intervene_adjust_ledger")).toBeTruthy();
 
     // 31 minutes without activity: the next request sends the person back to login
     be.clock.advance(31 * 60_000);

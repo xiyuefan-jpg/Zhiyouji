@@ -5,13 +5,13 @@ import { Spin } from "antd";
 import { useAdmin, useAuth } from "./auth";
 import { InvitePage, LoginPage } from "./pages/Auth";
 import { ConsoleLayout, NAV } from "./pages/Layout";
-import { ComingPage, DashboardPage, NotificationsPage, UsersPage, ViewLogPage } from "./pages/Pages";
+import { ComingPage, DashboardPage, NotificationsPage, OpLogPage, UsersPage, ViewLogPage } from "./pages/Pages";
 import { ReviewersPage, ReviewPage, ReviewWorkPage, WorkAdminPage } from "./pages/ReviewPages";
 import { MonitorPage } from "./pages/MonitorPages";
 import { PlayersPage, SeasonDetailPage, SeasonsPage } from "./pages/SeasonSetupPages";
 import { ContentPage, FinalPage, OpsPage } from "./pages/ContentOpsPages";
 
-const BUILT = new Set(["/", "/users", "/view-log", "/review", "/reviewers", "/monitor", "/season", "/players", "/content", "/ops", "/final"]);
+const BUILT = new Set(["/", "/users", "/view-log", "/op-log", "/review", "/reviewers", "/monitor", "/season", "/players", "/content", "/ops", "/final"]);
 
 export function App() {
   return (
@@ -44,6 +44,7 @@ function Console() {
         <Route path="notifications" element={<NotificationsPage />} />
         {me.role === "admin" && <Route path="users" element={<UsersPage />} />}
         {me.role === "admin" && <Route path="view-log" element={<ViewLogPage />} />}
+        {me.role === "admin" && <Route path="op-log" element={<OpLogPage />} />}
         <Route path="review" element={<ReviewPage />} />
         <Route path="review/:id" element={<ReviewWorkPage />} />
         <Route path="reviews/:id" element={<ReviewWorkPage />} />

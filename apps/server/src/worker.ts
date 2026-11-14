@@ -21,6 +21,7 @@ import type { Showcase } from "./season/showcase.js";
 import type { Summaries } from "./daily/summaries.js";
 import type { MediaPipeline } from "./media.js";
 import type { TagSuggestions } from "./daily/tagSuggestions.js";
+import type { SeasonControl } from "./season/control.js";
 
 /** Season states in which planned events run (part 4 §4). */
 export const LIVE_SEASON_STATES = ["grouped", "running", "big_battle", "final_pending"];
@@ -62,6 +63,7 @@ export class Worker {
     private readonly summaries?: Summaries,
     private readonly media?: MediaPipeline,
     private readonly tagSuggestions?: TagSuggestions,
+    private readonly control?: SeasonControl,
   ) {}
 
   /** One pass. Skips if the previous pass is still running. */
@@ -126,13 +128,19 @@ export class Worker {
           console.error("report failed", id, err);
         }
       }
-      try {
-        await this.ops?.publishDue();
-        await this.summaries?.runDue();
-        await this.tagSuggestions?.runDue();
-        await this.ops?.qrReminders();
-      } catch (err) {
-        console.error("announcements / QR reminders failed", err);
+      // each job on its own, so one failing does not skip the others this tick
+      for (const [name, job] of [
+        ["announcements", () => this.ops?.publishDue()],
+        ["summaries", () => this.summaries?.runDue()],
+        ["tag suggestions", () => this.tagSuggestions?.runDue()],
+        ["QR reminders", () => this.ops?.qrReminders()],
+        ["archiving", () => this.control?.archiveDue()],
+      ] as const) {
+        try {
+          await job();
+        } catch (err) {
+          console.error(`${name} failed`, err);
+        }
       }
       try {
         // new uploads: speech-to-text, key frames, document text (before the AI needs them)

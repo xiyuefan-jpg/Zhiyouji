@@ -194,10 +194,22 @@ export class DailyTasks {
         await this.media?.ensure([s.explainFileId]);
         transcript = (await this.db.select({ t: files.transcript }).from(files).where(eq(files.id, s.explainFileId)))[0]?.t ?? null;
       }
+      // the evidence pictures go to the model too: "讲解和证据是同一件事" (part 6 §3)
+      const now0 = this.now();
+      const evidenceRows = evidence.length ? await this.db.select().from(files).where(inArray(files.id, evidence)) : [];
+      const evidenceImages = await Promise.all(
+        evidence
+          .map((id) => evidenceRows.find((f) => f.id === id))
+          .filter((f): f is NonNullable<typeof f> => !!f && f.kind === "image" && f.status !== "deleted")
+          .map((f) => this.storage.downloadUrl(f.storageKey, now0)),
+      );
       const r = await this.ai.reviewDaily({
         submissionId: s.id,
         templateId: s.templateId,
         templateName: tpl.name,
+        templatePrompt: tpl.prompt,
+        evidenceExpected: tpl.evidence,
+        evidenceImages,
         grade: s.grade,
         explainText: s.explainText,
         transcript,
@@ -369,6 +381,12 @@ export class DailyTasks {
       grain: s!.grain,
       counted: s!.counted,
       card: card ? { id: card.id, title: card.title, summary: card.summary, tag: card.tag } : null,
+      // what the child handed in, so "改一改再交" starts from it (part 5 C2 "可以修改后重交")
+      explainKind: s!.explainKind,
+      explainText: s!.explainText,
+      aiNote: s!.aiNote,
+      noAi: s!.noAi,
+      evidenceFileIds: s!.evidenceFileIds as string[],
     };
   }
 

@@ -86,6 +86,17 @@ export interface ViewLogEntry {
   at: string;
 }
 
+export interface OpLogEntry {
+  id: string;
+  actor: string;
+  action: string;
+  object: string | null;
+  before: unknown;
+  after: unknown;
+  reason: string | null;
+  at: string;
+}
+
 export const api = {
   login: (email: string, password: string, totp: string) =>
     request<{ token: string; expiresAt: string; idleMinutes: number; me: AdminMe }>("POST", "/v1/admin/auth/login", { email, password, totp }),
@@ -100,6 +111,10 @@ export const api = {
   viewLog: (q: { adminUserId?: string; childId?: string; from?: string; to?: string; limit?: number }) => {
     const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== "") as [string, string][]).toString();
     return request<{ entries: ViewLogEntry[] }>("GET", `/v1/admin/view-log${qs ? `?${qs}` : ""}`);
+  },
+  opLog: (q: { actor?: string; action?: string; object?: string; from?: string; to?: string; limit?: number }) => {
+    const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])).toString();
+    return request<{ entries: OpLogEntry[] }>("GET", `/v1/admin/op-log${qs ? `?${qs}` : ""}`);
   },
   messages: (before?: string) => request<{ messages: MessageView[] }>("GET", `/v1/admin/messages${before ? `?before=${encodeURIComponent(before)}` : ""}`),
   unreadCount: () => request<{ unread: number }>("GET", "/v1/admin/messages/unread-count"),

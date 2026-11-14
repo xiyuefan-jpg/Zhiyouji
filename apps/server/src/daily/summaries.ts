@@ -34,6 +34,8 @@ export function lastPeriods(today: string): { week: { from: string; to: string }
   return { week: { from: lastMonday, to: thisMonday }, month: { from: `${label}-01`, to: `${y}-${String(m).padStart(2, "0")}-01`, label } };
 }
 
+const SUMMARY_RETRY_MS = 10 * 60_000;
+
 export class Summaries {
   constructor(
     private readonly db: Db,
@@ -69,7 +71,13 @@ export class Summaries {
     return n;
   }
 
+  /** After a failed AI call, wait before asking again (per kind and period). */
+  private retryAt = new Map<string, number>();
+
   private async make(kind: "week" | "month", period: string, from: string, to: string): Promise<number> {
+    const now = +this.clock.now();
+    if ((this.retryAt.get(`${kind}:${period}`) ?? 0) > now) return 0;
+    const failed: string[] = [];
     const cards = await this.db.select().from(knowledgeCards).where(and(gte(knowledgeCards.day, from), lt(knowledgeCards.day, to), eq(knowledgeCards.visible, true)));
     const byChild = new Map<string, Card[]>();
     for (const c of cards) byChild.set(c.childId, [...(byChild.get(c.childId) ?? []), c]);
@@ -89,7 +97,14 @@ export class Summaries {
       const [kid] = await this.db.select().from(children).where(eq(children.id, childId));
       if (!kid || kid.status !== "active") continue;
       const crossing = await this.crossingOf(list);
-      const ai = await this.ai.summarize({ kind, grade: kid.grade, cards: list.map((c) => ({ title: c.title, summary: c.summary, tag: c.tag, crossing: crossing.get(c.submissionId) ?? null })) });
+      let ai: { model: string; text: string };
+      try {
+        ai = await this.ai.summarize({ kind, grade: kid.grade, cards: list.map((c) => ({ title: c.title, summary: c.summary, tag: c.tag, crossing: crossing.get(c.submissionId) ?? null })) });
+      } catch (err) {
+        // One child's failure does not hold up the others; this child is tried again later.
+        failed.push(String((err as Error).message ?? err));
+        continue;
+      }
       const [row] = await this.db
         .insert(childSummaries)
         .values({ childId, kind, period, content: { text: ai.text, model: ai.model, from, to, ...this.stats(list, crossing) }, createdAt: this.clock.now() })
@@ -104,6 +119,16 @@ export class Summaries {
         body: ai.text,
         link: `/journal/summaries/${row.id}`,
         dedupeKey: `summary:${kind}:${period}`,
+      });
+    }
+    if (failed.length) {
+      this.retryAt.set(`${kind}:${period}`, now + SUMMARY_RETRY_MS);
+      await this.notifier.notifyAdmins({
+        kind: "ai_failed",
+        title: kind === "week" ? "周小结生成失败" : "月报告生成失败",
+        body: `${period} 有 ${failed.length} 个孩子的${kind === "week" ? "周小结" : "月报告"}没生成出来（${failed[0]}），系统 10 分钟后再试。`,
+        dedupeKey: `summary_failed:${kind}:${period}`,
+        roles: ["admin"],
       });
     }
     return n;

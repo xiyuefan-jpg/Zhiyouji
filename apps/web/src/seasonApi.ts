@@ -222,7 +222,8 @@ export const seasonApi = {
   ranking: () =>
     request<{ final: { poolYuan: number } | null; ranking: { rank: number; teamId: string; name: string; points: number; lands: number; mine: boolean; scholarshipYuan: number | null }[] }>("GET", "/v1/season/ranking"),
   team: () => request<TeamView>("GET", "/v1/season/team"),
-  ledger: (currency: "grain" | "points") => request<{ balance: number; entries: { id: string; amount: number; source: string; note: string | null; at: number }[] }>("GET", `/v1/season/ledger?currency=${currency}`),
+  ledger: (currency: "grain" | "points") =>
+    request<{ balance: number; entries: { id: string; amount: number; source: string; note: string | null; detail?: string | null; reverses?: string | null; at: number }[] }>("GET", `/v1/season/ledger?currency=${currency}`),
   claim: (role: "leader" | "deputy") => request<SeasonMe>("POST", "/v1/season/roles/claim", { role }),
   quote: (landId: string) => request<Quote>("GET", `/v1/season/lands/${landId}/quote`),
   attack: (landId: string) => request<{ contest: { id: string; deadline: number; paid: number } }>("POST", "/v1/season/contests", { landId }),

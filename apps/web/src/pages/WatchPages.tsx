@@ -231,22 +231,57 @@ function WorkList({ serverId, works }: { serverId: string; works: ShowWork[] }) 
 export function ShowcasePage() {
   const { serverId = "" } = useParams();
   const [kind, setKind] = useState<string>("");
-  const q = kind ? `?kind=${kind}` : "";
+  const [landId, setLandId] = useState<string>("");
+  const [week, setWeek] = useState<string>("");
+  const map = useLoad(() => request<{ lands: { id: string; name: string }[] }>("GET", `/v1/watch/${serverId}/map`), [serverId]);
+  // F5 "按地块和周次筛选"
+  const params = new URLSearchParams();
+  if (kind) params.set("kind", kind);
+  if (kind === "contest" && landId) params.set("landId", landId);
+  if (kind === "war" && week) params.set("week", week);
+  const q = params.toString() ? `?${params}` : "";
   const data = useLoad(() => request<{ works: ShowWork[] }>("GET", `/v1/watch/${serverId}/showcase${q}`), [serverId, q]);
   return (
     <div className="page">
       <PageHeader title="作品展" />
       <Selector
-        columns={4}
+        columns={5}
         options={[
           { label: "全部", value: "" },
           { label: "争夺", value: "contest" },
           { label: "周战争", value: "war" },
-          { label: "大团战", value: "line" },
+          { label: "战线", value: "line" },
+          { label: "主战场", value: "main" },
         ]}
         value={[kind]}
-        onChange={(v) => setKind(v[0] ?? "")}
+        onChange={(v) => {
+          setKind(v[0] ?? "");
+          setLandId("");
+          setWeek("");
+        }}
       />
+      {kind === "contest" && map.data && (
+        <div style={{ marginTop: 8 }}>
+          <Selector
+            columns={4}
+            aria-label="按地块"
+            options={[{ label: "全部地块", value: "" }, ...map.data.lands.map((l) => ({ label: l.name, value: l.id }))]}
+            value={[landId]}
+            onChange={(v) => setLandId(v[0] ?? "")}
+          />
+        </div>
+      )}
+      {kind === "war" && (
+        <div style={{ marginTop: 8 }}>
+          <Selector
+            columns={5}
+            aria-label="按周次"
+            options={[{ label: "全部", value: "" }, ...[1, 2, 3, 4].map((w) => ({ label: `第 ${w} 周`, value: String(w) }))]}
+            value={[week]}
+            onChange={(v) => setWeek(v[0] ?? "")}
+          />
+        </div>
+      )}
       <div style={{ marginTop: 12 }}>{data.data ? <WorkList serverId={serverId} works={data.data.works} /> : <div className="hint">正在加载……</div>}</div>
     </div>
   );

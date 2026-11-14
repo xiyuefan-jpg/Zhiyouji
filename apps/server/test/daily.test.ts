@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import { dailyReviews, messages } from "@zhiyouji/db";
-import type { FakeAiDaily } from "../src/index.js";
+import { and, eq } from "drizzle-orm";
+import { dailyReviews, messages, plannedEvents } from "@zhiyouji/db";
+import type { FakeAiDaily, FakeAiSummarizer } from "../src/index.js";
 import { bj, setup } from "./helpers.js";
 import { contestSetup } from "./seasonHelpers.js";
 
@@ -41,6 +41,11 @@ describe("每日任务 and 修行日志 (part 5 C1–C7; part 6 T4)", () => {
     expect(r).toMatchObject({ status: "passed", counted: null, grain: null, failReason: null });
     expect(r.feedbackGood).toContain("做得好的");
     expect(r.card.tag).toBe("物理与天文/力与运动");
+    // the model sees the evidence picture and what the template asks for (part 6 T4)
+    const req = (t.services.aiDaily as FakeAiDaily).last!;
+    expect(req).toMatchObject({ templatePrompt: "今天你用 AI 学会了一个什么以前不知道的东西？", evidenceExpected: "和 AI 对话的截图", evidenceCount: 1 });
+    expect(req.evidenceImages).toHaveLength(1);
+    expect((await t.app.inject({ method: "GET", url: req.evidenceImages![0]! })).body).toBe("jpeg");
     const [rev] = await t.db.select().from(dailyReviews);
     expect(rev).toMatchObject({ passed: true, expression: 3, aiLevel: 2, difficulty: 3, crossing: 1, length: [...TEXT].length });
     const msg = (await k.call("GET", "/v1/messages")).json().messages[0];
@@ -107,6 +112,27 @@ describe("每日任务 and 修行日志 (part 5 C1–C7; part 6 T4)", () => {
     await t.close();
   });
 
+  it("the participation award waits for a Sunday-evening task still under review (part 3 §7: it counts for the day it was handed in)", async () => {
+    const t = await contestSetup();
+    t.clock.set(bj("2027-02-14", 23));
+    await t.services.scheduler.runDue(t.serverId);
+    const ai = t.services.aiDaily as FakeAiDaily;
+    ai.failDaily = true;
+    const pic = await picture(t, t.a1api as unknown as Call);
+    expect((await t.a1api("POST", "/v1/daily/submissions", { templateId: 1, evidenceFileIds: [pic], explain: { kind: "text", text: TEXT }, aiNote: "问了 AI" })).json().status).toBe("reviewing");
+    const award = async () => (await t.db.select().from(plannedEvents).where(and(eq(plannedEvents.serverId, t.serverId), eq(plannedEvents.key, "participation_award:1"))))[0]!.status;
+    t.clock.set(bj("2027-02-15", 0, 5));
+    await t.services.scheduler.runDue(t.serverId);
+    expect(await award()).toBe("pending");
+    ai.failDaily = false;
+    await t.services.daily.runDue();
+    await t.services.scheduler.runDue(t.serverId);
+    expect(await award()).toBe("done");
+    const st = await t.services.store.state(t.serverId);
+    expect(st.taskPasses.find((x) => x.childId === t.a1)).toMatchObject({ week: 1 });
+    await t.close();
+  });
+
   it("AI keeps failing: retries, '土地公有点忙' after 10 minutes, exception queue after 2 hours, a reviewer decides", async () => {
     const t = await setup(bj("2027-03-10", 16));
     const ai = t.services.aiDaily as FakeAiDaily;
@@ -157,6 +183,30 @@ describe("每日任务 and 修行日志 (part 5 C1–C7; part 6 T4)", () => {
     expect(await t.services.summaries.runDue()).toBe(1);
     expect((await k.call("GET", "/v1/journal/summaries")).json().summaries[0]).toMatchObject({ kind: "month", period: "2027-03" });
     expect((await k.call("GET", "/v1/messages")).json().messages[0].title).toBe("你的月报告来了");
+    await t.close();
+  });
+
+  it("one child's summary failing does not hold up the others; it is tried again 10 minutes later and the admins are told", async () => {
+    const t = await setup(bj("2027-03-10", 16));
+    const k = await kid(t);
+    const f2 = await t.family("13500000009", [{ nickname: "小风", grade: 7 }]);
+    await t.call("POST", "/v1/session/child", { childId: f2.childIds[0] }, f2.token);
+    const k2: Call = (m, url, body) => t.call(m, url, body, f2.token);
+    for (const call of [k.call, k2]) {
+      const pic = await picture(t, call);
+      await call("POST", "/v1/daily/submissions", { templateId: 1, evidenceFileIds: [pic], explain: { kind: "text", text: TEXT }, aiNote: "问了 AI" });
+    }
+    await t.adminUser();
+    const ai = t.services.aiSummary as FakeAiSummarizer;
+    ai.failGrades.add(7);
+    t.clock.set(bj("2027-03-15", 8));
+    expect(await t.services.summaries.runDue()).toBe(1);
+    expect((await t.db.select().from(messages)).filter((m) => m.type === "ai_failed").map((m) => m.title)).toContain("周小结生成失败");
+    ai.failGrades.clear();
+    t.clock.advance(5 * 60_000);
+    expect(await t.services.summaries.runDue()).toBe(0); // still waiting
+    t.clock.advance(6 * 60_000);
+    expect(await t.services.summaries.runDue()).toBe(1);
     await t.close();
   });
 

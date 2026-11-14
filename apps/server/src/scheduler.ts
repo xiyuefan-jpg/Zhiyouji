@@ -8,11 +8,14 @@
  * database first. Pauses shift every later shiftable event by the paused time.
  */
 
-import { and, asc, eq, lte } from "drizzle-orm";
-import { plannedEvents, seasons, servers, type Db } from "@zhiyouji/db";
-import type { AuctionBid, SeasonEvent } from "@zhiyouji/engine";
+import { and, asc, eq, gte, lt, lte } from "drizzle-orm";
+import { dailySubmissions, plannedEvents, seasons, servers, type Db } from "@zhiyouji/db";
+import { weekEnd, type AuctionBid, type SeasonEvent } from "@zhiyouji/engine";
 import type { Clock } from "./clock.js";
 import type { SeasonStore } from "./seasonStore.js";
+
+/** The participation award waits at most this long for tasks still under review (§7). */
+const AWARD_MAX_WAIT = 135 * 60_000;
 
 const STATUS_STEPS: Record<string, { from: string; to: string }> = {
   publish_groups: { from: "grouped", to: "running" },
@@ -78,6 +81,7 @@ export class Scheduler {
         await this.rowDone(serverId, row.kind, row.key);
         continue;
       }
+      if (engineEvent === "participation_award" && (await this.awardWaits(serverId, row, +now))) continue;
       if (engineEvent === "close_epic_auction") {
         report.ran.push(await this.closeEpicAuctions(serverId, row));
         continue;
@@ -102,6 +106,24 @@ export class Scheduler {
       }
     }
     return report;
+  }
+
+  /**
+   * §7: a task counts for the day it was handed in, so a Sunday-evening task still being reviewed
+   * at Monday 00:00 must be in the award. Wait while any task handed in that week is under review
+   * (the AI retries for up to 2 hours, part 6 §5), then run.
+   */
+  private async awardWaits(serverId: string, row: typeof plannedEvents.$inferSelect, now: number): Promise<boolean> {
+    if (now - +row.runAt >= AWARD_MAX_WAIT) return false;
+    const week = Number((row.params as { week?: number }).week);
+    const st = await this.store.state(serverId);
+    const end = weekEnd(st, week);
+    const [r] = await this.db
+      .select({ id: dailySubmissions.id })
+      .from(dailySubmissions)
+      .where(and(eq(dailySubmissions.status, "reviewing"), gte(dailySubmissions.submittedAt, new Date(end - 7 * 86_400_000)), lt(dailySubmissions.submittedAt, new Date(end))))
+      .limit(1);
+    return !!r;
   }
 
   /**

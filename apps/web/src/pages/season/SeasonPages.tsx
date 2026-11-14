@@ -449,6 +449,7 @@ export function LedgerPage() {
               <div key={e.id} className="row" style={{ padding: "6px 0" }}>
                 <div className="grow">
                   <div>{SOURCE_TEXT[e.source] ?? e.source}</div>
+                  {e.detail && <div className="hint">{e.detail}</div>}
                   <div className="hint" style={{ fontSize: 12 }}>
                     {shortTime(new Date(e.at).toISOString())}
                   </div>

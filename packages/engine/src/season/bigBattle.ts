@@ -64,9 +64,6 @@ export function linesPublishedAt(s: SeasonState): Instant {
   return afterPauses(s, publicationTime(dateOfSeasonDay(s.opening, s.params.time.bigBattleStartDay + 1), "morning", s.params, s.calendar));
 }
 
-/** 调兵符 window: 12 hours after the lines are published (§13.4). */
-export const DIAOBING_HOURS = 12;
-
 export function battleDeadline(s: SeasonState): Instant {
   return afterPauses(s, deadlineOn(dateOfSeasonDay(s.opening, s.params.time.seasonDays), s.params));
 }
@@ -196,7 +193,7 @@ export function useBattleItem(input: SeasonState, e: UseBattleItem): Result<Batt
       if (!bb.final) return { ok: false, refusal: "not_locked" };
       const from = linesPublishedAt(s);
       if (e.at < from) return { ok: false, refusal: "too_early" };
-      if (e.at >= from + DIAOBING_HOURS * HOUR) return { ok: false, refusal: "too_late" };
+      if (e.at >= from + s.params.items.diaobing.hours * HOUR) return { ok: false, refusal: "too_late" };
       const camp = campOf(bb, e.teamId)!;
       const lines = bb.final[camp];
       const to = e.line;

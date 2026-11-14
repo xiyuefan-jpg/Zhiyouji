@@ -131,6 +131,8 @@ export interface SeasonParams {
     qiankun: { win: number; lose: number };
     bagua: { dailyBonus: number; lastDay: number };
     qibao: { ptsEach: number };
+    /** 调兵符: may be used this many hours after the big-battle lines are published (§13.4). */
+    diaobing: { hours: number };
     /** Item ids switched off by the admin. */
     disabled: string[];
   };
@@ -143,6 +145,8 @@ export interface SeasonParams {
   };
   final: {
     grainPerPoint: number;
+    /** The season is archived (read only) this many days after the final settlement (§2, §15). */
+    archiveAfterDays: number;
   };
   scholarship: {
     rankDecay: number;
@@ -222,10 +226,11 @@ export const DEFAULT_PARAMS: SeasonParams = {
     qiankun: { win: 12, lose: -8 },
     bagua: { dailyBonus: 1.5, lastDay: 28 },
     qibao: { ptsEach: 3 },
+    diaobing: { hours: 12 },
     disabled: [],
   },
   bigBattle: { lines8: [10, 15, 20, 25], lines6: [10, 18, 25], seizeDays: 5, noLandCompFactor: 0.8, mainWin: 12 },
-  final: { grainPerPoint: 30 },
+  final: { grainPerPoint: 30, archiveAfterDays: 30 },
   scholarship: { rankDecay: 0.72, scoreExponent: 1.5, rankShare: 0.5 },
 };
 

@@ -23,6 +23,9 @@ import { refuse, type PlayCtx } from "./play.js";
 
 const HOUR = 3_600_000;
 export const SUPPLY_REMINDER_HOURS = 3;
+const MIN = 60_000;
+const SUPPLY_RETRY_WAITS = [1, 2, 5, 10, 15, 30].map((m) => m * MIN);
+const SUPPLY_GIVE_UP_AFTER = 120 * MIN;
 
 interface SupplyWindow {
   supplyId: string;
@@ -175,53 +178,76 @@ export class Supply {
         });
         reminded += r.messages;
       }
-      if (now >= w.deadline && !st.done.includes(`supply:${w.supplyId}`)) {
-        await this.settle(serverId, w);
-        settled++;
-      }
+      if (now >= w.deadline && !st.done.includes(`supply:${w.supplyId}`) && (await this.settle(serverId, w))) settled++;
     }
     return { reminded, settled };
   }
 
-  private async settle(serverId: string, w: SupplyWindow): Promise<void> {
+  /** AI answers kept between retries (one supply task, one team). */
+  private scored = new Map<string, { quality: number; summary: number; model: string; comment: string | null }>();
+  /** When to ask the AI again after a failure, per supply task (part 6 §5: retry, then fallback, then a person). */
+  private nextTry = new Map<string, { at: number; attempts: number }>();
+
+  /**
+   * Score every team with the AI and pay out (part 3 §12). When the AI fails the task waits and
+   * tries again (1, 2, 5, 10, 15, 30 … minutes); after 2 hours it settles on participation alone
+   * and tells the admins, who can add points by hand (人工干预). Returns whether it settled.
+   */
+  private async settle(serverId: string, w: SupplyWindow): Promise<boolean> {
+    const now = this.now();
+    const key = `${serverId}:${w.supplyId}`;
+    const wait = this.nextTry.get(key);
+    if (wait && now < wait.at) return false;
     const st = await this.store.state(serverId);
     const entries = await this.latest(serverId, w.supplyId);
     const task = supplyTask(w.supplyId);
+    const giveUp = now - w.deadline >= SUPPLY_GIVE_UP_AFTER;
     const results = [];
+    const rows = [];
+    let failure: unknown = null;
     for (const teamId of st.teamOrder) {
       const active = new Set(st.teams[teamId]!.members.filter((m) => m.active).map((m) => m.childId));
       const mine = entries.filter((e) => e.teamId === teamId);
       const members = mine.filter((e) => e.kind === "member" && active.has(e.childId));
       const summary = mine.find((e) => e.kind === "summary") ?? null;
-      let quality = 0;
-      let summaryScore = 0;
-      let model = "none";
-      let comment: string | null = null;
+      let got = { quality: 0, summary: 0, model: "none", comment: null as string | null };
       if (members.length > 0 || summary) {
-        try {
-          const r = await this.ai.scoreSupply({ task: { title: task.title, perPerson: task.perPerson, summary: task.summaryTask }, entries: members.map((e) => e.text), summary: summary?.text ?? null });
-          quality = Math.max(0, Math.min(40, Math.round(r.quality)));
-          summaryScore = summary ? Math.max(0, Math.min(20, Math.round(r.summary))) : 0;
-          model = r.model;
-          comment = r.comment;
-        } catch (err) {
-          // Participation still counts; the admins can re-tier by hand.
-          model = "failed";
-          await this.notifier.notifyAdmins({
-            kind: "ai_failed",
-            title: "军需任务打分失败",
-            body: `军需任务 ${w.supplyId} 的 AI 打分失败（${String((err as Error).message ?? err)}），已按参与面结算，可以在管理端改档。`,
-            dedupeKey: `supply_ai_failed:${serverId}:${w.supplyId}`,
-            roles: ["admin"],
-          });
+        const cacheKey = `${key}:${teamId}`;
+        const cached = this.scored.get(cacheKey);
+        if (cached) got = cached;
+        else {
+          try {
+            const r = await this.ai.scoreSupply({ task: { title: task.title, perPerson: task.perPerson, summary: task.summaryTask }, entries: members.map((e) => e.text), summary: summary?.text ?? null });
+            got = { quality: Math.max(0, Math.min(40, Math.round(r.quality))), summary: summary ? Math.max(0, Math.min(20, Math.round(r.summary))) : 0, model: r.model, comment: r.comment };
+            this.scored.set(cacheKey, got);
+          } catch (err) {
+            failure = err;
+            // Participation still counts when the AI could not score in 2 hours.
+            got = { quality: 0, summary: 0, model: "failed", comment: null };
+          }
         }
       }
-      await this.db
-        .insert(supplyResults)
-        .values({ serverId, supplyId: w.supplyId, teamId, submittedMembers: members.length, quality, summary: summaryScore, model, comment, at: this.clock.now() })
-        .onConflictDoNothing();
-      results.push({ teamId, submittedMembers: members.length, quality, summary: summaryScore });
+      rows.push({ serverId, supplyId: w.supplyId, teamId, submittedMembers: members.length, quality: got.quality, summary: got.summary, model: got.model, comment: got.comment, at: new Date(now) });
+      results.push({ teamId, submittedMembers: members.length, quality: got.quality, summary: got.summary });
     }
-    await this.store.apply(serverId, { type: "settle_supply", supplyId: w.supplyId, at: this.now(), results }, "system");
+    if (failure && !giveUp) {
+      const attempts = (wait?.attempts ?? 0) + 1;
+      this.nextTry.set(key, { at: now + SUPPLY_RETRY_WAITS[Math.min(attempts - 1, SUPPLY_RETRY_WAITS.length - 1)]!, attempts });
+      return false;
+    }
+    if (failure)
+      await this.notifier.notifyAdmins({
+        kind: "ai_failed",
+        title: "军需任务打分失败",
+        body: `军需任务 ${w.supplyId} 的 AI 打分 2 小时都没成功（${String((failure as Error).message ?? failure)}），没打上分的组只按参与面结算。要补分请在"赛季监控与干预 → 人工干预"里给这些组加团队分。`,
+        dedupeKey: `supply_ai_failed:${serverId}:${w.supplyId}`,
+        roles: ["admin"],
+      });
+    for (const r of rows) await this.db.insert(supplyResults).values(r).onConflictDoNothing();
+    await this.store.apply(serverId, { type: "settle_supply", supplyId: w.supplyId, at: now, results }, "system");
+    for (const teamId of st.teamOrder) this.scored.delete(`${key}:${teamId}`);
+    this.nextTry.delete(key);
+    return true;
   }
+
 }

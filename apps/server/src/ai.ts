@@ -37,8 +37,13 @@ export interface ScoreResult {
   flags: string[];
 }
 
+/** Which model the gateway picked for this call (primary, fallback or shadow; part 6 §0.1). */
+export interface AiCallOptions {
+  model?: string;
+}
+
 export interface AiScorer {
-  score(r: ScoreRequest): Promise<ScoreResult>;
+  score(r: ScoreRequest, opts?: AiCallOptions): Promise<ScoreResult>;
 }
 
 /** Spread `total` over the rubric's dimensions in proportion to their points (whole numbers, summing to total). */
@@ -105,6 +110,11 @@ export interface DailyReviewRequest {
   aiNote: string | null;
   noAi: boolean;
   evidenceCount: number;
+  /** The template's question and the evidence it asks for (content library 8.2: the evidence must match the explanation). */
+  templatePrompt?: string;
+  evidenceExpected?: string;
+  /** Signed picture URLs of the evidence (part 6 T4 input "证据图片"). */
+  evidenceImages?: string[];
 }
 
 export interface DailyReviewResult {
@@ -131,7 +141,7 @@ export interface DailyReviewResult {
 }
 
 export interface AiDailyReviewer {
-  reviewDaily(r: DailyReviewRequest): Promise<DailyReviewResult>;
+  reviewDaily(r: DailyReviewRequest, opts?: AiCallOptions): Promise<DailyReviewResult>;
 }
 
 /**
@@ -141,9 +151,12 @@ export interface AiDailyReviewer {
 export class FakeAiDaily implements AiDailyReviewer {
   failDaily = false;
   calls = 0;
+  /** The last request (tests check what the model is given). */
+  last: DailyReviewRequest | null = null;
 
   async reviewDaily(r: DailyReviewRequest): Promise<DailyReviewResult> {
     this.calls++;
+    this.last = r;
     if (this.failDaily) throw new Error("fake AI failure");
     const text = r.explainText ?? r.transcript ?? "";
     const passed = !text.includes("不通过");
@@ -187,12 +200,15 @@ export interface SupplyScoreResult {
 }
 
 export interface AiSupplyScorer {
-  scoreSupply(r: SupplyScoreRequest): Promise<SupplyScoreResult>;
+  scoreSupply(r: SupplyScoreRequest, opts?: AiCallOptions): Promise<SupplyScoreResult>;
 }
 
 /** Stand-in: 8 quality points per member entry (up to 40), 15 for a summary. */
 export class FakeAiSupply implements AiSupplyScorer {
+  fail = false;
+
   async scoreSupply(r: SupplyScoreRequest): Promise<SupplyScoreResult> {
+    if (this.fail) throw new Error("fake AI failure");
     return { model: "fake-supply", quality: Math.min(40, 8 * r.entries.length), summary: r.summary ? 15 : 0, comment: "示例评语（假的 AI）。" };
   }
 }
@@ -207,11 +223,15 @@ export interface SummaryRequest {
 
 export interface AiSummarizer {
   /** A few warm, specific sentences for the child about what they learned (only what they said). */
-  summarize(r: SummaryRequest): Promise<{ model: string; text: string }>;
+  summarize(r: SummaryRequest, opts?: AiCallOptions): Promise<{ model: string; text: string }>;
 }
 
 export class FakeAiSummarizer implements AiSummarizer {
+  /** Tests: calls for children in these grades throw. */
+  failGrades = new Set<number>();
+
   async summarize(r: SummaryRequest) {
+    if (this.failGrades.has(r.grade)) throw new Error("fake AI failure");
     const period = r.kind === "week" ? "这周" : r.kind === "month" ? "这个月" : "这一季";
     const subjects = [...new Set(r.cards.map((c) => c.tag?.split("/")[0]).filter(Boolean))];
     if (!r.cards.length) return { model: "fake-summary", text: `${period}你还没有记下知识卡片。` };

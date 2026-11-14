@@ -6,8 +6,8 @@ import { FilePicker } from "../components/FilePicker";
  * (50–150 characters); the child's default comes from the profile.
  */
 
-import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, Checkbox, Input, TextArea } from "antd-mobile";
 import { DAILY_TEMPLATES, DAILY_TEXT_MAX, DAILY_TEXT_MIN, EXPLAIN_HINTS } from "@zhiyouji/shared";
 import { ApiError, request } from "../api";
@@ -34,6 +34,11 @@ interface Result {
   counted: boolean | null;
   card: { id: string; title: string; summary: string; tag: string | null } | null;
   templateId: number;
+  explainKind?: "voice" | "text";
+  explainText?: string | null;
+  aiNote?: string | null;
+  noAi?: boolean;
+  evidenceFileIds?: string[];
 }
 
 const uploader = ticketUploader("/v1/daily", request);
@@ -48,6 +53,9 @@ export function DailyHome() {
         <p className="subtitle">
           今天已计 {today.data.season.countedToday}/{today.data.season.capPerDay} 次、本周 {today.data.season.countedThisWeek}/{today.data.season.capPerWeek} 次
         </p>
+      )}
+      {today.data && today.data.retriesLeft < 3 && (
+        <p className="hint">{today.data.retriesLeft > 0 ? `今天没通过的还可以再交 ${today.data.retriesLeft} 次。` : "今天没通过的次数用完了，明天再来。"}</p>
       )}
       {DAILY_TEMPLATES.map((t) => (
         <Link key={t.id} to={`/daily/new/${t.id}`} className="panel row" style={{ textDecoration: "none", color: "inherit" }}>
@@ -77,16 +85,35 @@ export function DailyNew() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const n = [...text].length;
+  // "改一改再交": start from the last hand-in (its text, AI line and evidence pictures)
+  const [search] = useSearchParams();
+  const from = search.get("from");
+  const [oldEvidence, setOldEvidence] = useState<string[]>([]);
+  useEffect(() => {
+    if (!from) return;
+    request<Result>("GET", `/v1/daily/submissions/${from}`).then(
+      (r) => {
+        if (r.explainKind === "text" && r.explainText) {
+          setMode("text");
+          setText(r.explainText);
+        }
+        if (r.noAi) setNoAi(true);
+        else if (r.aiNote) setAiNote(r.aiNote);
+        setOldEvidence(r.evidenceFileIds ?? []);
+      },
+      () => undefined,
+    );
+  }, [from]);
 
   const submit = async () => {
     setError(null);
-    if (files.length === 0) return setError("至少交一张证据图片");
+    if (files.length === 0 && oldEvidence.length === 0) return setError("至少交一张证据图片");
     if (mode === "voice" && !voice) return setError("先按住说话，录一段讲解");
     if (mode === "text" && (n < DAILY_TEXT_MIN || n > DAILY_TEXT_MAX)) return setError(`文字讲解要 ${DAILY_TEXT_MIN} 到 ${DAILY_TEXT_MAX} 个字`);
     if (!noAi && !aiNote.trim()) return setError("说一句你是怎么用 AI 的");
     setBusy(true);
     try {
-      const ids: string[] = [];
+      const ids: string[] = files.length === 0 ? [...oldEvidence] : [];
       for (const f of files) ids.push((await uploader.upload(f, { purpose: "image" })).fileId);
       const explain = mode === "voice" ? { kind: "voice" as const, fileId: (await uploader.upload(voice!.blob, { purpose: "audio", durationSec: voice!.durationMs / 1000 })).fileId } : { kind: "text" as const, text };
       const r = await request<Result>("POST", "/v1/daily/submissions", {
@@ -110,6 +137,7 @@ export function DailyNew() {
 
       <div className="field-label">证据：{tpl.evidence}</div>
       <FilePicker label="选图片或拍照" accept="image/*" multiple max={9} files={files} onChange={setFiles} />
+      {oldEvidence.length > 0 && files.length === 0 && <p className="hint">没有选新图片时，沿用上次的 {oldEvidence.length} 张证据图片。</p>}
 
       <div className="field-label">讲解</div>
       <div className="hint">
@@ -188,7 +216,7 @@ export function DailyResult() {
             <div style={{ fontWeight: 600 }}>还差一点</div>
             <p>{d.failReason}</p>
           </div>
-          <Link to={`/daily/new/${d.templateId}`}>
+          <Link to={`/daily/new/${d.templateId}?from=${d.id}`}>
             <Button color="primary" className="big-button" block style={{ marginTop: 16 }}>
               改一改再交
             </Button>

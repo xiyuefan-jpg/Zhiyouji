@@ -34,6 +34,8 @@ import {
   reviewAssignments,
   reviewerLeaves,
   scoringRounds,
+  seasons,
+  servers,
   settledScores,
   works,
   type Db,
@@ -141,10 +143,12 @@ export class Scoring {
     let due = now + st.params.review.timeoutHours * HOUR;
     // W4 must be reviewed before the camps form (D29 noon, §14).
     if (key.startsWith("war:") && Number(key.slice(4)) === Math.floor((st.params.time.bigBattleStartDay - 1) / 7)) due = Math.min(due, Math.max(now + HOUR, campsFormAt(st)));
+    const counts = new Map<string, number>();
     for (const w of await this.countingWorks(serverId, key)) {
       await this.aiScore(serverId, st, w);
-      await this.assign(w, new Date(due), st.params.review.doubleReviewRatio);
+      for (const r of await this.assign(w, new Date(due), st.params.review.doubleReviewRatio)) counts.set(r, (counts.get(r) ?? 0) + 1);
     }
+    await this.tellAssigned(serverId, key, counts, due);
     return true;
   }
 
@@ -221,14 +225,33 @@ export class Scoring {
     return pool.map((u) => ({ id: u.id, load: load.get(u.id) ?? 0 })).sort((a, b) => a.load - b.load || a.id.localeCompare(b.id));
   }
 
-  private async assign(w: WorkRow, dueAt: Date, ratio: number): Promise<void> {
+  /** Assign a work; returns who got it (the first reviewer, and a second one for spot checks). */
+  private async assign(w: WorkRow, dueAt: Date, ratio: number): Promise<string[]> {
     const pool = await this.onDuty();
-    if (pool.length === 0) return;
+    if (pool.length === 0) return [];
     const now = this.clock.now();
     await this.db.insert(reviewAssignments).values({ workId: w.id, reviewerId: pool[0]!.id, assignedAt: now, dueAt });
     // About `ratio` of works also go to a second reviewer (deterministic per work).
     const r = createHash("sha256").update(`second|${w.id}`).digest().readUInt32BE(0) / 0x1_0000_0000;
-    if (pool.length > 1 && r < ratio) await this.db.insert(reviewAssignments).values({ workId: w.id, reviewerId: pool[1]!.id, second: true, assignedAt: now, dueAt });
+    if (pool.length > 1 && r < ratio) {
+      await this.db.insert(reviewAssignments).values({ workId: w.id, reviewerId: pool[1]!.id, second: true, assignedAt: now, dueAt });
+      return [pool[0]!.id, pool[1]!.id];
+    }
+    return [pool[0]!.id];
+  }
+
+  /** Part 8 §1.2 "复核分派 → 复核员 → 分派时": one message per reviewer for the whole round. */
+  private async tellAssigned(serverId: string, key: string, counts: Map<string, number>, due: number): Promise<void> {
+    for (const [reviewerId, n] of counts) {
+      await this.notifier.notifyAdmins({
+        kind: "review_assigned",
+        title: "有新作品要复核",
+        body: `分给你 ${n} 件作品，请在 ${formatBeijing(due)}（北京时间）前复核完。`,
+        link: `/reviews`,
+        dedupeKey: `review_assigned:${serverId}:${key}:${reviewerId}`,
+        userIds: [reviewerId],
+      });
+    }
   }
 
   // ---- 2. reviewing --------------------------------------------------------------------------------
@@ -523,6 +546,14 @@ export class Scoring {
       .insert(reviewAssignments)
       .values({ workId: a!.workId, reviewerId, second: a!.second, assignedAt: this.clock.now(), dueAt: a!.dueAt })
       .returning();
+    await this.notifier.notifyAdmins({
+      kind: "review_assigned",
+      title: "有新作品要复核",
+      body: `改派给你 1 件作品，请在 ${formatBeijing(+a!.dueAt)}（北京时间）前复核完。`,
+      link: `/reviews/${n!.id}`,
+      dedupeKey: `review_assigned:${n!.id}`,
+      userIds: [reviewerId],
+    });
     return { assignmentId: n!.id };
   }
 
@@ -662,7 +693,17 @@ export class Scoring {
       }
     }
     await this.db.update(scoringRounds).set({ status: "settled", settledAt: new Date(at) }).where(eq(scoringRounds.id, round.id));
+    if (round.key === "battle") await this.maybeFinalPending(serverId);
     return true;
+  }
+
+  /** §2: once the big battle of every server is settled, the season waits for the final settlement (待终局结算). */
+  private async maybeFinalPending(serverId: string): Promise<void> {
+    const [sv] = await this.db.select({ seasonId: servers.seasonId }).from(servers).where(eq(servers.id, serverId));
+    if (!sv) return;
+    const all = await this.db.select({ id: servers.id }).from(servers).where(eq(servers.seasonId, sv.seasonId));
+    for (const x of all) if (!(await this.store.state(x.id)).bigBattle?.settled) return;
+    await this.db.update(seasons).set({ status: "final_pending" }).where(and(eq(seasons.id, sv.seasonId), eq(seasons.status, "big_battle")));
   }
 
   // ---- results for the team (part 5 E7) and the reviewer dashboard (part 7 §6) ----------------------

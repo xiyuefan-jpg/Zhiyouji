@@ -161,7 +161,8 @@ function applyItem(s: SeasonState, itemId: string, e: UseItem, day: number, rank
       return null;
     case "yujing":
     case "danao": {
-      const weeks = p.participation.weeks;
+      // war weeks (W1…W4 before the big battle), not the participation-award weeks (§13.4, §20.3)
+      const weeks = Math.floor((p.time.bigBattleStartDay - 1) / 7);
       let week = e.week;
       if (week === undefined) {
         week = Array.from({ length: weeks }, (_, i) => i + 1).find((w) => e.at < warStartAt(s, w));

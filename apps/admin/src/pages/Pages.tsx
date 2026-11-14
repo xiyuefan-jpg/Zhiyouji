@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router";
 import { Alert, Button, Card, DatePicker, Empty, Form, Input, List, Modal, Popconfirm, Select, Space, Statistic, Table, Tag, Typography, message } from "antd";
 import type { MessageView } from "@zhiyouji/shared";
-import { api, request, type AdminUserRow, type ViewLogEntry } from "../api";
+import { api, request, type AdminUserRow, type OpLogEntry, type ViewLogEntry } from "../api";
 import { useAdmin } from "../auth";
 import { Time } from "../time";
 import { NAV } from "./Layout";
@@ -299,6 +299,69 @@ export function ViewLogPage() {
           { title: "内容", dataIndex: "contentKind", render: (k: string) => CONTENT_TEXT[k] ?? k },
           { title: "对象", dataIndex: "objectId", render: (o: string | null) => o ?? "—" },
           { title: "孩子", dataIndex: "childId", render: (c: string | null) => (c ? c.slice(0, 8) : "—") },
+        ]}
+      />
+    </Space>
+  );
+}
+
+// ---- 操作日志 (part 7 §7; part 8 §3.1) ------------------------------------------------
+
+/** "admin:<id>" → the account's name; "system" and children's actions as they are. */
+export function actorText(actor: string, names: Record<string, string>): string {
+  if (actor === "system") return "系统";
+  const [kind, id] = actor.split(":");
+  if (kind === "admin" && id) return names[id] ?? (id === "test" ? "管理员" : id.slice(0, 8));
+  if (kind === "child") return `孩子 ${id?.slice(0, 8) ?? ""}`;
+  return actor;
+}
+
+function short(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  const t = typeof v === "string" ? v : JSON.stringify(v);
+  return t.length > 120 ? `${t.slice(0, 120)}…` : t;
+}
+
+export function OpLogPage() {
+  const users = useLoad(() => api.users());
+  const [filters, setFilters] = useState<{ actor?: string; action?: string; object?: string; from?: string; to?: string }>({});
+  const { data, error, loading } = useLoad(() => api.opLog({ ...filters, limit: 500 }), [JSON.stringify(filters)]);
+  const names = useMemo(() => Object.fromEntries((users.data?.users ?? []).map((u) => [u.id, u.name])), [users.data]);
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Typography.Title level={3} style={{ margin: 0 }}>
+        操作日志
+      </Typography.Title>
+      <Typography.Text type="secondary">管理端的每一次改动（谁、什么时候、改了什么、改之前和之后、原因）都记在这里，只能看，不能改。</Typography.Text>
+      <Space wrap>
+        <Select
+          allowClear
+          placeholder="全部账号"
+          style={{ width: 180 }}
+          options={[{ value: "system", label: "系统" }, ...(users.data?.users ?? []).map((u) => ({ value: `admin:${u.id}`, label: u.name }))]}
+          onChange={(v?: string) => setFilters((f) => ({ ...f, actor: v }))}
+        />
+        <Input.Search allowClear aria-label="动作" placeholder="动作（例如 intervene_adjust_ledger）" style={{ width: 280 }} onSearch={(v) => setFilters((f) => ({ ...f, action: v.trim() || undefined }))} />
+        <Input.Search allowClear aria-label="对象" placeholder="对象开头（例如 server:）" style={{ width: 260 }} onSearch={(v) => setFilters((f) => ({ ...f, object: v.trim() || undefined }))} />
+        <DatePicker.RangePicker
+          onChange={(r) => setFilters((f) => ({ ...f, from: r?.[0]?.startOf("day").toISOString(), to: r?.[1]?.endOf("day").toISOString() }))}
+        />
+      </Space>
+      {error && <Alert type="error" message={error} />}
+      <Table<OpLogEntry>
+        rowKey="id"
+        loading={loading}
+        dataSource={data?.entries ?? []}
+        pagination={{ pageSize: 50 }}
+        columns={[
+          { title: "时间", dataIndex: "at", render: (t: string) => <Time iso={t} /> },
+          { title: "账号", dataIndex: "actor", render: (a: string) => actorText(a, names) },
+          { title: "动作", dataIndex: "action", render: (a: string) => <Tag>{a}</Tag> },
+          { title: "对象", dataIndex: "object", render: (o: string | null) => o ?? "—" },
+          { title: "原因", dataIndex: "reason", render: (r: string | null) => r ?? "—" },
+          { title: "之前", dataIndex: "before", render: (v: unknown) => <code style={{ fontSize: 12 }}>{short(v)}</code> },
+          { title: "之后", dataIndex: "after", render: (v: unknown) => <code style={{ fontSize: 12 }}>{short(v)}</code> },
         ]}
       />
     </Space>

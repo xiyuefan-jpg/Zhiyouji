@@ -328,6 +328,31 @@ export class SeasonControl {
     return { final: r.state.final, seasonEnded: allFinal };
   }
 
+  /** §2 / §15 "已归档 自动（结束 30 天后）": ended seasons become read-only archives. Returns how many. */
+  async archiveDue(): Promise<number> {
+    const now = +this.clock.now();
+    let n = 0;
+    for (const season of await this.db.select().from(seasons).where(eq(seasons.status, "ended"))) {
+      const all = await this.seasons.servers(season.id);
+      let last = 0;
+      let days = 0;
+      for (const sv of all) {
+        const st = await this.store.state(sv.id);
+        if (!st.final) {
+          last = Infinity;
+          break;
+        }
+        last = Math.max(last, st.final.at);
+        days = Math.max(days, st.params.final.archiveAfterDays);
+      }
+      if (all.length && last + days * 86_400_000 <= now) {
+        await this.db.update(seasons).set({ status: "archived" }).where(and(eq(seasons.id, season.id), eq(seasons.status, "ended")));
+        n++;
+      }
+    }
+    return n;
+  }
+
   /**
    * 终局结算预览 (part 7 §9): a dry run of the final settlement with the pool the
    * admin typed — each team's points by source, the grain conversion, the

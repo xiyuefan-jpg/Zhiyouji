@@ -96,6 +96,31 @@ export function refuse(code: string, detail?: string): never {
 
 const shortId = (prefix: string) => `${prefix}${randomBytes(5).toString("hex")}`;
 
+/**
+ * What a ledger line was for, in words (part 5 E6 "每一笔是什么、为什么、什么时候"):
+ * the land, the contest's land, the item, the week, the supply task, the admin's reason.
+ */
+export function ledgerDetail(s: SeasonState, e: { refId?: string; note?: string; source: string; reverses?: string }, names: ReadonlyMap<string, string>): string | null {
+  const land = (id: string | undefined) => (id && s.lands[id] ? (names.get(id) ?? id) : null);
+  const ref = e.refId ?? "";
+  const itemName = (id: string) => ITEMS.find((i) => i.id === id)?.name ?? null;
+  const parts: string[] = [];
+  if (e.reverses) parts.push("冲正");
+  if (ref.startsWith("land:")) parts.push(`${land(ref.slice(5)) ?? ""}${e.note ? ` · ${e.note}` : ""}`);
+  else if (s.contests[ref]) parts.push(`${land(s.contests[ref]!.landId) ?? ""}的争夺${e.note === "jianbi" ? "（坚壁清野）" : ""}`);
+  else if (ref.startsWith("war:")) parts.push(`第 ${ref.slice(4)} 周周战争`);
+  else if (ref.startsWith("participation:")) parts.push(`第 ${ref.slice(14)} 周`);
+  else if (ref.startsWith("line:")) parts.push(`大团战第 ${Number(ref.slice(5)) + 1} 条战线`);
+  else if (ref === "main") parts.push("大团战主战场");
+  else if (ref === "auction" || ref === "center_round") parts.push(land(e.note) ?? "");
+  else if (ref.startsWith("admin:")) parts.push(e.note ? `老师：${e.note}` : "老师调整");
+  else if (itemName(ref)) parts.push(`${itemName(ref)}${land(e.note) ? ` · ${land(e.note)}` : ""}${/^D\d+$/.test(e.note ?? "") ? ` · ${e.note}` : ""}`);
+  else if (land(ref)) parts.push(land(ref)!);
+  else if (e.source === "supply" && ref) parts.push(`军需任务 ${ref}`);
+  const out = parts.filter(Boolean).join(" · ");
+  return out || null;
+}
+
 export class SeasonPlay {
   constructor(
     private readonly db: Db,
@@ -356,12 +381,13 @@ export class SeasonPlay {
 
   async ledger(ctx: PlayCtx, currency: "grain" | "points") {
     const s = await this.state(ctx);
+    const names = await this.landNames(ctx.serverId);
     return {
       currency,
       balance: currency === "grain" ? grainOf(s, ctx.teamId) : pointsOf(s, ctx.teamId),
       entries: s.ledger
         .filter((e) => e.teamId === ctx.teamId && e.currency === currency)
-        .map((e) => ({ id: e.id, amount: e.amount, source: e.source, refId: e.refId ?? null, note: e.note ?? null, at: e.at, reverses: e.reverses ?? null }))
+        .map((e) => ({ id: e.id, amount: e.amount, source: e.source, refId: e.refId ?? null, note: e.note ?? null, detail: ledgerDetail(s, e, names), at: e.at, reverses: e.reverses ?? null }))
         .reverse(),
     };
   }

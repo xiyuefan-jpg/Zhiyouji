@@ -104,7 +104,7 @@ export function planSeason(opening: string, p: SeasonParams, calendar: DayKindOv
   add("form_big_battle", "form_big_battle", bb, pub(bb, p.review.w4DeadlineSlot), "form_big_battle");
   add("lines_deadline", "lines_deadline", bb, dl(bb), "lock_lines");
   add("lines_publish", "lines_publish", bb + 1, pub(bb + 1, "morning"));
-  add("diaobing_close", "diaobing_close", bb + 1, pub(bb + 1, "morning") + 12 * 3_600_000);
+  add("diaobing_close", "diaobing_close", bb + 1, pub(bb + 1, "morning") + p.items.diaobing.hours * 3_600_000);
   add("battle_deadline", "battle_deadline", p.time.seasonDays, dl(p.time.seasonDays));
 
   for (let d = 1; d <= p.time.seasonDays; d++)

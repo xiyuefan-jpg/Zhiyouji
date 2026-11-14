@@ -107,7 +107,7 @@ async function main() {
   const sms = new FakeSms((line) => console.log(line));
   const storage = new LocalStorage(cfg.secret, env.STORAGE_DIR ?? "/tmp/zyj-demo-storage");
   const { app, services: s } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha(), storage, logger: false });
-  const worker = new Worker(db, s.scheduler, s.smsDispatcher, s.notifier, s.reports, s.reminders, s.scoring, s.dataRights, s.daily, s.supply, s.debates, s.ops, s.showcase, s.summaries, s.media, s.tagSuggestions);
+  const worker = new Worker(db, s.scheduler, s.smsDispatcher, s.notifier, s.reports, s.reminders, s.scoring, s.dataRights, s.daily, s.supply, s.debates, s.ops, s.showcase, s.summaries, s.media, s.tagSuggestions, s.control);
 
   // ---- seed ----------------------------------------------------------------------
   const secrets = new Map<string, string>();

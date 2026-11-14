@@ -11,6 +11,7 @@ import {
   DashboardOutlined,
   EyeOutlined,
   FlagOutlined,
+  HistoryOutlined,
   MonitorOutlined,
   NotificationOutlined,
   TeamOutlined,
@@ -41,6 +42,7 @@ export const NAV: NavItem[] = [
   { key: "/final", label: "终局与导出", icon: <TrophyOutlined />, roles: ["admin"] },
   { key: "/users", label: "管理端账号", icon: <UserOutlined />, roles: ["admin"] },
   { key: "/view-log", label: "查看记录", icon: <EyeOutlined />, roles: ["admin"] },
+  { key: "/op-log", label: "操作日志", icon: <HistoryOutlined />, roles: ["admin"] },
 ];
 
 export function useAdminUnread(): [number, () => void] {

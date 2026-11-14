@@ -56,6 +56,44 @@ describe("student website: 每日任务 (part 5 C1–C3)", () => {
     await be.stop();
   });
 
+  it("not passed → 改一改再交 starts from the last hand-in (text, AI line, pictures) and says how many tries are left", async () => {
+    const be = await startBackend();
+    await be.services.family.requestCode("13812345678", undefined);
+    const login = await be.services.family.login("13812345678", be.sms.lastCode("13812345678")!);
+    await be.services.family.consent(login.family.id, "agree", be.cfg.policyVersion);
+    const c = await be.services.family.createChild(login.family.id, { nickname: "小明", grade: 5, avatar: "a1", explainPref: "text" });
+    await be.services.sessions.setChild((await be.db.query.sessions.findFirst())!.id, c.id);
+    const realFetch = be.fetchMock.getMockImplementation()!;
+    be.fetchMock.mockImplementation((input, init = {}) => realFetch(input, { ...init, headers: { ...(init.headers as Record<string, string>), authorization: `Bearer ${login.token}` } }));
+    localStorage.setItem("zyj_privacy_notice", "2027-01");
+    const user = userEvent.setup();
+    render(
+      <ConfigProvider>
+        <MemoryRouter initialEntries={["/daily/new/1"]}>
+          <App />
+        </MemoryRouter>
+      </ConfigProvider>,
+    );
+    const first = TEXT.replace("其实", "不通过其实"); // the fake AI fails texts with "不通过"
+    await user.upload(await screen.findByLabelText("选图片或拍照"), new File(["jpg"], "chat.jpg", { type: "image/jpeg" }));
+    await user.type(screen.getByPlaceholderText("写 50–150 个字"), first);
+    await user.type(screen.getByPlaceholderText("一句话就好"), "我让 AI 举了三个例子");
+    await user.click(screen.getByRole("button", { name: "交上去" }));
+    expect(await screen.findByText("还差一点")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "改一改再交" }));
+    const box = (await screen.findByDisplayValue(first)) as HTMLTextAreaElement;
+    expect(screen.getByDisplayValue("我让 AI 举了三个例子")).toBeTruthy();
+    expect(await screen.findByText("没有选新图片时，沿用上次的 1 张证据图片。")).toBeTruthy();
+    await user.clear(box);
+    await user.type(box, TEXT);
+    await user.click(screen.getByRole("button", { name: "交上去" }));
+    expect(await screen.findByText(/做得好的/)).toBeTruthy();
+    const subs = await be.db.select().from(dailySubmissions);
+    expect(subs.map((x) => x.status).sort()).toEqual(["failed", "passed"]);
+    expect(subs[0]!.evidenceFileIds).toEqual(subs[1]!.evidenceFileIds);
+    await be.stop();
+  });
+
   it("修行日志: calendar month, subjects, search, summaries (C4–C8)", async () => {
     const be = await startBackend();
     await be.services.family.requestCode("13812345678", undefined);

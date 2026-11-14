@@ -39,6 +39,10 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
     const as = await t.db.select().from(reviewAssignments);
     expect(as).toHaveLength(2);
     expect(new Set(as.map((a) => a.reviewerId)).size).toBe(2); // spread over both reviewers
+    // each reviewer is told once for the round (part 8 §1.2 "复核分派 → 分派时")
+    const told = await t.db.select().from(messages).where(eq(messages.type, "review_assigned"));
+    expect(told.map((m) => m.recipientId).sort()).toEqual(as.map((a) => a.reviewerId).sort());
+    expect(told[0]!.body).toContain("分给你 1 件作品");
     const mine = as.find((a) => a.workId === w1.id)!;
     const reviewer = mine.reviewerId === t.r1.id ? t.r1 : t.r2;
     const token = await reviewer.relogin();

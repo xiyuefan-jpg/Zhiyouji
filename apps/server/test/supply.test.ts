@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { smsOutbox } from "@zhiyouji/db";
+import { messages, smsOutbox } from "@zhiyouji/db";
+import type { FakeAiSupply } from "../src/index.js";
 import { balanceOf } from "@zhiyouji/engine";
 import { bj } from "./helpers.js";
 import { contestSetup } from "./seasonHelpers.js";
@@ -53,6 +54,51 @@ describe("军需任务 (part 3 §12; part 5 E9)", () => {
     // a team where nobody handed in gets nothing
     const quiet = after.teamOrder.find((id) => id !== t.myTeam)!;
     expect(after.ledger.filter((e) => e.teamId === quiet && e.source === "supply").reduce((s, e) => s + e.amount, 0)).toBe(0);
+    await t.close();
+  });
+
+  it("the AI fails at the deadline: no pay-out yet, retried a minute later, paid with the AI's tiers once it answers (part 6 §5)", async () => {
+    const t = await contestSetup();
+    const a1 = t.a1api;
+    t.clock.set(bj("2027-02-09", 19, 1));
+    await a1("POST", "/v1/season/supply/1a/entry", { text: "为什么天是蓝的？查了资料：瑞利散射。" });
+    await a1("POST", "/v1/season/supply/1a/summary", { text: "最值得继续探索：天为什么是蓝的" });
+    const ai = t.services.aiSupply as FakeAiSupply;
+    ai.fail = true;
+    t.clock.set(bj("2027-02-10", 21, 1));
+    expect((await t.services.supply.runDue(t.serverId)).settled).toBe(0);
+    expect((await t.services.store.state(t.serverId)).done).not.toContain("supply:1a");
+    // within the wait: not even tried
+    t.clock.advance(30_000);
+    expect((await t.services.supply.runDue(t.serverId)).settled).toBe(0);
+    ai.fail = false;
+    t.clock.advance(60_000);
+    expect((await t.services.supply.runDue(t.serverId)).settled).toBe(1);
+    const res = (await a1("GET", "/v1/season/supply")).json().tasks.find((x: { supplyId: string }) => x.supplyId === "1a").result;
+    expect(res).toMatchObject({ submittedMembers: 1, quality: 8, summary: 15 });
+    expect((await t.db.select().from(messages)).some((m) => m.type === "ai_failed")).toBe(false);
+    await t.close();
+  });
+
+  it("the AI keeps failing for 2 hours: settled on participation alone and the admins are told", async () => {
+    const t = await contestSetup();
+    const boss = await t.adminUser();
+    void boss;
+    t.clock.set(bj("2027-02-09", 19, 1));
+    await t.a1api("POST", "/v1/season/supply/1a/entry", { text: "为什么天是蓝的？" });
+    (t.services.aiSupply as FakeAiSupply).fail = true;
+    let settled = 0;
+    for (let m = 1; m <= 125; m++) {
+      t.clock.set(new Date(+bj("2027-02-10", 21) + m * 60_000));
+      settled += (await t.services.supply.runDue(t.serverId)).settled;
+      if (settled) break;
+    }
+    expect(settled).toBe(1);
+    expect(+t.clock.now() - +bj("2027-02-10", 21)).toBeGreaterThanOrEqual(120 * 60_000);
+    const res = (await t.a1api("GET", "/v1/season/supply")).json().tasks.find((x: { supplyId: string }) => x.supplyId === "1a").result;
+    expect(res).toMatchObject({ submittedMembers: 1, quality: 0, summary: 0 });
+    const msg = (await t.db.select().from(messages)).find((m) => m.type === "ai_failed")!;
+    expect(msg.body).toContain("人工干预");
     await t.close();
   });
 });

@@ -113,6 +113,7 @@ export interface Services {
   scoring: Scoring;
   dataRights: DataRights;
   aiDaily: AiDailyReviewer;
+  aiSupply: AiSupplyScorer;
   daily: DailyTasks;
   supply: Supply;
   warWords: WarWords;
@@ -124,6 +125,7 @@ export interface Services {
   preflight: Preflight;
   showcase: Showcase;
   summaries: Summaries;
+  aiSummary: AiSummarizer;
   gateway: AiGateway;
   home: Home;
   media: MediaPipeline;
@@ -169,17 +171,21 @@ export function buildServices(d: AppDeps): Services {
   const works = new Works(d.db, d.clock, d.cfg, store, storage, debates, ops);
   const mediaProcessor = d.media ?? new FakeMediaProcessor();
   const media = new MediaPipeline(d.db, d.clock, storage, mediaProcessor, notifier, d.cfg.uploads);
-  const supply = new Supply(d.db, d.clock, store, gateway.wrapSupply(d.aiSupply ?? new FakeAiSupply()), notifier);
+  const aiSupply = d.aiSupply ?? new FakeAiSupply();
+  const aiSummary = d.aiSummary ?? new FakeAiSummarizer();
+  const supply = new Supply(d.db, d.clock, store, gateway.wrapSupply(aiSupply), notifier);
   return {
     home: new Home(d.db, d.clock, store, play, works, supply, warWords, reports),
     media,
     mediaProcessor,
     tagSuggestions: new TagSuggestions(d.db, d.clock, notifier),
     gateway,
-    summaries: new Summaries(d.db, d.clock, gateway.wrapSummary(d.aiSummary ?? new FakeAiSummarizer()), notifier, store),
+    summaries: new Summaries(d.db, d.clock, gateway.wrapSummary(aiSummary), notifier, store),
+    aiSummary,
     showcase: new Showcase(d.db, d.clock, store, d.safety ?? new FakeContentSafety(), notifier, storage, play, reports),
     supply,
     aiDaily,
+    aiSupply,
     daily: new DailyTasks(d.db, d.clock, d.cfg, storage, gateway.wrapDaily(aiDaily), notifier, store, play, media),
     ai,
     dataRights: new DataRights(d.db, d.clock, storage, notifier),

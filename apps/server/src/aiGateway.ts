@@ -11,6 +11,7 @@
  */
 
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { checkDailyReview, checkSummary, checkSupplyScore, checkWorkScore, InvalidAiOutput } from "./aiValidate.js";
 import { scoreInstructions, withFlag } from "./aiGuard.js";
 import { aiCalls, aiConfigs, aiScores, humanScores, promptTemplates, type Db } from "@zhiyouji/db";
 import type { AiDailyReviewer, AiScorer, AiSummarizer, AiSupplyScorer } from "./ai.js";
@@ -95,16 +96,23 @@ export class AiGateway {
    * Run `fn` for a task with logging; on failure once more as the fallback;
    * the shadow model runs after the primary and only goes to the log.
    */
-  async call<T>(task: AiTask, input: unknown, fn: (model: string) => Promise<T>): Promise<T> {
+  async call<T>(task: AiTask, input: unknown, fn: (model: string) => Promise<T>, check: (out: T) => string | null = () => null): Promise<T> {
     const c = await this.config(task);
     const t0 = Date.now();
+    // An answer in the wrong format counts as a failure (part 6 §3 "格式不对就自动重试").
+    const run = async (model: string) => {
+      const out = await fn(model);
+      const bad = check(out);
+      if (bad) throw new InvalidAiOutput(bad);
+      return out;
+    };
     try {
-      const out = await fn(c.model);
+      const out = await run(c.model);
       await this.log(task, "primary", c.provider, c.model, c.promptVersion, input, t0, out, null);
       if (c.shadowModel) {
         const t1 = Date.now();
         try {
-          const shadow = await fn(c.shadowModel);
+          const shadow = await run(c.shadowModel);
           await this.log(task, "shadow", c.provider, c.shadowModel, c.promptVersion, input, t1, shadow, null);
         } catch (err) {
           await this.log(task, "shadow", c.provider, c.shadowModel, c.promptVersion, input, t1, null, err);
@@ -116,7 +124,7 @@ export class AiGateway {
       if (!c.fallbackModel) throw err;
       const t2 = Date.now();
       try {
-        const out = await fn(c.fallbackModel);
+        const out = await run(c.fallbackModel);
         await this.log(task, "fallback", c.fallbackProvider ?? c.provider, c.fallbackModel, c.promptVersion, input, t2, out, null);
         return out;
       } catch (err2) {
@@ -135,7 +143,8 @@ export class AiGateway {
         const out = await this.call(
           "work_score",
           { workId: r.workId, rubric: r.rubric.id, promptId: r.promptId, task: r.task?.title ?? null, mediaKind: r.mediaKind, ...(hits.length ? { scoreInstructions: hits } : {}) },
-          () => inner.score(r),
+          (model) => inner.score(r, { model }),
+          (out) => checkWorkScore(out, r.rubric),
         );
         return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
       },
@@ -146,7 +155,7 @@ export class AiGateway {
     return {
       reviewDaily: async (r) => {
         const hits = scoreInstructions(r.explainText, r.transcript, r.aiNote);
-        const out = await this.call("daily_review", { submissionId: r.submissionId, templateId: r.templateId, grade: r.grade, ...(hits.length ? { scoreInstructions: hits } : {}) }, () => inner.reviewDaily(r));
+        const out = await this.call("daily_review", { submissionId: r.submissionId, templateId: r.templateId, grade: r.grade, ...(hits.length ? { scoreInstructions: hits } : {}) }, (model) => inner.reviewDaily(r, { model }), checkDailyReview);
         return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
       },
     };
@@ -156,14 +165,14 @@ export class AiGateway {
     return {
       scoreSupply: async (r) => {
         const hits = scoreInstructions(...r.entries, r.summary);
-        const out = await this.call("supply_score", { task: r.task.title, entries: r.entries.length, summary: !!r.summary, ...(hits.length ? { scoreInstructions: hits } : {}) }, () => inner.scoreSupply(r));
+        const out = await this.call("supply_score", { task: r.task.title, entries: r.entries.length, summary: !!r.summary, ...(hits.length ? { scoreInstructions: hits } : {}) }, (model) => inner.scoreSupply(r, { model }), (out) => checkSupplyScore(out, !!r.summary));
         return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
       },
     };
   }
 
   wrapSummary(inner: AiSummarizer): AiSummarizer {
-    return { summarize: (r) => this.call("summary", { kind: r.kind, cards: r.cards.length }, () => inner.summarize(r)) };
+    return { summarize: (r) => this.call("summary", { kind: r.kind, cards: r.cards.length }, (model) => inner.summarize(r, { model }), checkSummary) };
   }
 
   // ---- the AI board (part 6 §9) ----------------------------------------------------------------------

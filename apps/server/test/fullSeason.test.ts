@@ -170,6 +170,8 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
     // everything settled on AI scores at the time limits; the admin confirms the final settlement
     let st = await s.store.state(serverId);
     expect(st.bigBattle?.settled).toBe(true);
+    // §2: the big battle settled on every server → 待终局结算
+    expect((await t.db.select().from(seasons).where(eq(seasons.id, season.id)))[0]!.status).toBe("final_pending");
     // the big battle page: each line's task, the rules, the results
     const anyLeader = (await leaderCtx(st.teamOrder[0]!))!;
     const bbv = await s.play.bigBattle(anyLeader);
@@ -207,6 +209,11 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
     st = await s.store.state(serverId);
     expect((await t.db.select().from(seasons).where(eq(seasons.id, season.id)))[0]!.status).toBe("ended");
     expect(st.final!.scholarship.reduce((a, b) => a + b.yuan, 0)).toBe(10000);
+    // §15: archived 30 days after the final settlement
+    expect(await s.control.archiveDue()).toBe(0);
+    t.clock.set(st.final!.at + 30 * 86_400_000);
+    expect(await s.control.archiveDue()).toBe(1);
+    expect((await t.db.select().from(seasons).where(eq(seasons.id, season.id)))[0]!.status).toBe("archived");
 
     // the invariants (part 9 §2)
     expect(checkLedger(st.ledger)).toEqual([]);
