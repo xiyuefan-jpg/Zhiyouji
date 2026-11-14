@@ -12,11 +12,13 @@ import { serverNow } from "../api";
 
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
-import { Button, SearchBar, Tabs } from "antd-mobile";
+import { Button, Popup, SearchBar, Tabs, Toast } from "antd-mobile";
 import { LeftOutline, RightOutline } from "antd-mobile-icons";
 import { request } from "../api";
 import { Empty, PageHeader, ReadAloud, Seal } from "../components/ui";
 import { useLoad } from "./season/useSeason";
+import { useChild } from "../session";
+import { drawReviewImage, reviewBlocks, WORK_KIND } from "./reviewImage";
 
 interface Card {
   id: string;
@@ -354,13 +356,38 @@ interface Review {
   };
 }
 
-const WORK_KIND: Record<string, string> = { contest: "区域争夺", war: "周战争", line: "大团战战线", main: "大团战主战场" };
-
 export function SeasonReviewPage() {
   const data = useLoad(() => request<{ reviews: Review[] }>("GET", "/v1/season-reviews"));
+  const child = useChild();
+  const [image, setImage] = useState<string | null>(null);
+  const save = (r: Review) => {
+    try {
+      setImage(drawReviewImage(reviewBlocks(r.season, child.nickname, r.content)));
+    } catch {
+      Toast.show({ content: "这个浏览器画不了图片，可以截屏保存" });
+    }
+  };
   return (
     <div className="page">
       <PageHeader title="赛季回顾" />
+      <Popup visible={image !== null} onMaskClick={() => setImage(null)} bodyStyle={{ maxHeight: "90vh", overflowY: "auto", padding: 16 }}>
+        {image && (
+          <>
+            <img src={image} alt="赛季回顾图片" style={{ width: "100%", display: "block" }} />
+            <p className="hint" style={{ textAlign: "center" }}>
+              在微信里：长按图片，选"保存图片"。图片上只有昵称，没有真实姓名。
+            </p>
+            <div className="row" style={{ gap: 8 }}>
+              <a href={image} download="赛季回顾.png" className="grow" style={{ textDecoration: "none" }}>
+                <Button block>下载图片</Button>
+              </a>
+              <Button className="grow" onClick={() => setImage(null)}>
+                关闭
+              </Button>
+            </div>
+          </>
+        )}
+      </Popup>
       {data.data?.reviews.length === 0 && <Empty title="还没有赛季回顾">赛季结束后，这里会告诉你：这一季你带走了什么。</Empty>}
       {data.data?.reviews.map((r) => {
         const subjects = Object.entries(r.content.map).sort((a, b) => b[1] - a[1]);
@@ -417,6 +444,9 @@ export function SeasonReviewPage() {
               每日任务 {r.content.numbers.dailyTasks} 次 · 知识卡片 {r.content.numbers.cards} 张 · 团队作品 {r.content.numbers.works} 件
               {r.content.numbers.aboveGrade ? ` · 超出年级的知识 ${r.content.numbers.aboveGrade} 张` : ""}
             </div>
+            <Button color="primary" block className="big-button" style={{ marginTop: 16 }} onClick={() => save(r)}>
+              保存成一张图片
+            </Button>
           </div>
         );
       })}
