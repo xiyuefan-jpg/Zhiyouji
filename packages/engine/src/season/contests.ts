@@ -28,6 +28,7 @@ import {
   type Notice,
   type Result,
   type SeasonState,
+  afterPauses,
 } from "./state.js";
 
 export type ContestRefusal =
@@ -83,7 +84,7 @@ export function startContest(input: SeasonState, e: StartContest): Result<Contes
   if (!target) return { ok: false, refusal: "unknown_land" };
   if (input.contests[e.contestId]) return { ok: false, refusal: "duplicate_id" };
   if (!canActForTeam(input, e.teamId, e.by)) return { ok: false, refusal: "not_leader" };
-  if (!canStartContest(input.opening, e.at, p)) return { ok: false, refusal: "not_in_window" };
+  if (!canStartContest(input.opening, e.at, p, (t) => afterPauses(input, t))) return { ok: false, refusal: "not_in_window" };
   if (target.owner === null) return { ok: false, refusal: "unowned_land" };
   if (target.owner === e.teamId) return { ok: false, refusal: "own_land" };
   if (activeContestOnLand(input, e.landId)) return { ok: false, refusal: "contest_in_progress" };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createPgliteDb, grainLedger, pointsLedger, feed, plannedEvents } from "@zhiyouji/db";
 import { and, eq } from "drizzle-orm";
-import { balanceOf, beijingInstant, dateOfSeasonDay, pts } from "@zhiyouji/engine";
+import { balanceOf, beijingInstant, dateOfSeasonDay, pts, warDeadline } from "@zhiyouji/engine";
 import { SeasonStore, Scheduler, SimClock } from "../src/index.js";
 
 const OPENING = "2027-01-03";
@@ -162,6 +162,10 @@ describe("every planned event run twice books nothing twice (part 9 §2, part 3 
     for (let t = +at(0, 18); t <= +at(38, 0); t += 2 * 3_600_000) {
       clock.set(new Date(t));
       await sched.runDue(serverId);
+      // what scoring does: settle each war after its deadline (the camps wait for W4, §14)
+      const st = await store.state(serverId);
+      for (const w of Object.values(st.wars))
+        if (!w.settled && w.pairs.length > 0 && warDeadline(st, w.week) <= t) await store.apply(serverId, { type: "settle_war", week: w.week, at: t, scores: {} }, "system");
     }
     const rows = await db.select().from(plannedEvents).where(eq(plannedEvents.serverId, serverId));
     const kinds = new Set(rows.map((r) => r.kind));
@@ -181,6 +185,36 @@ describe("every planned event run twice books nothing twice (part 9 §2, part 3 
     const after = await db.select().from(plannedEvents).where(eq(plannedEvents.serverId, serverId));
     expect(after.filter((r) => r.status === "failed").map((r) => r.key).sort()).toEqual(failed);
     expect(after.filter((r) => r.status === "pending")).toEqual([]);
+    await close();
+  }, 120_000);
+});
+
+describe("the camps wait for the last war (part 3 §14)", () => {
+  it("form_big_battle stays pending until W4 is settled, the 24:00 settlements go on, and the camps use the ranking with W4", async () => {
+    const { db, close, store, serverId } = await setup();
+    const clock = new SimClock(at(0, 18));
+    const sched = new Scheduler(db, store, clock);
+    const row = async (key: string) => (await db.select().from(plannedEvents).where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.key, key))))[0]!;
+    for (let t = +at(0, 18); t <= +at(30, 1); t += 2 * 3_600_000) {
+      clock.set(new Date(t));
+      await sched.runDue(serverId);
+      const st = await store.state(serverId);
+      for (const w of Object.values(st.wars))
+        if (w.week < 4 && !w.settled && w.pairs.length > 0 && warDeadline(st, w.week) <= t) await store.apply(serverId, { type: "settle_war", week: w.week, at: t, scores: {} }, "system");
+    }
+    expect((await row("form_big_battle")).status).toBe("pending");
+    expect((await row("settle_day:29")).status).toBe("done");
+    expect((await store.state(serverId)).bigBattle).toBeNull();
+    // W4 settles at D30 01:30: T of the first pair wins, and the camps follow that ranking
+    const st = await store.state(serverId);
+    const [winner] = st.wars[4]!.pairs[0]!;
+    const settledAt = +at(30, 1, 30);
+    await store.apply(serverId, { type: "settle_war", week: 4, at: settledAt, scores: { [winner]: 90 } }, "system");
+    clock.set(new Date(settledAt + 60_000));
+    const rep = await sched.runDue(serverId);
+    expect(rep.ran.find((x) => x.key === "form_big_battle")).toMatchObject({ ok: true });
+    const bb = (await store.state(serverId)).bigBattle!;
+    expect(bb.formedAt).toBe(settledAt + 60_000);
     await close();
   }, 120_000);
 });

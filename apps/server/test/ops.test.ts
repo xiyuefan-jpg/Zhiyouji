@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { messages } from "@zhiyouji/db";
 import { bj } from "./helpers.js";
-import { contestSetup } from "./seasonHelpers.js";
+import { contestSetup, settleWars } from "./seasonHelpers.js";
 
 describe("公告, WeChat QR codes, envoys (part 7 §3, §8; part 5 E1, E12)", () => {
   it("announcements reach the chosen scope at the chosen time; withdrawn ones never go out", async () => {
@@ -46,6 +46,8 @@ describe("公告, WeChat QR codes, envoys (part 7 §3, §8; part 5 E1, E12)", ()
   it("envoys registered by a leader may hand in the camp's main-field work", async () => {
     const t = await contestSetup();
     t.clock.set(bj("2027-03-08", 12, 1)); // D29 noon: camps formed
+    await t.services.scheduler.runDue(t.serverId);
+    await settleWars(t); // no works were handed in: the wars settle with nothing (scoring would do this)
     await t.services.scheduler.runDue(t.serverId);
     const b1 = await t.as("13800000002", t.b1);
     const me = (await b1("GET", "/v1/season/me")).json();

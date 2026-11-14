@@ -21,6 +21,10 @@ import {
   REGULAR_COMMON_ITEMS,
   openingStockPerKind,
   activeContestOnLand,
+  centerLandPrice,
+  activeAttackCount,
+  contestTimes,
+  landsOf,
   baseOutput,
   campOf,
   effectActive,
@@ -266,6 +270,8 @@ export class SeasonPlay {
           zeroed: landZeroed(s, id, now),
           owner: teamName(l.owner),
           ownedSince: l.ownedSince,
+          /** Today's price of an unsold center land after the D8 round (§9.2; part 5 D2: "写清楚花多少"). */
+          price: l.kind === "center" && l.owner === null && s.done.includes("center_round") ? centerLandPrice(seasonDayOf(s.opening, now), s.params) : null,
           mine: l.owner === ctx.teamId,
           contest: c
             ? {
@@ -480,8 +486,30 @@ export class SeasonPlay {
     const c = activeContestOnLand(s, landId);
     const defender = c?.defender ?? l!.owner;
     if (!defender) refuse("unowned_land");
-    const q = quoteAttack(s, ctx.teamId, defender!, this.now());
-    return { landId, contestId: c?.id ?? null, defender, ...q, grain: spendableGrain(s, ctx.teamId) };
+    const now = this.now();
+    const q = quoteAttack(s, ctx.teamId, defender!, now);
+    // §3.2 / principle 6: show how the price is made ("基础 30 + 同时进行 1 场 15 + 持有 2 块地 20")
+    const p = s.params.contest;
+    const active = activeAttackCount(s, ctx.teamId);
+    const held = landsOf(s, ctx.teamId).length;
+    const parts = [
+      { label: "基础", amount: p.baseCost },
+      ...(active > 0 ? [{ label: `本组同时进行 ${active} 场`, amount: p.perActiveAttack * active }] : []),
+      ...(held > 0 ? [{ label: `持有 ${held} 块地`, amount: p.perLand * held }] : []),
+    ];
+    const factors = [...(q.exile ? [{ label: "流亡令", factor: p.exileFactor }] : []), ...(q.crusade ? [{ label: "讨伐令", factor: p.crusadeFactor }] : [])];
+    const times = c ? { joinDeadline: c.joinDeadline, deadline: c.deadline } : contestTimes(now, s.params);
+    return {
+      landId,
+      contestId: c?.id ?? null,
+      defender,
+      ...q,
+      parts,
+      factors,
+      joinDeadline: times.joinDeadline,
+      deadline: times.deadline,
+      grain: spendableGrain(s, ctx.teamId),
+    };
   }
 
   async startContest(ctx: PlayCtx, landId: string) {

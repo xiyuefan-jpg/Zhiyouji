@@ -470,7 +470,7 @@ function Roster({ season }: { season: Season }) {
           {
             title: "",
             render: (_, p) =>
-              p.status === "enabled" &&
+              p.status === "enrolled" &&
               !season.groupingLocked && (
                 <Button size="small" danger onClick={() => revoke(p.childId)}>
                   撤销

@@ -36,9 +36,9 @@ export class Debates {
   ) {}
 
   /** Opening deadlines of the server's debates (for the work slots). */
-  async openingDeadlines(serverId: string): Promise<Map<string, { openingDeadline: number }>> {
+  async openingDeadlines(serverId: string): Promise<Map<string, { openingDeadline: number; noDefender: boolean }>> {
     const rows = await this.db.select().from(debates).where(eq(debates.serverId, serverId));
-    return new Map(rows.map((r) => [r.contestId, { openingDeadline: +r.openingDeadline }]));
+    return new Map(rows.map((r) => [r.contestId, { openingDeadline: +r.openingDeadline, noDefender: !!r.noDefender }]));
   }
 
   private async isDebateLand(serverId: string, landId: string): Promise<boolean> {

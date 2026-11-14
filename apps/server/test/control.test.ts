@@ -129,6 +129,29 @@ describe("running a season from the admin console (part 7 §2, §7, §9)", () =>
     await t.close();
   });
 
+  it("while paused nothing planned runs except the 24:00 settlement; on resume the rest runs at the moved time (§16)", async () => {
+    const t = await controlSetup();
+    t.clock.set(bj("2027-02-08", 12));
+    await t.services.scheduler.runDue(t.serverId);
+    await t.relogin();
+    expect((await t.call("POST", `/v1/admin/servers/${t.serverId}/pause`, { reason: "服务器维护" })).json().paused).toBe(true);
+    // past D1 21:00 (the blind auction) and D1 24:00 while paused
+    t.clock.set(bj("2027-02-09", 8));
+    await t.services.scheduler.runDue(t.serverId);
+    const row = async (key: string) => (await t.db.select().from(plannedEvents).where(and(eq(plannedEvents.serverId, t.serverId), eq(plannedEvents.key, key))))[0]!;
+    expect((await row("blind_auction")).status).toBe("pending");
+    expect((await row("settle_day:1")).status).toBe("done");
+    expect((await t.services.store.state(t.serverId)).done).not.toContain("blind_auction");
+    await t.relogin();
+    await t.call("POST", `/v1/admin/servers/${t.serverId}/resume`);
+    const moved = await row("blind_auction");
+    expect(+moved.runAt).toBe(+bj("2027-02-08", 21) + (+bj("2027-02-09", 8) - +bj("2027-02-08", 12)));
+    t.clock.set(new Date(+moved.runAt + 60_000));
+    await t.services.scheduler.runDue(t.serverId);
+    expect((await row("blind_auction")).status).toBe("done");
+    await t.close();
+  });
+
   it("calendar, report preview with a hidden line, and the final settlement waits for the big battle", async () => {
     const t = await controlSetup();
     expect((await t.call("POST", "/v1/admin/calendar/2027-02-11", { kind: "rest", note: "元宵节" })).json()).toEqual({ day: "2027-02-11", kind: "rest" });

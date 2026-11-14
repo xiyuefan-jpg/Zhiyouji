@@ -83,8 +83,11 @@ export class Worker {
           report.failed.push(x.key);
           await this.notifier.notifyAdmins({
             kind: "planned_event_failed",
-            title: "计划事件失败",
-            body: `${x.key}（${x.engineEvent ?? ""}）：${x.refusal ?? "未知原因"}。请在管理端查看并处理。`,
+            title: x.refusal === "war_unsettled" ? "大团战阵营在等周战争结算" : "计划事件失败",
+            body:
+              x.refusal === "war_unsettled"
+                ? "最后一周的周战争还没结算完（复核还没完成），大团战阵营要等它结算以后才分，之后的大团战计划事件也一起等。请到复核队列处理。"
+                : `${x.key}（${x.engineEvent ?? ""}）：${x.refusal ?? "未知原因"}。请在管理端查看并处理。`,
             link: `/servers/${serverId}/planned`,
             dedupeKey: `planned_failed:${serverId}:${x.key}`,
             roles: ["admin"],
@@ -93,11 +96,15 @@ export class Worker {
       }
       for (const serverId of ids) {
         try {
-          await this.debates?.runDue(serverId);
-          const sc = await this.scoring?.runDue(serverId);
-          if (sc) report.scoring = { closed: report.scoring.closed + sc.closed, settled: report.scoring.settled + sc.settled, timeouts: report.scoring.timeouts + sc.timeouts };
-          const sp = await this.supply?.runDue(serverId);
-          if (sp) report.reminders += sp.reminded;
+          // §16 / §18: a paused season closes nothing — no debate sides, no contest or war
+          // deadlines, no supply windows; those times move back on resume.
+          if (!(await this.scheduler.isPaused(serverId))) {
+            await this.debates?.runDue(serverId);
+            const sc = await this.scoring?.runDue(serverId);
+            if (sc) report.scoring = { closed: report.scoring.closed + sc.closed, settled: report.scoring.settled + sc.settled, timeouts: report.scoring.timeouts + sc.timeouts };
+            const sp = await this.supply?.runDue(serverId);
+            if (sp) report.reminders += sp.reminded;
+          }
           await this.showcase?.runDue(serverId);
           report.reports += (await this.reports?.runDue(serverId)) ?? 0;
           report.reminders += (await this.reminders?.runDue(serverId)) ?? 0;

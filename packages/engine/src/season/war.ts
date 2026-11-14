@@ -20,6 +20,7 @@ import {
   type Result,
   type SeasonState,
   type WarState,
+  afterPauses,
 } from "./state.js";
 
 export type WarRefusal = "bad_week" | "already_done" | "too_early" | "not_paired" | "unknown_team";
@@ -30,11 +31,11 @@ export function warWeeks(s: SeasonState): number {
 }
 
 export function warPairingAt(s: SeasonState, week: number): Instant {
-  return publicationTime(dateOfSeasonDay(s.opening, 7 * week - 3), "evening", s.params, s.calendar);
+  return afterPauses(s, publicationTime(dateOfSeasonDay(s.opening, 7 * week - 3), "evening", s.params, s.calendar));
 }
 
 export function warDeadline(s: SeasonState, week: number): Instant {
-  return deadlineOn(dateOfSeasonDay(s.opening, 7 * week), s.params);
+  return afterPauses(s, deadlineOn(dateOfSeasonDay(s.opening, 7 * week), s.params));
 }
 
 function validWeek(s: SeasonState, week: number): boolean {

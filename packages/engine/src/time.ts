@@ -138,9 +138,9 @@ export function contestTimes(startedAt: Instant, p: SeasonParams): ContestTimes 
 }
 
 /** Contests may be started after the D1 auction closes (D1 21:00) and until D25 21:00 (§10.1). */
-export function canStartContest(opening: DateStr, t: Instant, p: SeasonParams): boolean {
-  const from = deadlineOn(dateOfSeasonDay(opening, 1), p);
-  const until = deadlineOn(dateOfSeasonDay(opening, p.contest.lastInitiationDay), p);
+export function canStartContest(opening: DateStr, t: Instant, p: SeasonParams, shift: (t: Instant) => Instant = (x) => x): boolean {
+  const from = shift(deadlineOn(dateOfSeasonDay(opening, 1), p));
+  const until = shift(deadlineOn(dateOfSeasonDay(opening, p.contest.lastInitiationDay), p));
   return t >= from && t <= until;
 }
 

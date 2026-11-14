@@ -1,4 +1,6 @@
 import { children, families } from "@zhiyouji/db";
+import { warDeadline } from "@zhiyouji/engine";
+import type { SeasonStore } from "../src/index.js";
 import { bj, setup } from "./helpers.js";
 
 const ADMIN = "admin:test";
@@ -69,4 +71,12 @@ export async function contestSetup(opts: { landNames?: Record<string, string>; s
   const defender = st.lands[target]!.owner!;
   const contestId = (await a1("POST", "/v1/season/contests", { landId: target })).json().contest.id as string;
   return { ...t, a1api: a1, myTeam, target, defender, contestId };
+}
+
+/** Settle every paired war whose deadline has passed with no scores (what scoring does when nothing was handed in). */
+export async function settleWars(t: { services: { store: SeasonStore }; serverId: string; clock: { now(): Date } }) {
+  const st = await t.services.store.state(t.serverId);
+  const now = +t.clock.now();
+  for (const w of Object.values(st.wars))
+    if (!w.settled && w.pairs.length > 0 && warDeadline(st, w.week) <= now) await t.services.store.apply(t.serverId, { type: "settle_war", week: w.week, at: now, scores: {} }, "system");
 }

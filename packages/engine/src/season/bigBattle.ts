@@ -30,6 +30,7 @@ import {
   type Notice,
   type Result,
   type SeasonState,
+  afterPauses,
 } from "./state.js";
 
 export type BattleRefusal =
@@ -48,25 +49,26 @@ export type BattleRefusal =
   | "already_active"
   | "no_assignment"
   | "bad_line"
-  | "out_of_season";
+  | "out_of_season"
+  | "war_unsettled";
 
 export function campsFormAt(s: SeasonState): Instant {
-  return publicationTime(dateOfSeasonDay(s.opening, s.params.time.bigBattleStartDay), s.params.review.w4DeadlineSlot, s.params, s.calendar);
+  return afterPauses(s, publicationTime(dateOfSeasonDay(s.opening, s.params.time.bigBattleStartDay), s.params.review.w4DeadlineSlot, s.params, s.calendar));
 }
 
 export function linesDeadline(s: SeasonState): Instant {
-  return deadlineOn(dateOfSeasonDay(s.opening, s.params.time.bigBattleStartDay), s.params);
+  return afterPauses(s, deadlineOn(dateOfSeasonDay(s.opening, s.params.time.bigBattleStartDay), s.params));
 }
 
 export function linesPublishedAt(s: SeasonState): Instant {
-  return publicationTime(dateOfSeasonDay(s.opening, s.params.time.bigBattleStartDay + 1), "morning", s.params, s.calendar);
+  return afterPauses(s, publicationTime(dateOfSeasonDay(s.opening, s.params.time.bigBattleStartDay + 1), "morning", s.params, s.calendar));
 }
 
 /** 调兵符 window: 12 hours after the lines are published (§13.4). */
 export const DIAOBING_HOURS = 12;
 
 export function battleDeadline(s: SeasonState): Instant {
-  return deadlineOn(dateOfSeasonDay(s.opening, s.params.time.seasonDays), s.params);
+  return afterPauses(s, deadlineOn(dateOfSeasonDay(s.opening, s.params.time.seasonDays), s.params));
 }
 
 export function campOf(bb: BigBattleState, teamId: string): Camp | null {
@@ -80,6 +82,8 @@ const other = (c: Camp): Camp => (c === "a" ? "b" : "a");
 export function formBigBattle(input: SeasonState, e: { at: Instant }): Result<BattleRefusal> {
   if (input.bigBattle) return { ok: false, refusal: "already_done" };
   if (e.at < campsFormAt(input)) return { ok: false, refusal: "too_early" };
+  // §14: the camps follow the ranking after W4 is settled ("结算 W4 后，按排名蛇形分成两个阵营").
+  if (Object.values(input.wars).some((w) => w.pairs.length > 0 && !w.settled)) return { ok: false, refusal: "war_unsettled" };
   const s = cloneState(input);
   const ranked = rankingAt(s, e.at).map((r) => r.teamId);
   const camps = formCamps(ranked);

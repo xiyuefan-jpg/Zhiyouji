@@ -72,7 +72,7 @@ function minutesText(sec: number): string {
   return m === 0 ? `${r} 秒` : r === 0 ? `${m} 分钟` : `${m} 分 ${r} 秒`;
 }
 
-export type DebateDeadlines = ReadonlyMap<string, { openingDeadline: number }>;
+export type DebateDeadlines = ReadonlyMap<string, { openingDeadline: number; noDefender?: boolean }>;
 
 /** Every slot the team has (open or closed), from the season state. */
 export function teamSlots(st: SeasonState, teamId: string, now: number, debates: DebateDeadlines = new Map()): SlotInfo[] {
@@ -85,7 +85,9 @@ export function teamSlots(st: SeasonState, teamId: string, now: number, debates:
     const d = debates.get(id);
     if (d) {
       out.push({ slot: `contest:${id}:open`, kind: "contest", promptId: c.promptId, deadline: d.openingDeadline, open: active && now < d.openingDeadline, role, stage: "opening" });
-      out.push({ slot: `contest:${id}`, kind: "contest", promptId: c.promptId, deadline: c.deadline, open: active && now >= d.openingDeadline && now < c.deadline, role, stage: "rebuttal" });
+      // §10.4: a defender who handed in no opening did not take up the debate — no rebuttal either
+      const declined = role === "defender" && !!d.noDefender;
+      out.push({ slot: `contest:${id}`, kind: "contest", promptId: c.promptId, deadline: c.deadline, open: active && !declined && now >= d.openingDeadline && now < c.deadline, role, stage: "rebuttal" });
     } else out.push({ slot: `contest:${id}`, kind: "contest", promptId: c.promptId, deadline: c.deadline, open: active && now < c.deadline, role });
   }
   for (const w of Object.values(st.wars).sort((a, b) => a.week - b.week)) {

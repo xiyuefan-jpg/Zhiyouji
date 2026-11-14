@@ -37,6 +37,8 @@ export interface LandView {
   zeroed: boolean;
   owner: { id: string; name: string } | null;
   ownedSince?: number | null;
+  /** Today's price of an unsold center land (after the D8 round). */
+  price?: number | null;
   mine: boolean;
   /** The land's subject and question type (what a team must explain to win or keep it). */
   subject?: string | null;
@@ -75,6 +77,13 @@ export interface Quote {
   cost: number;
   exile: boolean;
   crusade: boolean;
+  /** How the base is made: 基础 + 同时进行的场数 + 持有的地 (§3.2). */
+  parts?: { label: string; amount: number }[];
+  /** 流亡令 ×0.5, 讨伐令 ×0.7 when they apply. */
+  factors?: { label: string; factor: number }[];
+  /** Join deadline and work deadline of this contest (a new one: if started now). */
+  joinDeadline?: number;
+  deadline?: number;
   grain: number;
 }
 
@@ -189,7 +198,13 @@ export interface UseItemBody {
 }
 
 export interface UseItemResult extends TeamFull {
-  used: { itemId: string; copied: { id: string; name: string } | null; outcomes: { teamId: string; team: string; outcome: "hit" | "blocked" | "reflected" }[] };
+  used: {
+    itemId: string;
+    copied: { id: string; name: string } | null;
+    outcomes: { teamId: string; team: string; outcome: "hit" | "blocked" | "reflected" }[];
+    /** 侦察令: who the other camp has put on that line right now (only this team learns it). */
+    scouted?: { line: number; opponent: { id: string; name: string } | null } | null;
+  };
 }
 
 export interface Transfer {

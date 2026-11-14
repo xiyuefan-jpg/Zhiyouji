@@ -202,7 +202,8 @@ export function simulateSeason(o: SimOptions): SimResult {
       }
       case "war_deadline": {
         const week = Number(row.data.week);
-        const settleAt = row.at + 15 * HOUR;
+        // reviews done by the next morning, before the D29 camps (§14: camps follow the W4 result)
+        const settleAt = row.at + 14 * HOUR;
         push(settleAt, () => [{ type: "settle_war", week, at: settleAt, scores: Object.fromEntries(bots.map((b) => [b.id, score(b.id, 0.9)])) }]);
         return [];
       }

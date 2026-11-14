@@ -26,6 +26,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   adminUsers,
   aiScores,
+  debates,
   files,
   humanScores,
   lands,
@@ -107,6 +108,15 @@ export class Scoring {
     // Openings first, so a team's rebuttal (when there is one) is the work that counts.
     const ordered = [...rows.filter((r) => r.slot.endsWith(":open")), ...rows.filter((r) => !r.slot.endsWith(":open"))];
     for (const r of ordered) last.set(r.slot.startsWith("main:") ? r.slot : `${baseSlot(r.slot)}|${r.teamId}`, r);
+    // §10.4: a debate defender with no opening did not defend, whatever came in afterwards
+    if (key.startsWith("contest:")) {
+      const [d] = await this.db.select().from(debates).where(and(eq(debates.serverId, serverId), eq(debates.contestId, key.slice("contest:".length))));
+      if (d?.noDefender) {
+        const st = await this.store.state(serverId);
+        const defender = st.contests[d.contestId]?.defender;
+        return [...last.values()].filter((w) => w.teamId !== defender);
+      }
+    }
     return [...last.values()];
   }
 

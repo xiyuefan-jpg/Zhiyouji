@@ -36,6 +36,7 @@ import {
   type Notice,
   type Result,
   type SeasonState,
+  afterPauses,
 } from "./state.js";
 import type { Ranked } from "../ranking.js";
 
@@ -77,7 +78,7 @@ export interface UseItem {
 
 /** "The war starts" = Friday morning publication of that week (§20.3). Week w runs D(7w−6) … D(7w). */
 export function warStartAt(s: SeasonState, week: number): Instant {
-  return publicationTime(dateOfSeasonDay(s.opening, 7 * week - 2), "morning", s.params, s.calendar);
+  return afterPauses(s, publicationTime(dateOfSeasonDay(s.opening, 7 * week - 2), "morning", s.params, s.calendar));
 }
 
 /** The team's best land right now: highest base output, preferring lands not zeroed by 生死簿; ties by land order. */

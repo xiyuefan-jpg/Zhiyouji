@@ -55,6 +55,11 @@ describe("admin console: 赛季 and 玩家与分组 (part 7 §2–§3)", () => {
     await user.click(within(row).getByRole("button", { name: "开 通" }));
     await waitFor(async () => expect((await be.services.seasons.roster(s.id)).find((r) => r.childId === ids[0])?.paymentNote).toBe("已转账"));
 
+    // 报名名单: an enrolled child can be revoked before the grouping is locked (part 7 §3)
+    await user.click(screen.getByRole("tab", { name: "报名名单" }));
+    const rosterRow = (await screen.findAllByText("小乌龟")).map((x) => x.closest("tr")!).find((tr) => within(tr).queryByRole("button", { name: /撤\s?销/ }));
+    expect(rosterRow).toBeTruthy();
+
     await user.click(screen.getByRole("tab", { name: "分组" }));
     await user.click(await screen.findByRole("button", { name: "生成分组" }));
     expect((await screen.findAllByText(/2 人 · 平均/)).length).toBe(8);

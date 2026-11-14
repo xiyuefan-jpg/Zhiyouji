@@ -37,6 +37,11 @@ const SOURCE_TEXT: Record<string, string> = {
   copy: "太虚幻镜复制",
 };
 
+/** 侦察令's result (§3.7 step 4): who the other camp has on that line right now. */
+export function scoutText(x: { line: number; opponent: { name: string } | null }): string {
+  return x.opponent ? `第 ${x.line} 条战线上，对方现在派的是${x.opponent.name}（截止前对方还可以换）。` : `第 ${x.line} 条战线上，对方现在还没有派组。`;
+}
+
 export function outcomeText(o: UseItemResult["used"]["outcomes"][number]): string {
   if (o.outcome === "blocked") return `被${o.team}的辟火罩挡下了`;
   if (o.outcome === "reflected") return `被${o.team}的照妖镜反弹回来了`;
@@ -218,6 +223,7 @@ function ItemDetail({ item, uid, canAct, copies, punchDown, onUsed }: { item: Ca
     try {
       const r = await seasonApi.useItem(body);
       const lines = [r.used.copied ? `太虚幻镜复制了${r.used.copied.name}。` : `用了${item.name}。`, ...r.used.outcomes.map((o) => outcomeText(o) + "。")];
+      if (r.used.scouted) lines.push(scoutText(r.used.scouted));
       await Dialog.alert({ content: lines.join("\n"), confirmText: "知道了" });
       onUsed();
     } catch (e) {

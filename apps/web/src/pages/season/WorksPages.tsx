@@ -12,8 +12,8 @@ import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { Button, Checkbox, Dialog, Selector, TextArea, Toast } from "antd-mobile";
 import { RightOutline } from "antd-mobile-icons";
-import { ApiError, request } from "../../api";
-import { shortTime } from "../../format";
+import { ApiError, request, serverNow } from "../../api";
+import { countdown, shortTime } from "../../format";
 import { Empty, PageHeader } from "../../components/ui";
 import { mediaDuration, ticketUploader } from "../../platform/upload";
 import { MEDIA_MAX_SEC } from "@zhiyouji/shared";
@@ -51,6 +51,12 @@ interface Result {
 
 const uploader = ticketUploader("/v1/season", request);
 
+/** "截止：还剩 1 天 3 小时（周三 21:00）" (part 5 §5); a closed slot says why. */
+export function slotTimeText(s: Pick<Slot, "open" | "deadline">, now: number = serverNow()): string {
+  if (s.open) return `截止：${countdown(s.deadline, now)}`;
+  return s.deadline <= now ? "已截止" : "现在不能交";
+}
+
 export function slotTitle(s: Pick<Slot, "kind" | "slot" | "role" | "stage">): string {
   if (s.kind === "contest") return `区域争夺（${s.role === "defender" ? "守方" : "进攻方"}）${s.stage === "opening" ? " · 立论" : s.stage === "rebuttal" ? " · 驳论" : ""}`;
   if (s.kind === "war") return `第 ${s.slot.split(":")[1]} 周周战争`;
@@ -85,7 +91,7 @@ export function WorksList() {
           <div className="grow">
             <div style={{ fontWeight: 600 }}>{slotTitle(s)}</div>
             <div className="hint">
-              {s.open ? `${shortTime(new Date(s.deadline).toISOString())} 截止` : "已截止"}
+              {slotTimeText(s)}
               {s.submitted ? ` · 已交第 ${s.submitted.version} 版` : " · 还没交"}
             </div>
           </div>
@@ -171,7 +177,7 @@ export function WorkSlot() {
       <PageHeader title={s ? slotTitle(s) : "作品"} />
       {s && (
         <p className="subtitle">
-          {s.open ? `${shortTime(new Date(s.deadline).toISOString())} 截止` : "已截止"}
+          {slotTimeText(s)}
           {s.submitted ? ` · 已交第 ${s.submitted.version} 版（以最后一次为准）` : ""}
         </p>
       )}
@@ -201,11 +207,14 @@ export function WorkSlot() {
             <div className="panel">
               <div className="hint">{BASIS[result.data.mine.basis] ?? result.data.mine.basis}</div>
               {result.data.mine.dims.map((d) => (
-                <div key={d.name} className="row">
-                  <span className="grow">{d.name}</span>
-                  <span>
-                    {d.score ?? "—"} / {d.max}
-                  </span>
+                <div key={d.name}>
+                  <div className="row">
+                    <span className="grow">{d.name}</span>
+                    <span>
+                      {d.score ?? "—"} / {d.max}
+                    </span>
+                  </div>
+                  {d.reason && <div className="hint">{d.reason}</div>}
                 </div>
               ))}
               {result.data.mine.comment && <p>{result.data.mine.comment}</p>}

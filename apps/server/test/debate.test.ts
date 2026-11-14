@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { reviewAssignments } from "@zhiyouji/db";
+import { eq } from "drizzle-orm";
+import { reviewAssignments, works } from "@zhiyouji/db";
+import { teamSlots } from "../src/season/works.js";
 import { bj } from "./helpers.js";
 import { contestSetup } from "./seasonHelpers.js";
 
@@ -41,6 +43,14 @@ describe("异步辩论 on debate lands (part 3 §10.4)", () => {
     expect((await a1("GET", "/v1/messages")).json().messages.find((m: { title: string }) => m.title === "驳论开始了").body).toContain("2 个论点");
     expect((await a1("POST", `/v1/season/works/contest:${t.contestId}:open`, { mediaKind: "text", text: "晚了", members: [t.a1] })).json().error).toBe("too_late");
     expect((await a1("POST", `/v1/season/works/contest:${t.contestId}`, { mediaKind: "text", text: "我方驳论：对方可能会说……", members: [t.a1] })).json().work.version).toBe(1);
+    // the defender who skipped the opening has no rebuttal slot, and a rebuttal from them would not count
+    const deb = await t.services.debates.openingDeadlines(t.serverId);
+    const defSlots = teamSlots(await t.services.store.state(t.serverId), t.defender, +t.clock.now(), deb);
+    expect(defSlots.find((x) => x.slot === `contest:${t.contestId}`)!.open).toBe(false);
+    const [mine] = await t.db.select().from(works).where(eq(works.slot, `contest:${t.contestId}`));
+    const { id: _id, ...copy } = mine!;
+    await t.db.insert(works).values({ ...copy, teamId: t.defender });
+    expect((await t.services.scoring.countingWorks(t.serverId, `contest:${t.contestId}`)).map((w) => w.teamId)).toEqual([t.myTeam]);
 
     // the deadline: one work per team; the reviewer sees the opening next to the rebuttal; rubric B
     t.clock.set(bj("2027-02-12", 21, 1));

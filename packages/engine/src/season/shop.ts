@@ -26,6 +26,7 @@ import {
   type Notice,
   type Result,
   type SeasonState,
+  afterPauses,
 } from "./state.js";
 
 export type SeasonShopRefusal =
@@ -42,21 +43,21 @@ export type SeasonShopRefusal =
   | "epic_use_auction";
 
 export function shopOpensAt(s: SeasonState): Instant {
-  return publicationTime(dateOfSeasonDay(s.opening, s.params.time.shopOpenDay), "morning", s.params, s.calendar);
+  return afterPauses(s, publicationTime(dateOfSeasonDay(s.opening, s.params.time.shopOpenDay), "morning", s.params, s.calendar));
 }
 
 export function shopClosesAt(s: SeasonState): Instant {
-  return deadlineOn(dateOfSeasonDay(s.opening, s.params.time.shopCloseDay), s.params);
+  return afterPauses(s, deadlineOn(dateOfSeasonDay(s.opening, s.params.time.shopCloseDay), s.params));
 }
 
 /** D15 21:00: rare preferences are due and allocated. */
 export function rareRoundAt(s: SeasonState): Instant {
-  return deadlineOn(dateOfSeasonDay(s.opening, s.params.time.shopOpenDay), s.params);
+  return afterPauses(s, deadlineOn(dateOfSeasonDay(s.opening, s.params.time.shopOpenDay), s.params));
 }
 
 /** D15 evening publication: the epic auctions start. */
 export function epicAuctionsStartAt(s: SeasonState): Instant {
-  return publicationTime(dateOfSeasonDay(s.opening, s.params.time.shopOpenDay), "evening", s.params, s.calendar);
+  return afterPauses(s, publicationTime(dateOfSeasonDay(s.opening, s.params.time.shopOpenDay), "evening", s.params, s.calendar));
 }
 
 function leadingOn(a: EpicAuctionState): string | null {

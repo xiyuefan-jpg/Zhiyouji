@@ -49,6 +49,11 @@ export class Scheduler {
     private readonly clock: Clock,
   ) {}
 
+  /** Whether the server's season is paused right now (§16). */
+  async isPaused(serverId: string): Promise<boolean> {
+    return (await this.store.state(serverId)).paused;
+  }
+
   /** Run every due planned event of a server, oldest first. Safe to call repeatedly. */
   async runDue(serverId: string): Promise<RunReport> {
     const now = this.clock.now();
@@ -58,7 +63,13 @@ export class Scheduler {
       .where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.status, "pending"), lte(plannedEvents.runAt, now)))
       .orderBy(asc(plannedEvents.runAt), asc(plannedEvents.key));
     const report: RunReport = { ran: [] };
+    // §16: while the season is paused nothing planned runs except the 24:00 settlement (which
+    // books "paused, no income"); the rest moves back by the paused time on resume.
+    const paused = await this.isPaused(serverId);
+    // Rows after a waiting "form the camps" wait with it (they need the camps); the 24:00 settlements go on.
+    let waiting = false;
     for (const row of due) {
+      if ((paused || waiting) && row.shiftable) continue;
       await this.advanceSeasonStatus(serverId, row.kind);
       const engineEvent = (row.params as { engineEvent: string | null }).engineEvent;
       if (!engineEvent) {
@@ -72,11 +83,19 @@ export class Scheduler {
         continue;
       }
       const event = await this.buildEvent(serverId, engineEvent, row.params as Record<string, unknown>, +row.runAt);
+      // Camps formed after waiting for W4 (§14) use the ranking at that moment, W4 included.
+      if (engineEvent === "form_big_battle" && row.error === "war_unsettled") (event as { at: number }).at = +now;
       const res = await this.store.apply(serverId, event, "system");
       if (res.ok || res.refusal === "already_settled" || res.refusal === "already_done") {
         await this.db.update(plannedEvents).set({ status: "done", doneAt: now, attempts: row.attempts + 1 }).where(eq(plannedEvents.id, row.id));
         report.ran.push({ key: row.key, engineEvent, ok: true });
         await this.rowDone(serverId, row.kind, row.key);
+      } else if (res.refusal === "war_unsettled") {
+        // §14: the camps wait for W4 to be settled (its reviews end at this same moment); try next tick.
+        // Still waiting an hour later: tell an admin (the row stays pending).
+        await this.db.update(plannedEvents).set({ attempts: row.attempts + 1, error: res.refusal }).where(eq(plannedEvents.id, row.id));
+        report.ran.push({ key: row.key, engineEvent, ok: +now - +row.runAt < 3_600_000, refusal: res.refusal });
+        waiting = true;
       } else {
         await this.db.update(plannedEvents).set({ status: "failed", attempts: row.attempts + 1, error: res.refusal }).where(eq(plannedEvents.id, row.id));
         report.ran.push({ key: row.key, engineEvent, ok: false, refusal: res.refusal });

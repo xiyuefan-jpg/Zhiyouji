@@ -312,6 +312,20 @@ export function createSeasonState(i: CreateSeasonInput): SeasonState {
  * after they are written, so the copy shares those entries and only copies the
  * arrays; everything else is deep-copied.
  */
+/**
+ * A time from the season calendar, moved by every finished pause that began
+ * before it (§16 "所有计划事件顺延", §18 "截止时间自动顺延暂停的时长").
+ * A pause still open does not move anything yet: the times move on resume,
+ * like the contest deadlines and the planned events.
+ */
+export function afterPauses(s: Pick<SeasonState, "pauses">, t: Instant): Instant {
+  let out = t;
+  for (const p of [...(s.pauses ?? [])].sort((a, b) => a.from - b.from)) {
+    if (p.until !== null && p.from < out) out += p.until - p.from;
+  }
+  return out;
+}
+
 export function cloneState(s: SeasonState): SeasonState {
   const { ledger, taskPasses, usedItems, ...rest } = s;
   const copy = JSON.parse(JSON.stringify(rest)) as Omit<SeasonState, "ledger" | "taskPasses" | "usedItems">;

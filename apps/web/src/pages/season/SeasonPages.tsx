@@ -11,10 +11,10 @@ import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Button, Dialog, Tabs, Toast } from "antd-mobile";
 import { RightOutline } from "antd-mobile-icons";
-import { ApiError, request } from "../../api";
-import { shortTime } from "../../format";
+import { ApiError, request, serverNow } from "../../api";
+import { countdown, shortTime } from "../../format";
 import { Avatar, Empty, PageHeader, Seal } from "../../components/ui";
-import { points, seasonApi, type FeedLine, type LandView, type SeasonMe } from "../../seasonApi";
+import { points, seasonApi, type FeedLine, type LandView, type Quote, type SeasonMe } from "../../seasonApi";
 import { useLoad, useSeasonMe } from "./useSeason";
 import { RolesPanel } from "./TeamPages";
 import { TeamRanking } from "../WatchPages";
@@ -88,7 +88,7 @@ function LandList({ title, lands }: { title: string; lands: LandView[] }) {
               {l.owner ? `主人：${l.owner.name}` : "还没有主人"}
               {l.zeroed ? " · 产出被生死簿归零" : ""}
             </div>
-            {l.contest && <div style={{ color: "var(--vermilion)", fontSize: 14 }}>争夺中 · {shortTime(new Date(l.contest.deadline).toISOString())} 截止</div>}
+            {l.contest && <div style={{ color: "var(--vermilion)", fontSize: 14 }}>争夺中 · {countdown(l.contest.deadline)}</div>}
           </div>
           <RightOutline />
         </Link>
@@ -98,6 +98,13 @@ function LandList({ title, lands }: { title: string; lands: LandView[] }) {
 }
 
 // ---- 地块详情、发起或加入进攻 (D2, D3) -----------------------------------------------------------------
+
+/** "基础 30 + 本组同时进行 1 场 15 + 持有 2 块地 20 = 65；讨伐令 ×0.7 → 46" (§3.2). */
+export function costEquation(q: Pick<Quote, "base" | "cost" | "exile" | "crusade" | "parts" | "factors">): string {
+  const sum = q.parts && q.parts.length > 1 ? `${q.parts.map((x) => `${x.label} ${x.amount}`).join(" + ")} = ${q.base}` : `基础 ${q.base}`;
+  const factors = q.factors ?? [...(q.exile ? [{ label: "流亡令", factor: 0.5 }] : []), ...(q.crusade ? [{ label: "讨伐令", factor: 0.7 }] : [])];
+  return factors.length ? `${sum}；${factors.map((f) => `${f.label} ×${f.factor}`).join("，")}` : sum;
+}
 
 export function LandPage() {
   const { landId = "" } = useParams();
@@ -111,29 +118,57 @@ export function LandPage() {
     if (!land) return;
     try {
       if (kind === "buy") {
-        const ok = await Dialog.confirm({ content: `用粮草买下${land.name}？` });
+        const team = await seasonApi.team();
+        const grain = team.spendableGrain;
+        const ok = await Dialog.confirm({
+          content: (
+            <div>
+              <p>
+                买下{land.name}：<b>{land.price ?? "?"} 粮草</b>
+              </p>
+              {land.price != null && (
+                <p>
+                  本组现有 {grain}，之后剩 {grain - land.price}。
+                </p>
+              )}
+              <p className="hint">中心地的价格每天往下降；买下以后每天产出 {land.output} 分。</p>
+            </div>
+          ),
+        });
         if (!ok) return;
         setBusy(true);
         await seasonApi.buyCenter(land.id);
         Toast.show({ content: `买下了${land.name}` });
       } else {
         const q = await seasonApi.quote(land.id);
-        const parts = [`基础 ${q.base}`, q.exile ? "流亡令 ×0.5" : "", q.crusade ? "讨伐令 ×0.7" : ""].filter(Boolean).join("，");
+        const parts = costEquation(q);
         const ok = await Dialog.confirm({
           content: (
             <div>
               <p>费用：{parts} → <b>{q.cost} 粮草</b></p>
               <p>本组现有 {q.grain}，之后剩 {q.grain - q.cost}。</p>
-              <p className="hint">题目将从这块地的题库里随机抽取。{kind === "join" && land.contest ? `作品 ${shortTime(new Date(land.contest.deadline).toISOString())} 截止。` : "作品在第 3 天晚上 9 点截止。"}</p>
+              <p className="hint">
+                题目将从这块地的题库里随机抽取。
+                {q.deadline ? `作品 ${shortTime(new Date(q.deadline).toISOString())} 截止。` : ""}
+                {kind === "attack" && q.joinDeadline ? `别的组可以在 ${shortTime(new Date(q.joinDeadline).toISOString())} 之前加入。` : ""}
+              </p>
               <p>花 {q.cost} 粮草{kind === "attack" ? "发起进攻" : "加入进攻"}？</p>
             </div>
           ),
         });
         if (!ok) return;
         setBusy(true);
-        if (kind === "attack") await seasonApi.attack(land.id);
-        else await seasonApi.join(land.contest!.id);
-        Toast.show({ content: kind === "attack" ? "已发起进攻" : "已加入进攻" });
+        if (kind === "attack") {
+          // §3.2 steps 4–5: the prompt card is revealed on the contest page
+          const r = await seasonApi.attack(land.id);
+          Toast.show({ content: "已发起进攻，题目翻开了" });
+          nav(`/season/contests/${r.contest.id}`);
+          return;
+        }
+        await seasonApi.join(land.contest!.id);
+        Toast.show({ content: "已加入进攻" });
+        nav(`/season/contests/${land.contest!.id}`);
+        return;
       }
       map.reload();
     } catch (e) {
@@ -167,7 +202,9 @@ export function LandPage() {
             )}
             {land.contest && (
               <div style={{ marginTop: 8 }}>
-                <div style={{ color: "var(--vermilion)" }}>争夺中，{shortTime(new Date(land.contest.deadline).toISOString())} 截止</div>
+                <div style={{ color: "var(--vermilion)" }}>
+                  争夺中，作品截止：{countdown(land.contest.deadline)}
+                </div>
                 <div className="hint">进攻方：{land.contest.attackers.map((a) => a?.name).join("、")}</div>
                 <Link to={`/season/contests/${land.contest.id}`}>争夺详情（题目）</Link>
               </div>
@@ -180,7 +217,7 @@ export function LandPage() {
                 发起进攻
               </Button>
             )}
-            {land.contest && !land.mine && !land.contest.involved && (
+            {land.contest && !land.mine && !land.contest.involved && serverNow() < land.contest.joinDeadline && (
               <Button color="primary" className="big-button" disabled={!me.data.canAct || busy} onClick={() => void act("join")}>
                 加入进攻
               </Button>
