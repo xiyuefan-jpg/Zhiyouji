@@ -64,6 +64,8 @@ export interface ServerConfig {
   };
   /** Session cookie names; cookies are httpOnly, SameSite=Lax, Secure in production. */
   cookies: { family: string; admin: string; secure: boolean };
+  /** Emails to admins and reviewers (part 8 §1.2): links in them start with `adminUrl`. */
+  email: { adminUrl: string; from: string };
 }
 
 export function defaultConfig(env: Record<string, string | undefined> = {}): ServerConfig {
@@ -102,5 +104,6 @@ export function defaultConfig(env: Record<string, string | undefined> = {}): Ser
       },
     },
     cookies: { family: "zyj_s", admin: "zyj_a", secure: env.NODE_ENV === "production" },
+    email: { adminUrl: env.ADMIN_URL ?? "http://localhost:5174", from: env.EMAIL_FROM ?? "noreply@zhiyouji.example" },
   };
 }

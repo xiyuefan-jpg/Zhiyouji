@@ -462,6 +462,33 @@ export const messages = pgTable(
   ],
 );
 
+/**
+ * Emails to admins and reviewers (PRD part 8 §1.1–§1.2 "管理端 + 邮件"): only
+ * the kinds that need someone soon. The text says what happened and links to
+ * the console; it never carries a child's data (the readers may be abroad,
+ * part 8 §2.2).
+ */
+export const emailOutbox = pgTable(
+  "email_outbox",
+  {
+    id: id(),
+    adminUserId: uuid("admin_user_id").notNull(),
+    to: text("to").notNull(),
+    kind: text("kind").notNull(),
+    subject: text("subject").notNull(),
+    body: text("body").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    /** pending | sent | failed */
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
+    sendAfter: ts("send_after").notNull(),
+    createdAt: ts("created_at").notNull(),
+    sentAt: ts("sent_at"),
+  },
+  (t) => [uniqueIndex("email_outbox_dedupe").on(t.adminUserId, t.dedupeKey), index("email_outbox_due").on(t.status, t.sendAfter)],
+);
+
 /** Outgoing SMS (login codes are sent directly; reminders go through here). */
 export const smsOutbox = pgTable(
   "sms_outbox",

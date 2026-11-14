@@ -95,7 +95,7 @@ describe("logs are kept only as long as needed (PRD part 8 §4)", () => {
     ]);
 
     const r = await t.services.dataRights.purgeLogs();
-    expect(r).toEqual({ loginCodes: 1, sessions: 1, sms: 1, opLog: 1, viewLog: 1, aiCalls: 1 });
+    expect(r).toEqual({ loginCodes: 1, sessions: 1, sms: 1, emails: 0, opLog: 1, viewLog: 1, aiCalls: 1 });
     expect((await t.db.select().from(sessions)).map((s) => s.tokenHash).sort()).toEqual(["old-but-live", "recent-revoked"]);
     expect((await t.db.select().from(smsOutbox)).map((s) => s.mergeKey).sort()).toEqual(["b", "c"]);
     expect((await t.db.select().from(opLog)).map((x) => x.action)).toEqual(["kept"]);
@@ -104,7 +104,7 @@ describe("logs are kept only as long as needed (PRD part 8 §4)", () => {
     expect(old).toMatchObject({ input: { cleared: true }, output: null, tokensIn: 100, cost: 7, status: "ok" });
     expect(calls.find((c) => +c.createdAt === +ago(3))!.input).toEqual({ text: "新的讲解" });
     // running again changes nothing
-    expect(await t.services.dataRights.purgeLogs()).toEqual({ loginCodes: 0, sessions: 0, sms: 0, opLog: 0, viewLog: 0, aiCalls: 0 });
+    expect(await t.services.dataRights.purgeLogs()).toEqual({ loginCodes: 0, sessions: 0, sms: 0, emails: 0, opLog: 0, viewLog: 0, aiCalls: 0 });
     await t.close();
   });
 });

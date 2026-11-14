@@ -8,7 +8,7 @@ import { createPgDb, createPgliteDb } from "@zhiyouji/db";
 import { realClock } from "./clock.js";
 import { defaultConfig } from "./config.js";
 import { buildApp } from "./http/app.js";
-import { FakeCaptcha, FakeSms } from "./providers.js";
+import { FakeCaptcha, FakeEmail, FakeSms } from "./providers.js";
 import { LocalStorage } from "./storage.js";
 import { Worker } from "./worker.js";
 
@@ -22,9 +22,11 @@ async function main() {
   const sms = new FakeSms(env.NODE_ENV === "production" ? undefined : (line) => console.log(line));
   // TODO(Aliyun OSS): replace with presigned OSS uploads; until then files live under STORAGE_DIR.
   const storage = new LocalStorage(cfg.secret, env.STORAGE_DIR ?? ".storage");
-  const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha(), storage, logger: true, trustProxy: env.TRUST_PROXY === "1" });
+  // TODO(Aliyun DirectMail): replace once the sending domain is set up.
+  const email = new FakeEmail(env.NODE_ENV === "production" ? undefined : (line) => console.log(line));
+  const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha(), email, storage, logger: true, trustProxy: env.TRUST_PROXY === "1" });
 
-  const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier, services.reports, services.reminders, services.scoring, services.dataRights, services.daily, services.supply, services.debates, services.ops, services.showcase, services.summaries, services.media, services.tagSuggestions, services.control);
+  const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier, services.reports, services.reminders, services.scoring, services.dataRights, services.daily, services.supply, services.debates, services.ops, services.showcase, services.summaries, services.media, services.tagSuggestions, services.control, services.emailDispatcher);
   const tickMs = Number(env.TICK_MS ?? 30_000);
   const timer = setInterval(() => {
     worker.tick().then(

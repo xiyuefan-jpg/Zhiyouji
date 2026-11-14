@@ -21,6 +21,7 @@
 import { and, desc, eq, inArray, isNotNull, isNull, lte, lt, ne, or, sql } from "drizzle-orm";
 import {
   aiCalls,
+  emailOutbox,
   childSummaries,
   children,
   consentRecords,
@@ -235,7 +236,7 @@ export class DataRights {
    * after `opLogDays`; the children's words in AI call records after
    * `aiContentDays` (the record stays, for the AI board's counts and costs).
    */
-  async purgeLogs(): Promise<{ loginCodes: number; sessions: number; sms: number; opLog: number; viewLog: number; aiCalls: number }> {
+  async purgeLogs(): Promise<{ loginCodes: number; sessions: number; sms: number; emails: number; opLog: number; viewLog: number; aiCalls: number }> {
     const now = +this.clock.now();
     const before = (days: number) => new Date(now - days * DAY);
     const login = before(this.cfg.loginLogDays);
@@ -251,6 +252,7 @@ export class DataRights {
           .returning({ id: sessions.id }),
       ),
       sms: await n(this.db.delete(smsOutbox).where(and(lt(smsOutbox.createdAt, login), ne(smsOutbox.status, "pending"))).returning({ id: smsOutbox.id })),
+      emails: await n(this.db.delete(emailOutbox).where(and(lt(emailOutbox.createdAt, login), ne(emailOutbox.status, "pending"))).returning({ id: emailOutbox.id })),
       opLog: await n(this.db.delete(opLog).where(lt(opLog.at, logs)).returning({ id: opLog.id })),
       viewLog: await n(this.db.delete(viewLog).where(lt(viewLog.at, logs)).returning({ id: viewLog.id })),
       aiCalls: await n(

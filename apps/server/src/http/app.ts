@@ -13,8 +13,8 @@ import { FamilyAccounts } from "../accounts/family.js";
 import { Sessions } from "../accounts/sessions.js";
 import type { Clock } from "../clock.js";
 import type { ServerConfig } from "../config.js";
-import { Notifier, SmsDispatcher } from "../notify/notifier.js";
-import type { CaptchaVerifier, SmsProvider } from "../providers.js";
+import { EmailDispatcher, Notifier, SmsDispatcher } from "../notify/notifier.js";
+import { FakeEmail, type CaptchaVerifier, type EmailProvider, type SmsProvider } from "../providers.js";
 import { AdminAuth, adminRoutes } from "./adminRoutes.js";
 import { HttpError } from "./errors.js";
 import { FamilyAuth, familyRoutes } from "./familyRoutes.js";
@@ -73,6 +73,8 @@ export interface AppDeps {
   cfg: ServerConfig;
   sms: SmsProvider;
   captcha: CaptchaVerifier;
+  /** Email to admins and reviewers (default: the fake). */
+  email?: EmailProvider;
   /** Object storage for works (default: LocalStorage in memory). */
   storage?: ObjectStorage;
   /** AI initial scoring of works (default: the fake). */
@@ -97,6 +99,9 @@ export interface Services {
   admin: AdminAccounts;
   notifier: Notifier;
   smsDispatcher: SmsDispatcher;
+  emailDispatcher: EmailDispatcher;
+  /** The email provider in use (tests read the fake's outbox). */
+  email: EmailProvider;
   familyAuth: FamilyAuth;
   adminAuth: AdminAuth;
   /** One season store per process: it caches the engine state of every server. */
@@ -165,6 +170,7 @@ export function buildServices(d: AppDeps): Services {
   const seasons = new SeasonAdmin(d.db, d.clock, store, notifier, bank, survey);
   // The raw model clients (fakes until the accounts exist); everything else gets them through the gateway (logging, fallback, shadow).
   const gateway = new AiGateway(d.db, d.clock);
+  const email = d.email ?? new FakeEmail();
   const ai = d.ai ?? new FakeAiScorer();
   const aiDaily = d.aiDaily ?? new FakeAiDaily();
   const play = new SeasonPlay(d.db, d.clock, store, notifier);
@@ -214,6 +220,8 @@ export function buildServices(d: AppDeps): Services {
     admin,
     notifier,
     smsDispatcher: new SmsDispatcher(d.db, d.clock, d.cfg, d.sms),
+    emailDispatcher: new EmailDispatcher(d.db, d.clock, email),
+    email,
     familyAuth: new FamilyAuth(d.cfg, sessions, family),
     adminAuth: new AdminAuth(d.cfg, sessions, admin),
   };

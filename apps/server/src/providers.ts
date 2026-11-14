@@ -20,6 +20,24 @@ export interface SmsProvider {
   sendReminder(phone: string, template: SmsTemplate): Promise<SmsResult>;
 }
 
+/** Email to admins and reviewers (Aliyun DirectMail once the account exists). */
+export interface EmailProvider {
+  send(m: { to: string; subject: string; text: string }): Promise<SmsResult>;
+}
+
+/** Records what would have been sent. `fail` makes sends fail (tests). */
+export class FakeEmail implements EmailProvider {
+  sent: { to: string; subject: string; text: string }[] = [];
+  fail = false;
+  constructor(private readonly log?: (line: string) => void) {}
+  async send(m: { to: string; subject: string; text: string }): Promise<SmsResult> {
+    if (this.fail) return { ok: false, error: "fake failure" };
+    this.sent.push(m);
+    this.log?.(`[fake email] ${m.to}: ${m.subject}`);
+    return { ok: true, id: `fake-mail-${this.sent.length}` };
+  }
+}
+
 export interface CaptchaVerifier {
   /** Check a graphic captcha token from the website. */
   verify(token: string, ip: string | undefined): Promise<boolean>;

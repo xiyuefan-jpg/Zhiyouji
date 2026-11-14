@@ -13,11 +13,11 @@
  */
 
 import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql, type SQL } from "drizzle-orm";
-import { adminUsers, children, families, messages, smsOutbox, type Db } from "@zhiyouji/db";
+import { adminUsers, children, emailOutbox, families, messages, smsOutbox, type Db } from "@zhiyouji/db";
 import { SMS_TEMPLATE_OF, type MessageView, type NotifyKind, type SmsTemplate } from "@zhiyouji/shared";
 import type { Clock } from "../clock.js";
 import type { ServerConfig } from "../config.js";
-import type { SmsProvider } from "../providers.js";
+import type { EmailProvider, SmsProvider } from "../providers.js";
 import { beijingDayStart, isQuiet, quietRelease } from "./quiet.js";
 
 export interface NotifyInput {
@@ -55,6 +55,14 @@ const SMS_MERGE_WINDOW_MS = 30 * 60_000;
 /** The attack reminder ("有新的进攻情况") is merged this way; the others go out one by one (daily cap applies). */
 const MERGE_AFTER_SENT = new Set<SmsTemplate>(["attack"]);
 const MAX_SMS_ATTEMPTS = 3;
+
+/**
+ * Admin notifications that also go by email (part 8 §1.2): review assigned and
+ * due (reviewers); review timed out, daily task in the exception queue,
+ * content blocked, a reviewer's "转给管理员", a planned event or a settlement
+ * failed (admins).
+ */
+export const EMAIL_KINDS: ReadonlySet<string> = new Set(["review_assigned", "review_due", "review_timeout", "daily_error", "safety_block", "safety_forward", "planned_event_failed", "settle_failed"]);
 
 export class Notifier {
   constructor(
@@ -107,7 +115,29 @@ export class Notifier {
       .insert(messages)
       .values(to.map((u) => ({ recipientKind: "admin", recipientId: u.id, type: i.kind, title: i.title, body: i.body, link: i.link ?? null, dedupeKey: i.dedupeKey, createdAt: now })))
       .onConflictDoNothing()
-      .returning({ id: messages.id });
+      .returning({ id: messages.id, recipientId: messages.recipientId });
+    // part 8 §1.2 "管理端 + 邮件": the urgent kinds also go by email (only the title and a link)
+    if (EMAIL_KINDS.has(i.kind) && rows.length) {
+      const got = new Set(rows.map((r) => r.recipientId));
+      const link = `${this.cfg.email.adminUrl}${i.link ?? "/"}`;
+      await this.db
+        .insert(emailOutbox)
+        .values(
+          to
+            .filter((u) => got.has(u.id))
+            .map((u) => ({
+              adminUserId: u.id,
+              to: u.email,
+              kind: i.kind,
+              subject: `【智游记管理端】${i.title}`,
+              body: `${i.title}\n\n详情请登录管理端查看：${link}\n\n（这封邮件由系统自动发送，不含孩子的信息。）`,
+              dedupeKey: i.dedupeKey,
+              sendAfter: now,
+              createdAt: now,
+            })),
+        )
+        .onConflictDoNothing();
+    }
     return rows.length;
   }
 
@@ -247,6 +277,42 @@ export class SmsDispatcher {
           .update(smsOutbox)
           .set({ attempts, error: res.error ?? "send failed", status: give ? "failed" : "pending", sendAfter: new Date(now + RETRY_MS) })
           .where(eq(smsOutbox.id, r.id));
+        if (give) out.failed++;
+      }
+    }
+    return out;
+  }
+}
+
+/** Sends the email outbox: 3 tries, 2 minutes apart. */
+export class EmailDispatcher {
+  constructor(
+    private readonly db: Db,
+    private readonly clock: Clock,
+    private readonly email: EmailProvider,
+  ) {}
+
+  async runDue(): Promise<{ sent: number; failed: number }> {
+    const now = +this.clock.now();
+    const out = { sent: 0, failed: 0 };
+    const due = await this.db
+      .select()
+      .from(emailOutbox)
+      .where(and(eq(emailOutbox.status, "pending"), lte(emailOutbox.sendAfter, new Date(now))))
+      .orderBy(asc(emailOutbox.createdAt))
+      .limit(100);
+    for (const r of due) {
+      const res = await this.email.send({ to: r.to, subject: r.subject, text: r.body }).catch((e: unknown) => ({ ok: false, error: String((e as Error).message ?? e) }) as const);
+      if (res.ok) {
+        await this.db.update(emailOutbox).set({ status: "sent", sentAt: new Date(now), attempts: r.attempts + 1 }).where(eq(emailOutbox.id, r.id));
+        out.sent++;
+      } else {
+        const attempts = r.attempts + 1;
+        const give = attempts >= MAX_SMS_ATTEMPTS;
+        await this.db
+          .update(emailOutbox)
+          .set({ attempts, error: ("error" in res && res.error) || "send failed", status: give ? "failed" : "pending", sendAfter: new Date(now + RETRY_MS) })
+          .where(eq(emailOutbox.id, r.id));
         if (give) out.failed++;
       }
     }
