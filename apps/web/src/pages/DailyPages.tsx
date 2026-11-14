@@ -1,3 +1,4 @@
+import { FilePicker } from "../components/FilePicker";
 /**
  * 每日任务 (PRD part 5 C1–C3, §3.1): choose a template, hand in evidence
  * pictures, an explanation and one line on how AI was used, then the result.
@@ -108,14 +109,7 @@ export function DailyNew() {
       <p className="subtitle">{tpl.prompt}</p>
 
       <div className="field-label">证据：{tpl.evidence}</div>
-      <input
-        type="file"
-        accept="image/*"
-        multiple
-        aria-label="选择证据图片"
-        onChange={(e) => setFiles([...(e.target.files ?? [])].slice(0, 9))}
-      />
-      {files.length > 0 && <div className="hint">已选 {files.length} 张</div>}
+      <FilePicker label="选图片或拍照" accept="image/*" multiple max={9} files={files} onChange={setFiles} />
 
       <div className="field-label">讲解</div>
       <div className="hint">

@@ -110,12 +110,18 @@ export function describe(kind: string, d: Data, names: FeedNames, teamId: string
       return `${L(str(d.landId))}的争夺没有结果，地块不变`;
     case "contest_cancelled":
       return d.by === "xiuli" ? `${T(str(d.teamId))}用袖里乾坤撤回了进攻` : `一场争夺被管理员取消了`;
-    case "auction_result":
-      return "第 1 批选地（盲拍）结果公布了";
+    case "auction_result": {
+      const a = (d.assignments as { teamId: string; landId: string; paid: number }[]) ?? [];
+      return a.length
+        ? `第 1 批选地（盲拍）结果：${a.map((x) => `${T(x.teamId)}出价 ${x.paid}，拿到${L(x.landId)}`).join("；")}`
+        : "第 1 批选地（盲拍）结果公布了";
+    }
     case "starter_items":
       return `开营法宝发下来了：${((d.allocations as { item: string }[]) ?? []).map((a) => item(a.item)).join("、")}`;
-    case "center_round":
-      return "中心地逆序购买结果公布了";
+    case "center_round": {
+      const b = (d.bought as { teamId: string; landId: string; paid: number }[]) ?? [];
+      return b.length ? `中心地逆序购买结果：${b.map((x) => `${T(x.teamId)}花 ${x.paid} 粮草买下${L(x.landId)}`).join("；")}` : "中心地逆序购买结果公布了：这一轮没有组买";
+    }
     case "center_bought":
       return `${T(str(d.teamId))}买下了中心地${L(str(d.landId))}`;
     case "shop_bought":

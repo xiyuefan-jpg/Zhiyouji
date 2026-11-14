@@ -132,7 +132,11 @@ export class AiGateway {
     return {
       score: async (r) => {
         const hits = scoreInstructions(r.text, r.aiNote, r.transcript);
-        const out = await this.call("work_score", { workId: r.workId, rubric: r.rubric.id, promptId: r.promptId, mediaKind: r.mediaKind, ...(hits.length ? { scoreInstructions: hits } : {}) }, () => inner.score(r));
+        const out = await this.call(
+          "work_score",
+          { workId: r.workId, rubric: r.rubric.id, promptId: r.promptId, task: r.task?.title ?? null, mediaKind: r.mediaKind, ...(hits.length ? { scoreInstructions: hits } : {}) },
+          () => inner.score(r),
+        );
         return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
       },
     };

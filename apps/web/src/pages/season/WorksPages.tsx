@@ -1,3 +1,5 @@
+import { FilePicker } from "../../components/FilePicker";
+import { TaskGuide } from "../../components/TaskGuide";
 /**
  * 作品工坊 (PRD part 5 E4, §3.3; E7 results): every work the team has to
  * hand in, each with a countdown; the material box every member adds to; the
@@ -87,6 +89,8 @@ export function WorksList() {
   );
 }
 
+const MATERIAL_KIND: Record<string, string> = { image: "图片", video: "视频", audio: "音频", pdf: "PDF" };
+
 export function WorkSlot() {
   const slot = decodeURIComponent(useParams().slot ?? "");
   const me = useLoad(() => seasonApi.me());
@@ -95,9 +99,11 @@ export function WorkSlot() {
   const result = useLoad(() => request<Result>("GET", `/v1/season/works/${encodeURIComponent(slot)}/result`), [slot]);
   const versions = useLoad(() => request<{ works: Version[] }>("GET", `/v1/season/works/${encodeURIComponent(slot)}/versions`), [slot]);
   const contestId = slot.startsWith("contest:") ? slot.split(":")[1]! : null;
+  const contest = useLoad(() => (contestId ? seasonApi.contest(contestId) : Promise.resolve(null)), [contestId]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [mediaKind, setMediaKind] = useState<"text" | "images" | "video" | "audio">("text");
+  const [mediaKind, setMediaKind] = useState<"text" | "images" | "video" | "audio">("video");
+  const [aiNote, setAiNote] = useState("");
   const [text, setText] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
   const [members, setMembers] = useState<string[]>([]);
@@ -135,7 +141,7 @@ export function WorkSlot() {
   const submit = async () => {
     setBusy(true);
     try {
-      const r = await request<{ work: { version: number } }>("POST", `/v1/season/works/${encodeURIComponent(slot)}`, { mediaKind, fileIds: picked, text, members });
+      const r = await request<{ work: { version: number } }>("POST", `/v1/season/works/${encodeURIComponent(slot)}`, { mediaKind, fileIds: picked, text, members, aiNote: aiNote.trim() || undefined });
       Toast.show({ content: `交上去了（第 ${r.work.version} 版）` });
       slots.reload();
       versions.reload();
@@ -162,6 +168,8 @@ export function WorkSlot() {
           <RightOutline />
         </Link>
       )}
+
+      {contest.data && <TaskGuide task={contest.data.task} rubric={contest.data.rubric} requirements={contest.data.requirements} compact />}
 
       {result.data?.settled && (
         <>
@@ -196,7 +204,8 @@ export function WorkSlot() {
         {mats.data?.materials.length === 0 && <div className="hint">还没有素材，所有组员都可以往里放。</div>}
         {mats.data?.materials.map((m) => (
           <div key={m.id} style={{ padding: "4px 0" }}>
-            {m.file ? `📎 ${m.file.filename ?? m.file.kind}` : m.text}
+            {m.file ? `📎 ${m.file.filename ?? MATERIAL_KIND[m.file.kind] ?? m.file.kind}` : m.text}
+            <span className="hint">（{nickname(m.addedBy)}放的）</span>
           </div>
         ))}
       </div>
@@ -207,7 +216,7 @@ export function WorkSlot() {
             <Button size="small" onClick={() => void addText()}>
               放进素材箱
             </Button>
-            <input type="file" aria-label="上传素材文件" accept="image/*,video/*,audio/*,application/pdf" onChange={(e) => e.target.files?.[0] && void addFile(e.target.files[0])} />
+            <FilePicker label="上传图片、视频、音频或 PDF" accept="image/*,video/*,audio/*,application/pdf" files={[]} disabled={busy} onChange={(fs) => fs[0] && void addFile(fs[0])} />
           </div>
         </>
       )}
@@ -221,12 +230,15 @@ export function WorkSlot() {
             value={[mediaKind]}
             onChange={(v) => v[0] && setMediaKind(v[0] as typeof mediaKind)}
             options={[
-              { label: "文字", value: "text" },
-              { label: "图文", value: "images" },
               { label: "视频", value: "video" },
               { label: "音频", value: "audio" },
+              { label: "图文", value: "images" },
+              { label: "只有文字", value: "text" },
             ]}
           />
+          <p className="hint" style={{ margin: "6px 0 0" }}>
+            {mediaKind === "text" ? "只有文字的作品最难“讲明白”，也最容易被 AI 代写；能讲出来就用视频或音频。" : "讲给题目里的那个人听，讲明白比做得漂亮更重要。"}
+          </p>
           {mediaKind !== "text" && (
             <>
               <div className="field-label">从素材箱里选主体</div>
@@ -234,13 +246,23 @@ export function WorkSlot() {
                 .filter((m) => m.file)
                 .map((m) => (
                   <Checkbox key={m.id} checked={picked.includes(m.file!.id)} onChange={(c) => setPicked(c ? [...picked, m.file!.id] : picked.filter((x) => x !== m.file!.id))} style={{ display: "block", margin: "6px 0" }}>
-                    {m.file!.filename ?? m.file!.kind}
+                    {m.file!.filename ?? MATERIAL_KIND[m.file!.kind] ?? m.file!.kind}（{nickname(m.addedBy)}放的）
                   </Checkbox>
                 ))}
             </>
           )}
           <div className="field-label">文字说明{mediaKind === "text" ? "（作品正文）" : ""}</div>
           <TextArea className="text-input" placeholder="作品的文字" value={text} onChange={setText} rows={4} />
+          <div className="field-label">人机协作说明</div>
+          <TextArea
+            className="text-input"
+            placeholder="用了什么 AI、AI 做了什么、你们改了什么、发现 AI 哪里不对（100 字以内）"
+            value={aiNote}
+            onChange={setAiNote}
+            rows={3}
+            maxLength={300}
+          />
+          <p className="hint" style={{ margin: "6px 0 0" }}>评分里占 10 分。</p>
           <div className="field-label">参与的组员（署名）</div>
           {playing.members
             .filter((m) => m.active)

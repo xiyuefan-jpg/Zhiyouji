@@ -78,13 +78,21 @@ describe("student website: the season (part 5 D, E, F)", () => {
     await user.type(screen.getByPlaceholderText("写下想法或文字素材"), "用弹簧比喻大气压");
     await user.click(screen.getByRole("button", { name: "放进素材箱" }));
     expect(await screen.findByText("用弹簧比喻大气压")).toBeTruthy();
+    // video is the default form now; this team hands in text only
+    await user.click(screen.getByText("只有文字"));
+    expect(screen.getByText(/最容易被 AI 代写/)).toBeTruthy();
     await user.type(screen.getByPlaceholderText("作品的文字"), "我们的作品正文");
+    // 人机协作说明 (content library §2; 10 points in every rubric)
+    await user.type(screen.getByPlaceholderText(/用了什么 AI/), "问了 AI，它举的例子不对，我们改了");
     await user.click(screen.getByText("小明"));
     await user.click(screen.getByRole("button", { name: "提交" }));
     await waitFor(async () => {
       const v = await be.services.works.versions(await be.services.play.ctx(be.childId), `contest:${c.contest.id}`);
       expect(v.works.map((w) => [w.version, w.text, w.members])).toEqual([[1, "我们的作品正文", [be.childId]]]);
+      expect((v.works[0] as { aiNote?: string | null }).aiNote).toBe("问了 AI，它举的例子不对，我们改了");
     });
+    // how the work is judged is on the same page
+    expect(screen.getByText(/怎么评分/)).toBeTruthy();
     await be.stop();
   });
 });

@@ -46,7 +46,8 @@ import type { Notifier } from "../notify/notifier.js";
 import type { SeasonStore } from "../seasonStore.js";
 import type { ObjectStorage } from "../storage.js";
 import { refusalText } from "./refusals.js";
-import { checkDims, RUBRICS, rubricFor, type RubricId } from "./rubrics.js";
+import { checkDims, RUBRICS, rubricFor, rubricWithGuide, type RubricId } from "./rubrics.js";
+import { workTask } from "./taskInfo.js";
 
 const HOUR = 3_600_000;
 type WorkRow = typeof works.$inferSelect;
@@ -162,7 +163,8 @@ export class Scoring {
     const images = await Promise.all(imageKeys.slice(0, 40).map((k) => this.storage.downloadUrl(k, now)));
     try {
       const subject = await this.subjectOf(serverId, st, w);
-      const r = await this.ai.score({ workId: w.id, rubric, promptId: w.promptId, mediaKind: w.mediaKind, text: w.text, aiNote: w.aiNote, transcript, images, subject });
+      const task = await workTask(this.db, serverId, st, w);
+      const r = await this.ai.score({ workId: w.id, rubric, promptId: w.promptId, task, mediaKind: w.mediaKind, text: w.text, aiNote: w.aiNote, transcript, images, subject });
       // T7: the work's knowledge tags (for the season review's exploration map, part 5 §4.1)
       if (official) {
         const tags = (r.tags ?? []).filter(isKnownTag).slice(0, 3);
@@ -308,8 +310,12 @@ export class Scoring {
         };
       }
     }
+    const rubricId = await this.rubricOf(w.serverId, st, w);
     return {
       opening,
+      /** The question and the audience the work had to teach (the reviewer cannot judge 教会受众 without them). */
+      task: await workTask(this.db, w.serverId, st, w),
+      guide: rubricWithGuide(rubricId),
       assignmentId: a.id,
       status: a.status,
       second: a.second,

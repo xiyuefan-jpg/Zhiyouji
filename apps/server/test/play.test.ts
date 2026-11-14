@@ -231,7 +231,7 @@ describe("notifications, reports and feeds (part 8 §1.2; part 5 F1, F2, E1)", (
     expect(latest.lines.map((l: { text: string }) => l.text).join("|")).toContain("发起了进攻");
     expect(latest.ranking).toHaveLength(8);
     const morning2 = (await a1("GET", `/v1/season/reports/${list[1].id}`)).json();
-    expect(morning2.lines.map((l: { text: string }) => l.text)).toContain("第 1 批选地（盲拍）结果公布了");
+    expect(morning2.lines.map((l: { text: string }) => l.text).some((t: string) => t.startsWith("第 1 批选地（盲拍）结果：") && t.includes("出价"))).toBe(true);
     expect((await msgs(a1)).some((m) => m.type === "report")).toBe(true);
 
     // broadcasts are visible at once; the team feed holds the role change

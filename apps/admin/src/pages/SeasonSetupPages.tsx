@@ -289,6 +289,8 @@ function CalendarEditor({ opening }: { opening: string }) {
 
 // ---- 玩家与分组 (§3) -------------------------------------------------------------------------------------
 
+const PLAYER_STATUS: Record<string, string> = { enrolled: "已开通", revoked: "已撤销", withdrawn: "已退赛" };
+
 interface ChildHit {
   childId: string;
   nickname: string;
@@ -343,9 +345,13 @@ function EnablePlayers({ season }: { season: Season }) {
   const [q, setQ] = useState("");
   const hits = useLoad(() => (q ? request<{ children: ChildHit[] }>("GET", `/v1/admin/children?q=${encodeURIComponent(q)}`) : Promise.resolve({ children: [] })), [q]);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  // Who is already enabled, so the search shows it instead of a second 开通 button.
+  const roster = useLoad(() => request<{ players: RosterRow[] }>("GET", `/v1/admin/seasons/${season.id}/players`), [season.id]);
+  const enrolled = new Set((roster.data?.players ?? []).filter((p) => p.status === "enrolled").map((p) => p.childId));
   const enable = async (ids: string[]) => {
     try {
       await request("POST", `/v1/admin/seasons/${season.id}/players`, { players: ids.map((childId) => ({ childId, ...(notes[childId] ? { paymentNote: notes[childId] } : {}) })) });
+      roster.reload();
       message.success(`已开通 ${ids.length} 人`);
     } catch (e) {
       message.error(errText(e));
@@ -368,11 +374,14 @@ function EnablePlayers({ season }: { season: Season }) {
           { title: "缴费备注", render: (_, c) => <Input size="small" aria-label={`${c.nickname}缴费备注`} value={notes[c.childId] ?? ""} onChange={(e) => setNotes({ ...notes, [c.childId]: e.target.value })} /> },
           {
             title: "",
-            render: (_, c) => (
-              <Button size="small" type="primary" onClick={() => void enable([c.childId])}>
-                开通
-              </Button>
-            ),
+            render: (_, c) =>
+              enrolled.has(c.childId) ? (
+                <Tag color="green">已开通</Tag>
+              ) : (
+                <Button size="small" type="primary" onClick={() => void enable([c.childId])}>
+                  开通
+                </Button>
+              ),
           },
         ]}
       />
@@ -414,7 +423,7 @@ function Roster({ season }: { season: Season }) {
         columns={[
           { title: "昵称", dataIndex: "nickname" },
           { title: "年级", dataIndex: "gradeLabel" },
-          { title: "状态", dataIndex: "status" },
+          { title: "状态", dataIndex: "status", render: (st: string) => PLAYER_STATUS[st] ?? st },
           { title: "缴费备注", dataIndex: "paymentNote" },
           { title: "服 / 组", render: (_, p) => (p.server ? `${p.server} / ${p.team}` : "—") },
           {

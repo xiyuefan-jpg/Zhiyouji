@@ -1,3 +1,4 @@
+import { serverNow } from "../api";
 /**
  * 修行日志 (PRD part 5 C4–C9) and 赛季回顾 (G6, §4.1):
  * - C4 日历: one month, days with cards marked; tap a day for its cards;
@@ -110,7 +111,7 @@ function CardList({ cards, empty }: { cards: Card[] | null; empty?: string }) {
 }
 
 function CalendarView() {
-  const [month, setMonth] = useState(() => beijingMonth(Date.now()));
+  const [month, setMonth] = useState(() => beijingMonth(serverNow()));
   const [day, setDay] = useState<string | null>(null);
   const cal = useLoad(() => request<{ month: string; days: Record<string, Card[]> }>("GET", `/v1/journal/calendar?month=${month}`), [month]);
   const days = cal.data?.days ?? {};

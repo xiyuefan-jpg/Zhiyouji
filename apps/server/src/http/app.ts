@@ -223,6 +223,11 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   });
   adminAudit(app, d.db, d.clock, (k) => adminRouteKeys.push(k));
 
+  // The website counts down from the server's clock, not the phone's (a child's phone can be off).
+  app.addHook("onSend", async (_req, reply) => {
+    reply.header("x-server-time", String(+d.clock.now()));
+  });
+
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof HttpError) return reply.status(err.status).send(err.body());
     if (err instanceof ZodError) {

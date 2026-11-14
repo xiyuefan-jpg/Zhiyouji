@@ -10,13 +10,16 @@
  * children (part 7 §7: 孩子之间保密).
  */
 
+import { contestTask, landInfo } from "./taskInfo.js";
+import { rubricFor, rubricWithGuide, workRequirements } from "./rubrics.js";
 import { itemGuide } from "./itemGuide.js";
 import { randomBytes } from "node:crypto";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { children, lands as landRows, plannedEvents, prompts as promptRows, roleTransfers, seasonPlayers, seasons, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { children, landTemplates, lands as landRows, plannedEvents, prompts as promptRows, roleTransfers, seasonPlayers, seasons, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
 import {
   ITEMS,
   REGULAR_COMMON_ITEMS,
+  openingStockPerKind,
   activeContestOnLand,
   baseOutput,
   campOf,
@@ -174,6 +177,16 @@ export class SeasonPlay {
     return new Map(rows.map((r) => [r.id, { nickname: r.nickname, avatar: r.avatar, lastActiveAt: r.lastActiveAt, createdAt: r.createdAt }]));
   }
 
+  /** Each land's subject and question type (one query for the whole map). */
+  async landSubjects(serverId: string): Promise<Map<string, { subject: string | null; questionType: string | null }>> {
+    const rows = await this.db
+      .select({ code: landRows.code, subject: landTemplates.subject, questionType: landTemplates.questionType })
+      .from(landRows)
+      .leftJoin(landTemplates, sql`${landTemplates.id}::text = ${landRows.templateId}`)
+      .where(eq(landRows.serverId, serverId));
+    return new Map(rows.map((r) => [r.code, { subject: r.subject ?? null, questionType: r.questionType ?? null }]));
+  }
+
   async landNames(serverId: string): Promise<Map<string, string>> {
     const rows = await this.db.select().from(landRows).where(eq(landRows.serverId, serverId));
     return new Map(rows.map((r) => [r.code, r.name]));
@@ -234,6 +247,7 @@ export class SeasonPlay {
     const s = await this.state(ctx);
     const now = this.now();
     const names = await this.landNames(ctx.serverId);
+    const subjects = await this.landSubjects(ctx.serverId);
     const teamName = (id: string | null) => (id ? { id, name: s.teams[id]?.name ?? "" } : null);
     return {
       lands: s.landOrder.map((id) => {
@@ -241,10 +255,12 @@ export class SeasonPlay {
         const c = activeContestOnLand(s, id);
         const effects = s.effects
           .filter((e) => "landId" in e && e.landId === id && effectActive(e as { from: number; until?: number }, now) && !("endedAt" in e && e.endedAt !== undefined && e.endedAt <= now))
-          .map((e) => ({ kind: e.kind, until: "until" in e ? (e.until as number) : null }));
+          .map((e) => ({ kind: e.kind, name: ITEMS.find((i) => i.id === e.kind)?.name ?? e.kind, until: "until" in e ? (e.until as number) : null }));
         return {
           id,
           name: names.get(id) ?? id,
+          subject: subjects.get(id)?.subject ?? null,
+          questionType: subjects.get(id)?.questionType ?? null,
           kind: l.kind,
           output: baseOutput(l.kind, s.params),
           zeroed: landZeroed(s, id, now),
@@ -252,7 +268,15 @@ export class SeasonPlay {
           ownedSince: l.ownedSince,
           mine: l.owner === ctx.teamId,
           contest: c
-            ? { id: c.id, defender: teamName(c.defender), attackers: c.attackers.map((a) => teamName(a.teamId)), joinDeadline: c.joinDeadline, deadline: c.deadline }
+            ? {
+                id: c.id,
+                defender: teamName(c.defender),
+                attackers: c.attackers.map((a) => teamName(a.teamId)),
+                joinDeadline: c.joinDeadline,
+                deadline: c.deadline,
+                /** My team is already attacking this land (no "加入进攻" for it). */
+                involved: c.defender === ctx.teamId || c.attackers.some((a) => a.teamId === ctx.teamId),
+              }
             : null,
           effects,
         };
@@ -478,8 +502,15 @@ export class SeasonPlay {
     const name = (id: string) => s.teams[id]?.name ?? "";
     const involved = c!.defender === ctx.teamId || c!.attackers.some((a) => a.teamId === ctx.teamId);
     const [p] = /^[0-9a-f-]{36}$/i.test(c!.promptId) ? await this.db.select().from(promptRows).where(eq(promptRows.id, c!.promptId)) : [];
+    const task = await contestTask(this.db, ctx.serverId, s, contestId);
+    const rubricId = rubricFor("contest", task.landName);
     return {
       prompt: p ? { title: p.title, body: p.body, audience: p.audience, questionType: p.questionType } : null,
+      /** The question, the audience, the land's subject and question type, what little teammates can do. */
+      task,
+      /** How the work is judged: dimensions with what they look at, and the 50 / 75 point lines. */
+      rubric: rubricWithGuide(rubricId),
+      requirements: workRequirements("contest", /辩论/.test(task.questionType ?? "") ? "opening" : null),
       id: c!.id,
       landId: c!.landId,
       status: c!.status,
@@ -649,6 +680,40 @@ export class SeasonPlay {
     const w = await this.roundWindow(ctx.serverId, round);
     const subs = await this.store.submissions(ctx.serverId, round);
     const mine = subs.find((x) => x.teamId === ctx.teamId);
+    const s = await this.state(ctx);
+    const p = s.params;
+    const teams = s.teamOrder.length;
+    // What each choice is: a land's subject and question type, an item's effect (the decision needs it).
+    let options: { id: string; name: string; detail: string }[] = [];
+    if (round === "blind_auction" || round === "center_round") {
+      const kind = round === "blind_auction" ? "edge" : "center";
+      for (const id of s.landOrder.filter((l) => s.lands[l]!.kind === kind)) {
+        const li = await landInfo(this.db, ctx.serverId, id);
+        options.push({ id, name: li.name ?? id, detail: [li.subject, li.questionType].filter(Boolean).join(" · ") });
+      }
+    } else {
+      const ids = round === "starter_items" ? [...REGULAR_COMMON_ITEMS] : ITEMS.filter((i) => i.tier === "rare" && !i.bigBattle).map((i) => i.id);
+      options = ids.map((id) => ({ id, name: ITEMS.find((i) => i.id === id)?.name ?? id, detail: itemGuide(id, p).effect }));
+    }
+    const rules: Record<RoundName, string> = {
+      blind_auction: `每组都会分到一块边缘地，出价一定会从粮草里扣掉。出价高的组先挑地；反过来，出价低的组在开营法宝里先挑。出价一样时先提交的先挑；没提交的组出价算 0、顺序随机、最后分。`,
+      starter_items: `每组免费拿 ${p.opening.freeItems} 件，同一种不能拿 2 件，每种只有 ${openingStockPerKind(teams, p)} 件。按盲拍顺位反过来挑：盲拍出价低的组先挑。没提交的组系统随机发。`,
+      center_round: `按当前排名从后往前分：落后的组先买。每组买到偏好里还没卖出、排得最靠前的那块，付 ${p.centerLand.price} 粮草；粮草不够的跳过。`,
+      rare_round: `按当前排名从后往前分：落后的组先拿，每件 ${p.items.rarePrice} 粮草，每种只有 ${p.items.rareStockPerKind} 件。`,
+    };
+    // After the blind auction: every team's bid and land, published to everyone (part 3 §8.6).
+    let result: { team: string; land: string; paid: number; mine: boolean }[] | null = null;
+    if (round === "blind_auction" && w.closed && s.done.includes("auction")) {
+      const names = await this.landNames(ctx.serverId);
+      const paid = new Map<string, { land: string; paid: number }>();
+      for (const e of s.ledger) if (e.currency === "grain" && e.source === "auction_bid") paid.set(e.teamId, { land: e.note ?? "", paid: -e.amount });
+      result = (s.auctionOrder ?? s.teamOrder).map((t) => ({
+        team: s.teams[t]?.name ?? "",
+        land: names.get(paid.get(t)?.land ?? "") ?? paid.get(t)?.land ?? "",
+        paid: paid.get(t)?.paid ?? 0,
+        mine: t === ctx.teamId,
+      }));
+    }
     return {
       round,
       opensAt: w.opensAt?.toISOString() ?? null,
@@ -656,6 +721,9 @@ export class SeasonPlay {
       open: w.open,
       closed: w.closed,
       submission: mine ? { bid: mine.bid, prefs: mine.prefs as string[], by: mine.submittedBy, at: mine.submittedAt.toISOString() } : null,
+      options,
+      rules: rules[round],
+      result,
     };
   }
 

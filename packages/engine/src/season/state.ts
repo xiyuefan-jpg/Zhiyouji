@@ -14,7 +14,7 @@ import { landCounts, type SeasonParams } from "../params.js";
 import { rankTeams, type Ranked } from "../ranking.js";
 import { createRng, seedFromString, type Rng } from "../rng.js";
 import type { LandKind } from "../territory.js";
-import type { DateStr, DayKindOverrides, Instant } from "../time.js";
+import { beijingDate, type DateStr, type DayKindOverrides, type Instant } from "../time.js";
 import { assertInt, type Pts } from "../units.js";
 
 export interface MemberState {
@@ -416,9 +416,14 @@ export function landsOf(s: SeasonState, teamId: string): LandState[] {
   return s.landOrder.map((id) => s.lands[id] as LandState).filter((l) => l.owner === teamId);
 }
 
-/** Current ranking (§1): points, then war wins, then merit count, then a seeded draw. */
+/**
+ * Current ranking (§1): points, then war wins, then merit count, then a seeded
+ * draw. The draw is the same for the whole Beijing day, so teams still tied
+ * do not swap places every time someone looks (the rule is unchanged: ties
+ * are broken at random).
+ */
 export function rankingAt(s: SeasonState, at: Instant): Ranked[] {
-  const rng = eventRng(s, `rank|${at}`);
+  const rng = eventRng(s, `rank|${beijingDate(at)}`);
   return rankTeams(
     s.teamOrder.map((id) => {
       const t = s.teams[id] as TeamState;

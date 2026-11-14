@@ -37,7 +37,7 @@ describe("student website: 每日任务 (part 5 C1–C3)", () => {
     await user.click(screen.getByRole("button", { name: "交上去" }));
     expect((await screen.findByRole("alert")).textContent).toBe("至少交一张证据图片");
 
-    await user.upload(screen.getByLabelText("选择证据图片"), new File(["jpg"], "chat.jpg", { type: "image/jpeg" }));
+    await user.upload(screen.getByLabelText("选图片或拍照"), new File(["jpg"], "chat.jpg", { type: "image/jpeg" }));
     await user.type(screen.getByPlaceholderText("写 50–150 个字"), TEXT);
     await user.type(screen.getByPlaceholderText("一句话就好"), "我让 AI 举了三个例子");
     await user.click(screen.getByRole("button", { name: "交上去" }));
@@ -114,7 +114,7 @@ describe("讲解录音 (part 5 §3.1 step 4)", () => {
     fireEvent.pointerUp(release);
     expect(await screen.findByText("录好了，12 秒")).toBeTruthy();
     expect(screen.getByRole("button", { name: "重录" })).toBeTruthy();
-    await user.upload(screen.getByLabelText("选择证据图片"), new File(["jpg"], "chat.jpg", { type: "image/jpeg" }));
+    await user.upload(screen.getByLabelText("选图片或拍照"), new File(["jpg"], "chat.jpg", { type: "image/jpeg" }));
     await user.type(screen.getByPlaceholderText("一句话就好"), "我让 AI 举了三个例子");
     await user.click(screen.getByRole("button", { name: "交上去" }));
     expect(await screen.findByText("审核结果")).toBeTruthy();

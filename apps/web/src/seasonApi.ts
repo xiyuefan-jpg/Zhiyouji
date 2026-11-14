@@ -36,9 +36,13 @@ export interface LandView {
   output: number;
   zeroed: boolean;
   owner: { id: string; name: string } | null;
+  ownedSince?: number | null;
   mine: boolean;
-  contest: { id: string; defender: { id: string; name: string } | null; attackers: ({ id: string; name: string } | null)[]; joinDeadline: number; deadline: number } | null;
-  effects: { kind: string; until: number | null }[];
+  /** The land's subject and question type (what a team must explain to win or keep it). */
+  subject?: string | null;
+  questionType?: string | null;
+  contest: { id: string; defender: { id: string; name: string } | null; attackers: ({ id: string; name: string } | null)[]; joinDeadline: number; deadline: number; involved?: boolean } | null;
+  effects: { kind: string; name?: string; until: number | null }[];
 }
 
 export interface TeamView {
@@ -105,11 +109,32 @@ export interface TeamFull extends TeamView {
 
 export type ContestOutcome = { kind: "captured"; winner: string } | { kind: "defended" } | { kind: "nothing" } | { kind: "cancelled"; by: "xiuli" | "admin" };
 
+export interface TaskInfo {
+  title: string | null;
+  body: string | null;
+  audience: string;
+  questionType: string | null;
+  subject: string | null;
+  landName: string | null;
+  juniorHint: string | null;
+}
+
+export interface RubricGuide {
+  id: string;
+  name: string;
+  dims: { key: string; name: string; max: number; hint: string }[];
+  at50: string;
+  at75: string;
+}
+
 export interface ContestDetail {
   id: string;
   landId: string;
   status: string;
   prompt: { title: string; body: string; audience: string | null; questionType: string | null } | null;
+  task?: TaskInfo;
+  rubric?: RubricGuide;
+  requirements?: string;
   defender: { id: string; name: string };
   attackers: { id: string; name: string; order: number; joinedAt: number; paid?: number }[];
   startedAt: number;
@@ -143,6 +168,12 @@ export interface RoundView {
   open: boolean;
   closed: boolean;
   submission: { bid: number | null; prefs: string[]; by: string; at: string } | null;
+  /** Each choice with its land subject or item effect. */
+  options?: { id: string; name: string; detail: string }[];
+  /** The rules in plain words (cost, order). */
+  rules?: string;
+  /** Blind auction, after the deadline: every team's bid and land. */
+  result?: { team: string; land: string; paid: number; mine: boolean }[] | null;
 }
 
 export interface UseItemBody {

@@ -1,12 +1,13 @@
+import { serverNow } from "./api";
 /** Times are always shown in Beijing time (CLAUDE.md: business time is UTC+8). */
 
 const BJ = "Asia/Shanghai";
 
-export function beijingHour(d: Date = new Date()): number {
+export function beijingHour(d: Date = new Date(serverNow())): number {
   return Number(new Intl.DateTimeFormat("en-US", { timeZone: BJ, hour: "numeric", hourCycle: "h23" }).format(d));
 }
 
-export function greeting(d: Date = new Date()): string {
+export function greeting(d: Date = new Date(serverNow())): string {
   const h = beijingHour(d);
   if (h < 5) return "夜深了";
   if (h < 11) return "早上好";
@@ -38,7 +39,7 @@ export function weekdayTime(ms: number): string {
  * Every deadline shows the time left and the Beijing time (part 5 §5):
  * "还剩 1 天 3 小时（周三 21:00）"; "已截止（周三 21:00）" once past.
  */
-export function countdown(deadline: number, now: number = Date.now()): string {
+export function countdown(deadline: number, now: number = serverNow()): string {
   const at = weekdayTime(deadline);
   const left = deadline - now;
   if (left <= 0) return `已截止（${at}）`;

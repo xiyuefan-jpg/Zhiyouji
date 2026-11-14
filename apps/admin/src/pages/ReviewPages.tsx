@@ -118,6 +118,9 @@ interface ReviewView {
   work: { id: string; kind: string; promptId: string | null; mediaKind: string; text: string | null; aiNote: string | null; submittedAt: string; files: FileView[] };
   rubric: { id: string; name: string; version: number; dims: { key: string; name: string; max: number }[] };
   ai: { total: number; dims: Record<string, number>; comment: string; flags: string[]; model: string } | null;
+  /** The question and the audience the work had to teach. */
+  task?: { title: string | null; body: string | null; audience: string; questionType: string | null; subject: string | null; landName: string | null } | null;
+  guide?: { dims: { key: string; hint: string }[]; at50: string; at75: string };
 }
 
 function Files({ files }: { files: FileView[] }) {
@@ -196,6 +199,16 @@ export function ReviewWorkPage() {
             </Descriptions.Item>
           </Descriptions>
           {d.status !== "pending" && <Alert type="info" message={d.status === "timeout" ? "已超时，按 AI 分结算了" : "已经交过分了"} />}
+          {d.task && (
+            <Card title="题目" size="small">
+              {(d.task.subject || d.task.questionType) && (
+                <Typography.Text type="secondary">{[d.task.landName, d.task.subject, d.task.questionType].filter(Boolean).join(" · ")}</Typography.Text>
+              )}
+              {d.task.title && <Typography.Paragraph strong style={{ margin: "4px 0" }}>{d.task.title}</Typography.Paragraph>}
+              {d.task.body && d.task.body !== d.task.title && <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>{d.task.body}</Typography.Paragraph>}
+              <Typography.Text>讲给：{d.task.audience}</Typography.Text>
+            </Card>
+          )}
           {d.opening && (
             <Card title="同一组的立论（辩论）" size="small">
               {d.opening.text && <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>{d.opening.text}</Typography.Paragraph>}
@@ -215,6 +228,7 @@ export function ReviewWorkPage() {
               dataSource={d.rubric.dims}
               columns={[
                 { title: "维度", dataIndex: "name" },
+                { title: "看什么", render: (_, x) => <Typography.Text type="secondary">{d.guide?.dims.find((g) => g.key === x.key)?.hint ?? ""}</Typography.Text> },
                 { title: "满分", dataIndex: "max" },
                 {
                   title: "我的分",
@@ -227,12 +241,20 @@ export function ReviewWorkPage() {
               summary={() => (
                 <Table.Summary.Row>
                   <Table.Summary.Cell index={0}>合计</Table.Summary.Cell>
-                  <Table.Summary.Cell index={1}>{d.rubric.dims.reduce((s, x) => s + x.max, 0)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={2}>{total}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={3}>{d.ai?.total ?? "—"}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={1} />
+                  <Table.Summary.Cell index={2}>{d.rubric.dims.reduce((s, x) => s + x.max, 0)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={3}>{total}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={4}>{d.ai?.total ?? "—"}</Table.Summary.Cell>
                 </Table.Summary.Row>
               )}
             />
+            {d.guide && (
+              <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
+                <b>50 分</b>：{d.guide.at50}
+                <br />
+                <b>75 分</b>：{d.guide.at75}
+              </Typography.Paragraph>
+            )}
             {d.ai && <Typography.Paragraph type="secondary">AI 评语（{d.ai.model}）：{d.ai.comment}</Typography.Paragraph>}
             <Form layout="vertical" style={{ marginTop: 12 }}>
               <Form.Item label="评语（孩子会看到：哪里好、哪里扣分、下次怎么改）">

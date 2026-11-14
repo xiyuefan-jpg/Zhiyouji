@@ -21,6 +21,20 @@ export class ApiError extends Error {
 
 export const NETWORK_MESSAGE = "网络连不上，请检查一下网络再试";
 
+/**
+ * Countdowns, greetings and "today" follow the server's clock, not the phone's
+ * (a child's phone can be minutes or days off). Every response carries the
+ * server time; we keep the difference.
+ */
+let clockOffset = 0;
+export function serverNow(): number {
+  return Date.now() + clockOffset;
+}
+export function noteServerTime(header: string | null): void {
+  const t = Number(header);
+  if (Number.isFinite(t) && t > 0) clockOffset = t - Date.now();
+}
+
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
@@ -33,6 +47,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   } catch {
     throw new ApiError(0, "network", NETWORK_MESSAGE);
   }
+  noteServerTime(res.headers.get("x-server-time"));
   let data: Record<string, unknown> | null = null;
   try {
     data = (await res.json()) as Record<string, unknown>;

@@ -7,6 +7,7 @@
 import { TAXONOMY } from "@zhiyouji/shared";
 import { createHash } from "node:crypto";
 import type { Rubric } from "./season/rubrics.js";
+import type { TaskInfo } from "./season/taskInfo.js";
 
 export interface ScoreRequest {
   /** Picture URLs: image files and video key frames (part 6 T2, T5). */
@@ -16,6 +17,8 @@ export interface ScoreRequest {
   workId: string;
   rubric: Rubric;
   promptId: string | null;
+  /** The question, its audience, subject and question type (the model needs them to judge 教会受众). */
+  task?: TaskInfo | null;
   mediaKind: string;
   text: string | null;
   aiNote: string | null;

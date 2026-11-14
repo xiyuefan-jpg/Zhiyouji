@@ -1,3 +1,4 @@
+import { serverNow } from "../../api";
 /**
  * The weekly and seasonal fights (PRD part 5):
  * - E8 周战争: the weeks, opponent, theme, constraint cards (choosing one to
@@ -341,7 +342,7 @@ export function ShopPage() {
           s && (
             <>
               <div className="panel">
-                {s.open ? <div>商店开着：{countdown(s.closesAt)}</div> : Date.now() < s.opensAt ? <div>商店 {shortTime(new Date(s.opensAt).toISOString())} 开门</div> : <div>商店已经关门了</div>}
+                {s.open ? <div>商店开着：{countdown(s.closesAt)}</div> : serverNow() < s.opensAt ? <div>商店 {shortTime(new Date(s.opensAt).toISOString())} 开门</div> : <div>商店已经关门了</div>}
                 <div className="hint">
                   本组能用的粮草 {s.spendableGrain}
                   {s.frozenGrain ? `（竞价冻结 ${s.frozenGrain}）` : ""} · 每组最多买 {s.maxItems} 件，仙品最多 {s.maxEpic} 件 · 已买 {s.bought.length} 件
@@ -403,7 +404,7 @@ export function ShopPage() {
 function Auction({ a, s, canAct, effect, onDone }: { a: ShopView["auctions"][number]; s: ShopView; canAct: boolean; effect: string; onDone: () => void }) {
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
-  const now = Date.now();
+  const now = serverNow();
   const live = !a.closed && now >= a.startAt && now < a.endAt;
   const bid = async (n: number) => {
     if (!Number.isInteger(n) || n < a.minBid) {
@@ -541,7 +542,7 @@ export function BigBattlePage() {
           const camp = b.myCamp;
           const name = (id: string) => [...b.camps.a, ...b.camps.b].find((t) => t.id === id)?.name ?? "";
           const mine = camp ? b.camps[camp] : [];
-          const now = Date.now();
+          const now = serverNow();
           const editable = !!camp && m.canAct && now < b.linesDeadline;
           const cur = board ?? b.myLines?.lines ?? b.lineValues.map(() => "");
           return (

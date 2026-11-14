@@ -1,3 +1,5 @@
+import { TaskGuide } from "../../components/TaskGuide";
+import { serverNow } from "../../api";
 /**
  * More team pages (PRD part 5):
  * - E7 争夺详情: the prompt and audience, the countdown, the teams, the
@@ -41,7 +43,7 @@ export function ContestPage() {
   const [busy, setBusy] = useState(false);
   const land = map.data?.lands.find((l) => l.id === c.data?.landId);
   const teamName = (tid: string) => map.data?.teams.find((t) => t.id === tid)?.name ?? "";
-  const now = Date.now();
+  const now = serverNow();
 
   const choose = async (side: "pro" | "con") => {
     const ok = await Dialog.confirm({ content: `本组选${SIDE_TEXT[side]}？选了以后不能改。` });
@@ -84,11 +86,11 @@ export function ContestPage() {
                 <ReadAloud text={`${c.data.prompt.title}。${c.data.prompt.body}`} />
               </div>
               <p style={{ whiteSpace: "pre-wrap" }}>{c.data.prompt.body}</p>
-              {c.data.prompt.audience && <div className="hint">讲给：{c.data.prompt.audience}</div>}
             </div>
           ) : (
             <div className="hint">题目从这块地的题库里抽取（编号 {c.data.landId}）。</div>
           )}
+          <TaskGuide task={c.data.task} rubric={c.data.rubric} requirements={c.data.requirements} compact={!c.data.involved} />
 
           {debate.data?.debate && <DebatePanel d={debate.data} isDefender={c.data.defender.id === me.data.team.id} canAct={me.data.canAct} busy={busy} onChoose={(s) => void choose(s)} />}
 
@@ -114,7 +116,7 @@ export function ContestPage() {
 }
 
 function DebatePanel({ d, isDefender, canAct, busy, onChoose }: { d: Extract<Awaited<ReturnType<typeof seasonApi.debate>>, { debate: true }>; isDefender: boolean; canAct: boolean; busy: boolean; onChoose: (s: "pro" | "con") => void }) {
-  const now = Date.now();
+  const now = serverNow();
   const stage = d.stage === "opening" ? "立论阶段" : d.stage === "rebuttal" ? "驳论阶段" : "已截止";
   return (
     <>
@@ -263,7 +265,7 @@ export function RolesPanel({ m, onChange }: { m: Playing; onChange: () => void }
 
 const ROUND_TEXT: Record<RoundName, { title: string; what: string }> = {
   blind_auction: { title: "盲拍：边缘地", what: "出一个价，再把想要的边缘地按顺序排好。出价高的组先挑。" },
-  starter_items: { title: "开营法宝", what: "把想要的凡品按顺序排好，每组分到一件。" },
+  starter_items: { title: "开营法宝", what: "把想要的凡品按顺序排好，系统按顺序发给你们。" },
   center_round: { title: "中心地分配", what: "把想要的中心地按顺序排好，排名靠后的组先挑。" },
   rare_round: { title: "灵品分配", what: "把想要的灵品按顺序排好，排名靠后的组先挑。" },
 };
@@ -298,8 +300,10 @@ export function RoundPage() {
       </div>
     );
 
-  const options: { id: string; name: string }[] =
-    round === "blind_auction" || round === "center_round"
+  const fromServer = view.data?.options;
+  const options: { id: string; name: string; detail?: string }[] = fromServer
+    ? fromServer.filter((o) => (round === "blind_auction" || round === "center_round" ? !map.data?.lands.find((l) => l.id === o.id)?.owner : true))
+    : round === "blind_auction" || round === "center_round"
       ? (map.data?.lands ?? []).filter((l) => l.kind === (round === "blind_auction" ? "edge" : "center") && !l.owner).map((l) => ({ id: l.id, name: l.name }))
       : (cat.data?.items ?? []).filter((i) => (round === "starter_items" ? i.tier === "common" && !i.bigBattle : i.tier === "rare")).map((i) => ({ id: i.id, name: i.name }));
   const nameOf = (id: string) => options.find((o) => o.id === id)?.name ?? map.data?.lands.find((l) => l.id === id)?.name ?? cat.data?.items.find((i) => i.id === id)?.name ?? id;
@@ -322,7 +326,7 @@ export function RoundPage() {
       return;
     }
     if (b !== undefined && b > 0) {
-      const ok = await Dialog.confirm({ content: `出价 ${b} 粮草？拍到了才扣，截止前可以改。` });
+      const ok = await Dialog.confirm({ content: `出价 ${b} 粮草？每组都会分到一块地，这 ${b} 粮草一定会扣掉。截止前可以改。` });
       if (!ok) return;
     }
     setBusy(true);
@@ -347,10 +351,24 @@ export function RoundPage() {
           return (
             <>
               <p className="subtitle">{info.what}</p>
+              {v?.rules && <div className="panel hint" style={{ marginBottom: 12 }}>{v.rules}</div>}
+              {v?.result && (
+                <div className="panel" style={{ marginBottom: 12 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>结果（按挑地的先后）</div>
+                  {v.result.map((r, i) => (
+                    <div key={r.team} className="row" style={{ fontWeight: r.mine ? 700 : 400 }}>
+                      <span style={{ width: 22 }}>{i + 1}</span>
+                      <span className="grow">{r.team}</span>
+                      <span className="hint">出价 {r.paid}</span>
+                      <span style={{ marginLeft: 10 }}>{r.land}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {v && (
                 <div className="panel">
                   {v.closed ? (
-                    <div>已截止。分配结果在战报里。</div>
+                    <div>已截止。{v.result ? "" : "分配结果在战报里。"}</div>
                   ) : v.open ? (
                     <div style={{ color: "var(--vermilion)" }}>截止：{v.deadline ? countdown(Date.parse(v.deadline)) : ""}</div>
                   ) : (
@@ -398,8 +416,9 @@ export function RoundPage() {
                     {options
                       .filter((o) => !prefs.includes(o.id))
                       .map((o) => (
-                        <Button key={o.id} size="small" onClick={() => setPrefs([...prefs, o.id])}>
-                          + {o.name}
+                        <Button key={o.id} size="small" onClick={() => setPrefs([...prefs, o.id])} style={{ textAlign: "left", height: "auto", padding: "6px 10px" }}>
+                          <div>+ {o.name}</div>
+                          {o.detail && <div className="hint" style={{ fontSize: 12, whiteSpace: "normal", maxWidth: 280 }}>{o.detail}</div>}
                         </Button>
                       ))}
                   </div>

@@ -11,7 +11,7 @@ import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Button, Dialog, Tabs, Toast } from "antd-mobile";
 import { RightOutline } from "antd-mobile-icons";
-import { ApiError } from "../../api";
+import { ApiError, request } from "../../api";
 import { shortTime } from "../../format";
 import { Avatar, Empty, PageHeader, Seal } from "../../components/ui";
 import { points, seasonApi, type FeedLine, type LandView, type SeasonMe } from "../../seasonApi";
@@ -83,6 +83,7 @@ function LandList({ title, lands }: { title: string; lands: LandView[] }) {
               {l.name}
               {l.mine && <span className="hint">（本组）</span>}
             </div>
+            {l.subject && <div className="hint">{l.subject}{/辩论/.test(l.questionType ?? "") ? " · 辩论" : ""}</div>}
             <div className="hint">
               {l.owner ? `主人：${l.owner.name}` : "还没有主人"}
               {l.zeroed ? " · 产出被生死簿归零" : ""}
@@ -123,7 +124,7 @@ export function LandPage() {
             <div>
               <p>费用：{parts} → <b>{q.cost} 粮草</b></p>
               <p>本组现有 {q.grain}，之后剩 {q.grain - q.cost}。</p>
-              <p className="hint">题目将从这块地的题库里随机抽取。截止时间是第 3 天晚上 9 点。</p>
+              <p className="hint">题目将从这块地的题库里随机抽取。{kind === "join" && land.contest ? `作品 ${shortTime(new Date(land.contest.deadline).toISOString())} 截止。` : "作品在第 3 天晚上 9 点截止。"}</p>
               <p>花 {q.cost} 粮草{kind === "attack" ? "发起进攻" : "加入进攻"}？</p>
             </div>
           ),
@@ -150,9 +151,20 @@ export function LandPage() {
       ) : (
         <>
           <div className="panel">
+            {(land.subject || land.questionType) && (
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>{[land.subject, land.questionType].filter(Boolean).join(" · ")}</div>
+            )}
             <div>{land.kind === "center" ? "中心地" : "边缘地"} · 每天产出 {land.output} 分</div>
-            <div>主人：{land.owner ? land.owner.name : "还没有主人"}</div>
-            {land.effects.length > 0 && <div className="hint">身上的法宝效果：{land.effects.map((e) => e.kind).join("、")}</div>}
+            <div>
+              主人：{land.owner ? land.owner.name : "还没有主人"}
+              {land.owner && land.ownedSince ? <span className="hint">（{shortTime(new Date(land.ownedSince).toISOString())} 起）</span> : null}
+            </div>
+            {land.effects.length > 0 && <div className="hint">身上的法宝效果：{land.effects.map((e) => e.name ?? e.kind).join("、")}</div>}
+            {land.owner && !land.mine && !land.contest && (
+              <div className="hint" style={{ marginTop: 6 }}>
+                进攻时会从这块地的题库里随机抽一道题，两边的作品都要讲给题目里的那个人听；守方交作品就是迎战，不花粮草。
+              </div>
+            )}
             {land.contest && (
               <div style={{ marginTop: 8 }}>
                 <div style={{ color: "var(--vermilion)" }}>争夺中，{shortTime(new Date(land.contest.deadline).toISOString())} 截止</div>
@@ -168,7 +180,7 @@ export function LandPage() {
                 发起进攻
               </Button>
             )}
-            {land.contest && !land.mine && (
+            {land.contest && !land.mine && !land.contest.involved && (
               <Button color="primary" className="big-button" disabled={!me.data.canAct || busy} onClick={() => void act("join")}>
                 加入进攻
               </Button>
@@ -189,6 +201,27 @@ export function LandPage() {
 }
 
 // ---- 小组 (E1, E3) ------------------------------------------------------------------------------------
+
+/** 本组微信群二维码 (E1, round 29): the admin creates the group and uploads the code; only this team sees it. */
+function TeamQr() {
+  const qr = useLoad(() => request<{ team: { url: string; uploadedAt: string } | null }>("GET", "/v1/season/qr"));
+  if (!qr.data) return null;
+  return (
+    <div className="panel" style={{ marginTop: 12 }}>
+      <div style={{ fontWeight: 600 }}>本组微信群</div>
+      {qr.data.team ? (
+        <>
+          <img src={qr.data.team.url} alt="本组微信群二维码" style={{ width: 200, height: 200, objectFit: "contain", display: "block", margin: "10px auto" }} />
+          <div className="hint" style={{ textAlign: "center" }}>
+            长按图片识别二维码进群（{shortTime(qr.data.team.uploadedAt)} 更新；微信群二维码 7 天会过期，过期了请找老师）
+          </div>
+        </>
+      ) : (
+        <div className="hint" style={{ marginTop: 4 }}>老师还没上传本组的微信群二维码，建好群后会放在这里。</div>
+      )}
+    </div>
+  );
+}
 
 export function SeasonTeam() {
   const me = useSeasonMe();
@@ -240,6 +273,7 @@ export function SeasonTeam() {
                 </div>
               </div>
             )}
+            <TeamQr />
             <RolesPanel m={m} onChange={me.reload} />
             <h2 className="section-title">组员</h2>
             <div className="panel">
