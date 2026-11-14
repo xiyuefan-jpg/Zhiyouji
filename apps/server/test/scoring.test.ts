@@ -221,6 +221,12 @@ describe("看板 (part 7 §1)", () => {
     expect(rd.servers).toEqual([]);
     expect(rd.attention.reviewsPending).toBe(1);
     expect(rd.attention.reviewsDueSoon).toBe(0);
+    expect(rd.attention.safetyPending).toBe(0); // admins only
+    // the admin: AI calls today with failures and cost; content safety waiting
+    const bd = (await t.call("GET", "/v1/admin/dashboard", undefined, await boss.relogin())).json();
+    expect(bd.ai.calls).toBeGreaterThan(0);
+    expect(bd.ai).toMatchObject({ errors: 0, errorRate: 0, costYuan: 0 });
+    expect(bd.attention).toMatchObject({ safetyPending: 0, doubleReviewGaps: 0 });
     await t.close();
   });
 });

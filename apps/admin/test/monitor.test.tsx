@@ -18,6 +18,14 @@ describe("admin console: 赛季监控与干预 (part 7 §7)", () => {
     const team = st.teams[s.teamId]!;
     expect(screen.getAllByText(team.name).length).toBeGreaterThan(0);
 
+    // 周战争 / 商店 / 大团战 / 法宝 / 分数来源 (part 7 §7)
+    await user.click(screen.getByRole("tab", { name: /周战争 \/ 商店/ }));
+    expect(await screen.findByText("还没配对")).toBeTruthy();
+    await user.click(screen.getByRole("tab", { name: "团队分来源" }));
+    expect((await screen.findAllByText("合计")).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("tab", { name: "法宝使用记录" }));
+    expect(await screen.findByText("还没有人用法宝")).toBeTruthy();
+
     // 人工干预: +20 grain to the team
     await user.click(screen.getByRole("tab", { name: "人工干预" }));
     const panel = await screen.findByRole("tabpanel");

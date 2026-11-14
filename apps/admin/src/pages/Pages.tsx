@@ -39,9 +39,17 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): { data: T | nul
 
 interface DashboardData {
   today: { day: string; dailyTasks: { passed: number; failed: number; error: number; reviewing: number }; worksSubmitted: number; newChildren: number; activeChildren: number };
-  attention: { reviewsDueSoon: number; reviewsPending: number; dailyExceptions: number; failedPlannedEvents: { serverId: string; key: string }[]; lowPromptLands: number };
+  attention: {
+    reviewsDueSoon: number;
+    reviewsPending: number;
+    dailyExceptions: number;
+    failedPlannedEvents: { serverId: string; key: string }[];
+    lowPromptLands: number;
+    safetyPending?: number;
+    doubleReviewGaps?: number;
+  };
   servers: { id: string; name: string; season: string; status: string; day: number; paused: boolean; activeContests: number; nextPublication: string; top: { rank: number; name: string; points: number }[] }[];
-  ai: { workScores: number; dailyReviews: number };
+  ai: { workScores: number; dailyReviews: number; calls?: number; errors?: number; errorRate?: number; costYuan?: number };
 }
 
 export function DashboardPage() {
@@ -68,6 +76,8 @@ export function DashboardPage() {
         d.attention.dailyExceptions ? { text: `${d.attention.dailyExceptions} 条每日任务卡住了`, to: "/review" } : null,
         d.attention.failedPlannedEvents.length ? { text: `${d.attention.failedPlannedEvents.length} 个计划事件失败`, to: `/monitor/${d.attention.failedPlannedEvents[0]!.serverId}` } : null,
         d.attention.lowPromptLands ? { text: `${d.attention.lowPromptLands} 块地题库不足`, to: "/content" } : null,
+        d.attention.safetyPending ? { text: `${d.attention.safetyPending} 条内容安全待处理`, to: "/safety" } : null,
+        d.attention.doubleReviewGaps ? { text: `${d.attention.doubleReviewGaps} 件作品两位复核员分差过大，等你裁定`, to: "/notifications" } : null,
       ].filter((x): x is { text: string; to: string } => x !== null)
     : [];
   return (
@@ -100,6 +110,11 @@ export function DashboardPage() {
               <Statistic title="活跃孩子" value={d.today.activeChildren} />
               <Statistic title="新孩子" value={d.today.newChildren} />
               <Statistic title="AI 初评 / 审核" value={`${d.ai.workScores} / ${d.ai.dailyReviews}`} />
+              {d.ai.calls !== undefined && (
+                <Typography.Text type={d.ai.errorRate && d.ai.errorRate > 0.05 ? "danger" : "secondary"}>
+                  今天调用 {d.ai.calls} 次，失败 {d.ai.errors ?? 0} 次（{Math.round((d.ai.errorRate ?? 0) * 1000) / 10}%），费用 {(d.ai.costYuan ?? 0).toFixed(2)} 元
+                </Typography.Text>
+              )}
             </Space>
           </Card>
           <Card title="各服">

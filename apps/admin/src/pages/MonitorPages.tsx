@@ -11,6 +11,7 @@
  * Every action asks for a reason and lands in the operation log.
  */
 
+import { ITEMS } from "@zhiyouji/engine";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Radio, Select, Space, Table, Tabs, Tag, Typography, message } from "antd";
@@ -94,6 +95,134 @@ interface Overview {
   }[];
   lands: { id: string; name: string; kind: string; owner: string | null; contestId: string | null }[];
   contests: { id: string; landId: string; defender: string; attackers: { teamId: string; paid: number }[]; status: string; deadline: number; outcome?: { kind: string } }[];
+  wars?: Record<string, { week: number; pairs: [string, string][]; bye: string | null; settled: boolean; results?: { teamId: string; outcome: string; points: number; chestItem: string | null }[] }>;
+  shop?: { bought: Record<string, string[]>; auctions: { itemId: string; endAt: number; bids: { teamId: string; amount: number }[]; closed: boolean; winner: string | null }[] };
+  bigBattle?: { camps: { a: string[]; b: string[] }; lineValues: number[]; final: { a: string[]; b: string[] } | null; settled: boolean } | null;
+  itemUses?: { at: number; team: string; item: string; target: string | null; land: string | null; broadcast: boolean }[];
+  pointsBySource?: Record<string, Record<string, number>>;
+}
+
+const OUTCOME: Record<string, string> = { win: "赢", lose: "输", tie: "平", bye: "轮空" };
+const itemName = (id: string) => ITEMS.find((i) => i.id === id)?.name ?? id;
+
+/** 周战争、商店与竞价、大团战、法宝使用记录、团队分来源 (part 7 §7). */
+function SeasonTabs({ d, teamName }: { d: Overview; teamName: (id: string | null) => string }) {
+  const wars = Object.values(d.wars ?? {}).sort((a, b) => a.week - b.week);
+  const sources = [...new Set(Object.values(d.pointsBySource ?? {}).flatMap((x) => Object.keys(x)))];
+  return (
+    <Tabs
+      size="small"
+      items={[
+        {
+          key: "wars",
+          label: "周战争",
+          children: wars.length ? (
+            <Table
+              rowKey="week"
+              size="small"
+              pagination={false}
+              dataSource={wars}
+              columns={[
+                { title: "周", dataIndex: "week" },
+                { title: "配对", render: (_, w) => w.pairs.map(([a, b]) => `${teamName(a)} vs ${teamName(b)}`).join("；") + (w.bye ? `；轮空：${teamName(w.bye)}` : "") },
+                {
+                  title: "结果",
+                  render: (_, w) => (w.settled ? (w.results ?? []).map((r) => `${teamName(r.teamId)} ${OUTCOME[r.outcome] ?? r.outcome} ${pts(r.points)}`).join("、") : <Tag>未结算</Tag>),
+                },
+              ]}
+            />
+          ) : (
+            "还没配对"
+          ),
+        },
+        {
+          key: "shop",
+          label: "商店与竞价",
+          children: (
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <Table
+                rowKey="itemId"
+                size="small"
+                pagination={false}
+                locale={{ emptyText: "仙品竞价还没开始" }}
+                dataSource={d.shop?.auctions ?? []}
+                columns={[
+                  { title: "仙品", render: (_, a) => itemName(a.itemId) },
+                  { title: "最高出价", render: (_, a) => (a.bids.length ? `${teamName(a.bids[a.bids.length - 1]!.teamId)} ${a.bids[a.bids.length - 1]!.amount}` : "—") },
+                  { title: "出价次数", render: (_, a) => a.bids.length },
+                  { title: "结束", render: (_, a) => <Time iso={new Date(a.endAt)} /> },
+                  { title: "状态", render: (_, a) => (a.closed ? `已结束${a.winner ? `，${teamName(a.winner)}得到` : "，流拍"}` : "进行中") },
+                ]}
+              />
+              <div>
+                已买：
+                {Object.entries(d.shop?.bought ?? {})
+                  .filter(([, v]) => v.length)
+                  .map(([t, v]) => `${teamName(t)}：${v.map(itemName).join("、")}`)
+                  .join("；") || "还没有"}
+              </div>
+            </Space>
+          ),
+        },
+        {
+          key: "battle",
+          label: "大团战",
+          children: d.bigBattle ? (
+            <Space direction="vertical">
+              <div>阵营甲：{d.bigBattle.camps.a.map(teamName).join("、")}</div>
+              <div>阵营乙：{d.bigBattle.camps.b.map(teamName).join("、")}</div>
+              {d.bigBattle.final &&
+                d.bigBattle.lineValues.map((v, i) => (
+                  <div key={i}>
+                    第 {i + 1} 条线（{v} 分）：{teamName(d.bigBattle!.final!.a[i] ?? null)} vs {teamName(d.bigBattle!.final!.b[i] ?? null)}
+                  </div>
+                ))}
+              <Tag>{d.bigBattle.settled ? "已结算" : d.bigBattle.final ? "战线已锁定" : "等战线分配"}</Tag>
+            </Space>
+          ) : (
+            "还没分阵营"
+          ),
+        },
+        {
+          key: "items",
+          label: "法宝使用记录",
+          children: (
+            <Table
+              rowKey={(r) => `${r.at}-${r.team}-${r.item}`}
+              size="small"
+              pagination={{ pageSize: 30 }}
+              locale={{ emptyText: "还没有人用法宝" }}
+              dataSource={d.itemUses ?? []}
+              columns={[
+                { title: "时间", render: (_, r) => <Time iso={new Date(r.at)} /> },
+                { title: "谁", dataIndex: "team" },
+                { title: "法宝", dataIndex: "item" },
+                { title: "对谁 / 哪块地", render: (_, r) => [r.target, r.land].filter(Boolean).join(" · ") || "—" },
+                { title: "全服广播", render: (_, r) => (r.broadcast ? "是" : "只有本组知道") },
+              ]}
+            />
+          ),
+        },
+        {
+          key: "sources",
+          label: "团队分来源",
+          children: (
+            <Table
+              rowKey="id"
+              size="small"
+              pagination={false}
+              dataSource={d.teams}
+              columns={[
+                { title: "组", dataIndex: "name" },
+                ...sources.map((src) => ({ title: SOURCE_TEXT[src] ?? src, render: (_: unknown, t: Overview["teams"][number]) => pts(d.pointsBySource?.[t.id]?.[src] ?? 0) })),
+                { title: "合计", render: (_: unknown, t: Overview["teams"][number]) => pts(t.points) },
+              ]}
+            />
+          ),
+        },
+      ]}
+    />
+  );
 }
 
 export function MonitorPage() {
@@ -195,6 +324,7 @@ function ServerMonitor({ serverId }: { serverId: string }) {
               />
             ),
           },
+          { key: "season", label: "周战争 / 商店 / 大团战 / 法宝 / 分数来源", children: <SeasonTabs d={d} teamName={teamName} /> },
           { key: "planned", label: "计划事件（周战争、大团战的截止也在这里改）", children: <Planned serverId={serverId} /> },
           { key: "ledger", label: "账本", children: <Ledger serverId={serverId} teams={d.teams} /> },
           { key: "intervene", label: "人工干预", children: <Intervene serverId={serverId} d={d} onDone={o.reload} /> },

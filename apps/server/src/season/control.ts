@@ -126,6 +126,26 @@ export class SeasonControl {
         return { id, name: names.get(id) ?? id, kind: l.kind, owner: l.owner, ownedSince: l.ownedSince, contestId: c?.id ?? null };
       }),
       contests: st.contestOrder.map((id) => st.contests[id]!),
+      // part 7 §7 法宝使用记录: who used what on whom, and when (passive ones that triggered too)
+      itemUses: (await this.db.select().from(feed).where(and(eq(feed.serverId, serverId), eq(feed.kind, "item_used"))).orderBy(desc(feed.at))).map((r) => {
+        const d = r.data as { teamId?: string; itemId?: string; targetTeamId?: string; landId?: string; contestId?: string; triggered?: boolean };
+        return {
+          at: +r.at,
+          team: d.teamId ? (st.teams[d.teamId]?.name ?? "") : "",
+          item: d.itemId ? itemDef(d.itemId).name : "",
+          target: d.targetTeamId ? (st.teams[d.targetTeamId]?.name ?? "") : null,
+          land: d.landId ? (names.get(d.landId) ?? d.landId) : null,
+          broadcast: r.broadcast,
+        };
+      }),
+      // part 7 §7 团队分来源: each team's points by source
+      pointsBySource: Object.fromEntries(
+        st.teamOrder.map((id) => {
+          const by: Record<string, number> = {};
+          for (const e of st.ledger) if (e.teamId === id && e.currency === "points") by[e.source] = (by[e.source] ?? 0) + e.amount;
+          return [id, by];
+        }),
+      ),
       effects: st.effects,
       shop: st.shop,
       wars: st.wars,

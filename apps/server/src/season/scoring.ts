@@ -40,7 +40,7 @@ import {
   works,
   type Db,
 } from "@zhiyouji/db";
-import { battleDeadline, beijingDate, campsFormAt, resolveContest, warDeadline, type SeasonEvent, type SeasonState } from "@zhiyouji/engine";
+import { battleDeadline, beijingDate, campsFormAt, DEFAULT_PARAMS, resolveContest, warDeadline, type SeasonEvent, type SeasonState } from "@zhiyouji/engine";
 import { formatBeijing } from "@zhiyouji/shared";
 import type { AiScorer, ScoreRequest } from "../ai.js";
 import type { Clock } from "../clock.js";
@@ -336,7 +336,7 @@ export class Scoring {
         promptId: r.w.promptId,
         second: r.a.second,
         dueAt: r.a.dueAt.toISOString(),
-        dueSoon: +r.a.dueAt - now <= 6 * HOUR,
+        dueSoon: +r.a.dueAt - now <= DEFAULT_PARAMS.review.remindBeforeHours * HOUR,
       })),
     };
   }

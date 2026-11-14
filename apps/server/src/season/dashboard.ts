@@ -3,9 +3,9 @@
  * server at a glance.
  */
 
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
-import { aiScores, children, dailyReviews, dailySubmissions, plannedEvents, reviewAssignments, seasons, servers, works, type Db } from "@zhiyouji/db";
-import { beijingDate, beijingInstant, nextPublicationAfter, rankingAt, seasonDayOf } from "@zhiyouji/engine";
+import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { aiCalls, aiScores, children, dailyReviews, dailySubmissions, messages, plannedEvents, reviewAssignments, safetyQueue, seasons, servers, works, type Db } from "@zhiyouji/db";
+import { DEFAULT_PARAMS, beijingDate, beijingInstant, nextPublicationAfter, rankingAt, seasonDayOf } from "@zhiyouji/engine";
 import type { Clock } from "../clock.js";
 import type { SeasonStore } from "../seasonStore.js";
 import { QuestionBank } from "../content/questionBank.js";
@@ -32,7 +32,7 @@ export class Dashboard {
 
     const pending = await this.db.select().from(reviewAssignments).where(eq(reviewAssignments.status, "pending"));
     const mine = role === "admin" ? pending : pending.filter((a) => a.reviewerId === adminId);
-    const dueSoon = mine.filter((a) => +a.dueAt - now <= 6 * HOUR).length;
+    const dueSoon = mine.filter((a) => +a.dueAt - now <= DEFAULT_PARAMS.review.remindBeforeHours * HOUR).length;
     const exceptions = (await this.db.select({ id: dailySubmissions.id }).from(dailySubmissions).where(eq(dailySubmissions.status, "error"))).length;
 
     const live = await this.db
@@ -63,6 +63,14 @@ export class Dashboard {
       });
     }
 
+    // part 7 §1 "需要处理": content-safety items waiting, two reviewers far apart waiting for a ruling
+    const safetyPending = (await this.db.select({ id: safetyQueue.id }).from(safetyQueue).where(eq(safetyQueue.status, "pending"))).length;
+    const gapRows = await this.db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(and(eq(messages.recipientKind, "admin"), eq(messages.recipientId, adminId), eq(messages.type, "double_review_gap"), isNull(messages.readAt)));
+    // today's AI calls: how many, how many failed, what they cost (part 7 §1; part 6 §6.2)
+    const calls = await this.db.select({ status: aiCalls.status, cost: aiCalls.cost }).from(aiCalls).where(gte(aiCalls.createdAt, dayStart));
     const aiWorks = await this.db.select({ id: aiScores.id }).from(aiScores).where(gte(aiScores.createdAt, dayStart));
     const aiDaily = await this.db.select({ by: dailyReviews.by }).from(dailyReviews).where(and(gte(dailyReviews.createdAt, dayStart), lte(dailyReviews.createdAt, new Date(now))));
 
@@ -85,9 +93,19 @@ export class Dashboard {
         dailyExceptions: exceptions,
         failedPlannedEvents: role === "admin" ? failed.map((f) => ({ serverId: f.serverId, key: f.key })) : [],
         lowPromptLands: role === "admin" ? lowPrompts : 0,
+        safetyPending: role === "admin" ? safetyPending : 0,
+        doubleReviewGaps: role === "admin" ? gapRows.length : 0,
       },
       servers: role === "admin" ? serverViews : [],
-      ai: { workScores: aiWorks.length, dailyReviews: aiDaily.filter((d) => d.by.startsWith("ai:")).length },
+      ai: {
+        workScores: aiWorks.length,
+        dailyReviews: aiDaily.filter((d) => d.by.startsWith("ai:")).length,
+        calls: calls.length,
+        errors: calls.filter((c) => c.status === "error").length,
+        errorRate: calls.length ? Math.round((calls.filter((c) => c.status === "error").length / calls.length) * 1000) / 1000 : 0,
+        /** Yuan (the log keeps 1/10000 yuan). */
+        costYuan: calls.reduce((n, c) => n + (c.cost ?? 0), 0) / 10000,
+      },
     };
   }
 }
