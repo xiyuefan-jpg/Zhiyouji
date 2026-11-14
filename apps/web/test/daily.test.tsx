@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { ConfigProvider } from "antd-mobile";
@@ -120,6 +120,55 @@ describe("student website: 每日任务 (part 5 C1–C3)", () => {
     expect(await screen.findByText("一共 1 张知识卡片")).toBeTruthy();
     await user.click(screen.getByText("小结", { selector: ".adm-tabs-tab" }));
     expect(await screen.findByText("还没有小结")).toBeTruthy();
+    await be.stop();
+  });
+});
+
+describe("网络不好时 (part 5 §3.1 step 7): the content stays on the phone and is handed in again", () => {
+  it("what was typed comes back after leaving the page; a lost hand-in is sent again by itself once, without a duplicate", async () => {
+    const be = await startBackend();
+    await be.services.family.requestCode("13812345678", undefined);
+    const login = await be.services.family.login("13812345678", be.sms.lastCode("13812345678")!);
+    await be.services.family.consent(login.family.id, "agree", be.cfg.policyVersion);
+    const c = await be.services.family.createChild(login.family.id, { nickname: "小明", grade: 5, avatar: "a1", explainPref: "text" });
+    await be.services.sessions.setChild((await be.db.query.sessions.findFirst())!.id, c.id);
+    const realFetch = be.fetchMock.getMockImplementation()!;
+    // the first hand-in reaches the server but the answer is lost (the phone sees a network error)
+    let lose = 1;
+    be.fetchMock.mockImplementation(async (input, init = {}) => {
+      const res = await realFetch(input, { ...init, headers: { ...(init.headers as Record<string, string>), authorization: `Bearer ${login.token}` } });
+      if (String(input).endsWith("/v1/daily/submissions") && init.method === "POST" && lose-- > 0) throw new TypeError("Failed to fetch");
+      return res;
+    });
+    localStorage.setItem("zyj_privacy_notice", "2027-01");
+    const user = userEvent.setup();
+    const page = () =>
+      render(
+        <ConfigProvider>
+          <MemoryRouter initialEntries={["/daily/new/1"]}>
+            <App />
+          </MemoryRouter>
+        </ConfigProvider>,
+      );
+    const first = page();
+    await user.type(await screen.findByPlaceholderText("写 50–150 个字"), TEXT);
+    await user.type(screen.getByPlaceholderText("一句话就好"), "我让 AI 举了三个例子");
+    first.unmount();
+
+    // back later: the text and the AI line are still there
+    page();
+    expect(await screen.findByText("上次没交上去的内容已经恢复了，可以接着改，也可以直接交。")).toBeTruthy();
+    expect(screen.getByDisplayValue(TEXT)).toBeTruthy();
+    expect(screen.getByDisplayValue("我让 AI 举了三个例子")).toBeTruthy();
+    await user.upload(screen.getByLabelText("选图片或拍照"), new File(["jpg"], "chat.jpg", { type: "image/jpeg" }));
+    await user.click(screen.getByRole("button", { name: "交上去" }));
+    expect((await screen.findByRole("status")).textContent).toContain("会自动重新交（第 1 次）");
+    // the network is back: sent again at once, the server knows it already
+    await act(async () => void window.dispatchEvent(new Event("online")));
+    expect(await screen.findByText("审核结果")).toBeTruthy();
+    expect(await be.db.select().from(dailySubmissions)).toHaveLength(1);
+    // handed in: the draft is gone
+    expect(Object.keys(localStorage).filter((k) => k.startsWith("zyj.dailyDraft."))).toEqual([]);
     await be.stop();
   });
 });

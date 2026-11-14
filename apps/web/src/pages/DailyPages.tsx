@@ -6,7 +6,7 @@ import { FilePicker } from "../components/FilePicker";
  * (50–150 characters); the child's default comes from the profile.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, Checkbox, Input, TextArea } from "antd-mobile";
 import { DAILY_TEMPLATES, DAILY_TEXT_MAX, DAILY_TEXT_MIN, EXPLAIN_HINTS } from "@zhiyouji/shared";
@@ -17,6 +17,7 @@ import type { Recording } from "../platform/recorder";
 import { VoiceRecorder } from "../components/VoiceRecorder";
 import { useChild } from "../session";
 import { useLoad } from "./season/useSeason";
+import { RETRY_WAITS_MS, clearDraft, isTransient, loadDraftBlobs, loadDraftText, newClientKey, saveDraftBlobs, saveDraftText } from "../platform/drafts";
 
 interface Today {
   passedToday: number;
@@ -77,17 +78,48 @@ export function DailyNew() {
   const nav = useNavigate();
   const [files, setFiles] = useState<File[]>([]);
   const child = useChild();
-  const [mode, setMode] = useState<"voice" | "text">(child.explainPref === "text" ? "text" : "voice");
-  const [voice, setVoice] = useState<Recording | null>(null);
-  const [text, setText] = useState("");
-  const [aiNote, setAiNote] = useState("");
-  const [noAi, setNoAi] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const n = [...text].length;
   // "改一改再交": start from the last hand-in (its text, AI line and evidence pictures)
   const [search] = useSearchParams();
   const from = search.get("from");
+  // §3.1 "内容先存在手机上": what was not handed in last time comes back (not when re-doing a hand-in)
+  const [draft] = useState(() => (from ? null : loadDraftText(child.id, tpl.id)));
+  const clientKey = useRef(draft?.clientKey ?? newClientKey());
+  const [mode, setMode] = useState<"voice" | "text">(draft?.mode ?? (child.explainPref === "text" ? "text" : "voice"));
+  const [voice, setVoice] = useState<Recording | null>(null);
+  const [voiceRestored, setVoiceRestored] = useState<Recording | null>(null);
+  const [text, setText] = useState(draft?.text ?? "");
+  const [aiNote, setAiNote] = useState(draft?.aiNote ?? "");
+  const [noAi, setNoAi] = useState(draft?.noAi ?? false);
+  const [restored, setRestored] = useState(!!draft && !!(draft.text || draft.aiNote));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState<number>(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const uploaded = useRef(new Map<Blob, string>());
+  const n = [...text].length;
+  useEffect(() => {
+    if (from) return;
+    let live = true;
+    void loadDraftBlobs(child.id, tpl.id).then((b) => {
+      if (!live || !b) return;
+      if (b.files.length) setFiles(b.files.map((f) => new File([f.blob], f.name, { type: f.type })));
+      if (b.voice) {
+        setVoice(b.voice);
+        setVoiceRestored(b.voice);
+      }
+      if (b.files.length || b.voice) setRestored(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [child.id, tpl.id, from]);
+  useEffect(() => {
+    if (text || aiNote || noAi) saveDraftText(child.id, tpl.id, { clientKey: clientKey.current, mode, text, aiNote, noAi });
+  }, [child.id, tpl.id, mode, text, aiNote, noAi]);
+  useEffect(() => {
+    if (files.length || voice) void saveDraftBlobs(child.id, tpl.id, { files: files.map((f) => ({ name: f.name, type: f.type, blob: f })), voice });
+  }, [child.id, tpl.id, files, voice]);
+  useEffect(() => () => void (retryTimer.current && clearTimeout(retryTimer.current)), []);
   const [oldEvidence, setOldEvidence] = useState<string[]>([]);
   useEffect(() => {
     if (!from) return;
@@ -105,7 +137,18 @@ export function DailyNew() {
     );
   }, [from]);
 
+  // a picture or recording already uploaded is not uploaded again when the hand-in is retried
+  const upload = async (b: Blob, opts: Parameters<typeof uploader.upload>[1]) => {
+    const known = uploaded.current.get(b);
+    if (known) return known;
+    const id = (await uploader.upload(b, opts)).fileId;
+    uploaded.current.set(b, id);
+    return id;
+  };
+  const submitRef = useRef<() => Promise<void>>(async () => undefined);
   const submit = async () => {
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    retryTimer.current = null;
     setError(null);
     if (files.length === 0 && oldEvidence.length === 0) return setError("至少交一张证据图片");
     if (mode === "voice" && !voice) return setError("先按住说话，录一段讲解");
@@ -114,27 +157,45 @@ export function DailyNew() {
     setBusy(true);
     try {
       const ids: string[] = files.length === 0 ? [...oldEvidence] : [];
-      for (const f of files) ids.push((await uploader.upload(f, { purpose: "image" })).fileId);
-      const explain = mode === "voice" ? { kind: "voice" as const, fileId: (await uploader.upload(voice!.blob, { purpose: "audio", durationSec: voice!.durationMs / 1000 })).fileId } : { kind: "text" as const, text };
+      for (const f of files) ids.push(await upload(f, { purpose: "image" }));
+      const explain = mode === "voice" ? { kind: "voice" as const, fileId: await upload(voice!.blob, { purpose: "audio", durationSec: voice!.durationMs / 1000 }) } : { kind: "text" as const, text };
       const r = await request<Result>("POST", "/v1/daily/submissions", {
         templateId: tpl.id,
         evidenceFileIds: ids,
         explain,
         ...(noAi ? { noAi: true } : { aiNote }),
+        clientKey: clientKey.current,
       });
+      await clearDraft(child.id, tpl.id);
       nav(`/daily/${r.id}`, { replace: true });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String((e as Error).message ?? e));
+      if (isTransient(e)) {
+        // §3.1 自动重传: everything stays on the phone; try again by itself (and as soon as the network is back)
+        const next = retry + 1;
+        setRetry(next);
+        retryTimer.current = setTimeout(() => void submitRef.current(), RETRY_WAITS_MS[Math.min(next - 1, RETRY_WAITS_MS.length - 1)]);
+      } else {
+        setRetry(0);
+        setError(e instanceof ApiError ? e.message : String((e as Error).message ?? e));
+      }
     } finally {
       setBusy(false);
     }
   };
+  submitRef.current = submit;
+  useEffect(() => {
+    if (!retry) return;
+    const back = () => void submitRef.current();
+    window.addEventListener("online", back);
+    return () => window.removeEventListener("online", back);
+  }, [retry]);
 
   return (
     <div className="page">
       <PageHeader title={tpl.name} right={<ReadAloud text={tpl.prompt} />} />
       <p className="subtitle">{tpl.prompt}</p>
 
+      {restored && <p className="hint">上次没交上去的内容已经恢复了，可以接着改，也可以直接交。</p>}
       <div className="field-label">证据：{tpl.evidence}</div>
       <FilePicker label="选图片或拍照" accept="image/*" multiple max={9} files={files} onChange={setFiles} />
       {oldEvidence.length > 0 && files.length === 0 && <p className="hint">没有选新图片时，沿用上次的 {oldEvidence.length} 张证据图片。</p>}
@@ -148,7 +209,7 @@ export function DailyNew() {
         ))}
       </div>
       {mode === "voice" ? (
-        <VoiceRecorder maxSeconds={90} onChange={setVoice} onUseText={() => setMode("text")} />
+        <VoiceRecorder key={voiceRestored ? "restored" : "new"} initial={voiceRestored} maxSeconds={90} onChange={setVoice} onUseText={() => setMode("text")} />
       ) : (
         <>
           <TextArea className="text-input" placeholder="写 50–150 个字" value={text} onChange={setText} rows={5} maxLength={DAILY_TEXT_MAX} showCount />
@@ -169,6 +230,11 @@ export function DailyNew() {
       {error && (
         <p role="alert" style={{ color: "var(--vermilion)" }}>
           {error}
+        </p>
+      )}
+      {retry > 0 && !error && (
+        <p role="status" style={{ color: "var(--ochre)" }}>
+          网络不好，还没交上去。内容已经存在手机上，不会丢，会自动重新交（第 {retry} 次）；网络好了也可以直接再点"交上去"。
         </p>
       )}
       <Button color="primary" className="big-button" block loading={busy} style={{ marginTop: 22 }} onClick={() => void submit()}>

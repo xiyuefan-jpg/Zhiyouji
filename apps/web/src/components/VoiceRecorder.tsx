@@ -14,15 +14,18 @@ export function VoiceRecorder({
   onChange,
   onUseText,
   recorder = defaultRecorder,
+  initial = null,
 }: {
   maxSeconds?: number;
   onChange: (r: Recording | null) => void;
   onUseText?: () => void;
   recorder?: Recorder;
+  /** A recording restored from the draft (part 5 §3.1): shown as done, can be played back or recorded again. */
+  initial?: Recording | null;
 }) {
-  const [state, setState] = useState<"idle" | "recording" | "done">("idle");
-  const [seconds, setSeconds] = useState(0);
-  const [url, setUrl] = useState<string | null>(null);
+  const [state, setState] = useState<"idle" | "recording" | "done">(initial ? "done" : "idle");
+  const [seconds, setSeconds] = useState(initial ? Math.min(maxSeconds, Math.round(initial.durationMs / 1000)) : 0);
+  const [url, setUrl] = useState<string | null>(() => (initial && typeof URL.createObjectURL === "function" ? URL.createObjectURL(initial.blob) : null));
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const busy = useRef(false);

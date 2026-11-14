@@ -779,8 +779,10 @@ export const dailySubmissions = pgTable(
     counted: boolean("counted"),
     busyNoticeAt: ts("busy_notice_at"),
     decidedAt: ts("decided_at"),
+    /** Made by the website for one hand-in (part 5 §3.1 自动重传): sending it again returns the same submission. */
+    clientKey: uuid("client_key"),
   },
-  (t) => [index("daily_child_day").on(t.childId, t.day), index("daily_status").on(t.status)],
+  (t) => [index("daily_child_day").on(t.childId, t.day), index("daily_status").on(t.status), uniqueIndex("daily_client_key").on(t.childId, t.clientKey)],
 );
 
 /** The review (AI or a person from the exception queue); background levels are never shown to the child. */

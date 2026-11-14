@@ -113,6 +113,11 @@ export class DailyTasks {
   // ---- handing in (C2) -----------------------------------------------------------------------
 
   async submit(child: ChildRow, b: DailySubmit) {
+    // 自动重传 (part 5 §3.1): the same hand-in sent again (its answer was lost) is the same submission
+    if (b.clientKey) {
+      const [same] = await this.db.select({ id: dailySubmissions.id }).from(dailySubmissions).where(and(eq(dailySubmissions.childId, child.id), eq(dailySubmissions.clientKey, b.clientKey)));
+      if (same) return this.view(child.id, same.id);
+    }
     const tpl = DAILY_TEMPLATES.find((t) => t.id === b.templateId)!;
     const noAi = !!b.noAi;
     if (noAi && !tpl.noAiAllowed) fail(400, "no_ai_not_allowed");
@@ -155,6 +160,7 @@ export class DailyTasks {
         day,
         grade: child.grade,
         nextTryAt: new Date(now),
+        clientKey: b.clientKey ?? null,
       })
       .returning();
     // Try once right away (usually done within a minute); the worker retries if the AI is busy.

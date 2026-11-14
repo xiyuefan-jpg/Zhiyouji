@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { aiCalls, dailyReviews, messages, plannedEvents } from "@zhiyouji/db";
+import { aiCalls, dailyReviews, dailySubmissions, messages, plannedEvents } from "@zhiyouji/db";
 import type { FakeAiDaily, FakeAiSummarizer } from "../src/index.js";
 import { bj, setup } from "./helpers.js";
 import { contestSetup } from "./seasonHelpers.js";
@@ -71,6 +71,22 @@ describe("每日任务 and 修行日志 (part 5 C1–C7; part 6 T4)", () => {
     expect(card.explainText).toBe(TEXT);
     expect((await t.app.inject({ method: "GET", url: card.evidence[0].url })).body).toBe("jpeg");
     expect((await other.call("GET", `/v1/journal/cards/${r.card.id}`)).statusCode).toBe(404);
+    await t.close();
+  });
+
+  it("自动重传 (part 5 §3.1): the same hand-in sent again after a lost answer is the same submission", async () => {
+    const t = await setup(bj("2027-03-10", 16));
+    const k = await kid(t);
+    const pic = await picture(t, k.call);
+    const body = { templateId: 1, evidenceFileIds: [pic], explain: { kind: "text", text: TEXT }, aiNote: "我让 AI 给我举了三个例子", clientKey: "7f1c2d3e-4b5a-4c6d-8e7f-901234567890" };
+    const a = (await k.call("POST", "/v1/daily/submissions", body)).json();
+    const b = (await k.call("POST", "/v1/daily/submissions", body)).json();
+    expect(b.id).toBe(a.id);
+    expect(await t.db.select().from(dailySubmissions)).toHaveLength(1);
+    // another child's same key is another submission
+    const k2 = await kid(t, "13500000002");
+    const pic2 = await picture(t, k2.call);
+    expect((await k2.call("POST", "/v1/daily/submissions", { ...body, evidenceFileIds: [pic2] })).json().id).not.toBe(a.id);
     await t.close();
   });
 

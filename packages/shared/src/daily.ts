@@ -75,6 +75,8 @@ export const dailySubmit = z.object({
   ]),
   aiNote: z.string().trim().max(200).optional(),
   noAi: z.boolean().optional(),
+  /** One key per hand-in, made by the website: a retry after a lost answer returns the same submission. */
+  clientKey: z.uuid().optional(),
 });
 export type DailySubmit = z.infer<typeof dailySubmit>;
 

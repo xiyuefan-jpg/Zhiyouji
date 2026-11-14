@@ -183,6 +183,13 @@
       "when": 1794661386338,
       "tag": "0025_ai_disclosures",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794662886796,
+      "tag": "0026_daily_client_key",
+      "breakpoints": true
     }
   ]
 }
