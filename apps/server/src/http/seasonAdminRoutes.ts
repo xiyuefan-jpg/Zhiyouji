@@ -76,8 +76,11 @@ export function seasonAdminRoutes(app: FastifyInstance, seasons: SeasonAdmin, au
   // ---- children and enrollment ---------------------------------------------------------
 
   app.get("/v1/admin/children", async (req) => {
-    await auth.user(req, ["admin"]);
-    return { children: await seasons.searchChildren(childSearchQuery.parse(req.query).q) };
+    const { user } = await auth.user(req, ["admin"]);
+    const q = childSearchQuery.parse(req.query).q;
+    const found = await seasons.searchChildren(q);
+    await auth.view(user.id, found.map((c) => c.childId), { contentKind: "child_search", objectId: q.slice(0, 40), action: "view" });
+    return { children: found };
   });
 
   app.post("/v1/admin/seasons/:id/players", async (req) => {
@@ -86,14 +89,19 @@ export function seasonAdminRoutes(app: FastifyInstance, seasons: SeasonAdmin, au
   });
 
   app.get("/v1/admin/seasons/:id/players", async (req) => {
-    await auth.user(req, ["admin"]);
-    return { players: await seasons.roster(idParam.parse(req.params).id) };
+    const { user } = await auth.user(req, ["admin"]);
+    const { id } = idParam.parse(req.params);
+    const players = await seasons.roster(id);
+    await auth.view(user.id, players.map((p) => p.childId), { contentKind: "roster", objectId: id, action: "view" });
+    return { players };
   });
 
   /** 报名名单导出 (CSV, opens in Excel; BOM so Chinese shows correctly). */
   app.get("/v1/admin/seasons/:id/players.csv", async (req, reply) => {
-    await auth.user(req, ["admin"]);
-    const rows = await seasons.roster(idParam.parse(req.params).id);
+    const { user } = await auth.user(req, ["admin"]);
+    const { id } = idParam.parse(req.params);
+    const rows = await seasons.roster(id);
+    await auth.view(user.id, rows.map((p) => p.childId), { contentKind: "roster", objectId: id, action: "download" });
     const head = ["孩子ID", "昵称", "年级", "家长手机号", "状态", "缴费备注", "开通人", "开通时间", "服", "组"];
     const esc = (v: unknown) => {
       const s = v === null || v === undefined ? "" : String(v);
@@ -120,8 +128,11 @@ export function seasonAdminRoutes(app: FastifyInstance, seasons: SeasonAdmin, au
   });
 
   app.get("/v1/admin/seasons/:id/grouping", async (req) => {
-    await auth.user(req, ["admin"]);
-    return { grouping: await seasons.groupingView(idParam.parse(req.params).id) };
+    const { user } = await auth.user(req, ["admin"]);
+    const { id } = idParam.parse(req.params);
+    const grouping = await seasons.groupingView(id);
+    await auth.view(user.id, null, { contentKind: "grouping", objectId: id, action: "view" });
+    return { grouping };
   });
 
   app.post("/v1/admin/seasons/:id/grouping/move", async (req) => {

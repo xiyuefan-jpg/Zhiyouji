@@ -23,8 +23,9 @@ export function dataRoutes(app: FastifyInstance, db: Db, rights: DataRights, fam
   app.get("/v1/data-requests/:id/download", async (req) => rights.downloadUrl((await family.loggedIn(req)).family.id, idParam.parse(req.params).id));
 
   app.get("/v1/admin/data-requests", async (req) => {
-    await admin.user(req, ["admin"]);
+    const { user } = await admin.user(req, ["admin"]);
     const rows = await db.select().from(dataRequests).orderBy(desc(dataRequests.requestedAt)).limit(500);
+    for (const r of rows) await admin.view(user.id, [r.childId], { contentKind: "data_request", objectId: r.childId ? r.id : `family:${r.familyId}`, action: "view" });
     return {
       requests: rows.map((r) => ({
         id: r.id,

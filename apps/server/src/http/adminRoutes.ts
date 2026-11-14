@@ -5,9 +5,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { adminInviteRequest, adminLoginRequest, inviteFinishRequest, inviteStartRequest, type AdminRole } from "@zhiyouji/shared";
-import { adminMe, type AdminAccounts, type AdminRow } from "../accounts/admin.js";
+import { adminMe, type AdminAccounts, type AdminRow, type ViewRecord } from "../accounts/admin.js";
 import type { SessionRow, Sessions } from "../accounts/sessions.js";
 import type { ServerConfig } from "../config.js";
+import { adminOfRequest } from "./audit.js";
 import { clearSessionCookie, readToken, setSessionCookie } from "./auth.js";
 import { fail } from "./errors.js";
 
@@ -30,7 +31,18 @@ export class AdminAuth {
     const user = await this.accounts.user(session.adminUserId!);
     if (!user || user.status !== "active") fail(401, "not_logged_in");
     if (!roles.includes(user!.role as AdminRole)) fail(403, "forbidden");
+    adminOfRequest.set(req, user!.id);
     return { session, user: user! };
+  }
+
+  /**
+   * View log (PRD part 8 §3.1): one line per child in `childIds` (an empty
+   * list writes nothing), or one line without a child when `childIds` is null
+   * (a list of nicknames, an export).
+   */
+  async view(adminUserId: string, childIds: readonly (string | null)[] | null, v: Omit<ViewRecord, "childId">): Promise<void> {
+    if (childIds === null) return this.accounts.recordView(adminUserId, { ...v, childId: null });
+    for (const childId of new Set(childIds)) await this.accounts.recordView(adminUserId, { ...v, childId });
   }
 }
 

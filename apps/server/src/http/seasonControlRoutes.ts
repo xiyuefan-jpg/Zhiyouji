@@ -33,8 +33,11 @@ export function seasonControlRoutes(app: FastifyInstance, control: SeasonControl
 
   // live view and ledger (§7)
   app.get("/v1/admin/servers/:id", async (req) => {
-    await auth.user(req, ["admin"]);
-    return control.overview(serverParam.parse(req.params).id);
+    const { user } = await auth.user(req, ["admin"]);
+    const { id } = serverParam.parse(req.params);
+    const v = await control.overview(id);
+    await auth.view(user.id, null, { contentKind: "server_overview", objectId: id, action: "view" });
+    return v;
   });
   app.get("/v1/admin/servers/:id/ledger", async (req) => {
     await auth.user(req, ["admin"]);
@@ -113,8 +116,10 @@ export function seasonControlRoutes(app: FastifyInstance, control: SeasonControl
     return control.finalize(serverParam.parse(req.params).id, finalizeRequest.parse(req.body).poolYuan, by);
   });
   app.get("/v1/admin/servers/:id/scholarship.csv", async (req, reply) => {
-    await auth.user(req, ["admin"]);
-    const rows = await control.scholarshipRows(serverParam.parse(req.params).id);
+    const { user } = await auth.user(req, ["admin"]);
+    const { id } = serverParam.parse(req.params);
+    const rows = await control.scholarshipRows(id);
+    await auth.view(user.id, null, { contentKind: "scholarship", objectId: id, action: "download" });
     const esc = (v: unknown) => {
       const s = String(v ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;

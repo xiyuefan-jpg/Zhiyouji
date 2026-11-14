@@ -41,6 +41,7 @@ import { Home } from "../season/todo.js";
 import { FakeMediaProcessor, MediaPipeline, type MediaProcessor } from "../media.js";
 import { TagSuggestions } from "../daily/tagSuggestions.js";
 import { rateLimit } from "./rateLimit.js";
+import { adminAudit } from "./audit.js";
 import { QuestionBank } from "../content/questionBank.js";
 import { bankRoutes } from "./bankRoutes.js";
 import { Debates } from "../season/debates.js";
@@ -207,10 +208,13 @@ export function buildServices(d: AppDeps): Services {
   };
 }
 
-export function buildApp(d: AppDeps, services = buildServices(d)): { app: FastifyInstance; services: Services } {
+export function buildApp(d: AppDeps, services = buildServices(d)): { app: FastifyInstance; services: Services; adminRouteKeys: string[] } {
   const app = Fastify({ logger: d.logger ?? false, trustProxy: d.trustProxy ?? false, bodyLimit: 256 * 1024 });
 
   rateLimit(app, d.clock, d.cfg.rateLimit.perMinute);
+  // Every admin route must say how it is logged (PRD part 8 §3.1, §3.4).
+  const adminRouteKeys: string[] = [];
+  adminAudit(app, d.db, d.clock, (k) => adminRouteKeys.push(k));
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof HttpError) return reply.status(err.status).send(err.body());
@@ -247,8 +251,11 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
     return services.summaries.generateSeasonReviews(seasonIdParam.parse(req.params).id);
   });
   app.get("/v1/admin/seasons/:id/reviews", async (req) => {
-    await services.adminAuth.user(req, ["admin"]);
-    return services.summaries.previewSeasonReviews(seasonIdParam.parse(req.params).id);
+    const { user } = await services.adminAuth.user(req, ["admin"]);
+    const id = seasonIdParam.parse(req.params).id;
+    const r = await services.summaries.previewSeasonReviews(id);
+    await services.adminAuth.view(user.id, r.reviews.map((x) => x.childId), { contentKind: "season_review", objectId: id, action: "view" });
+    return r;
   });
   app.post("/v1/admin/seasons/:id/reviews/release", async (req) => {
     await services.adminAuth.user(req, ["admin"]);
@@ -268,5 +275,5 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   app.post("/v1/survey", async (req) => services.survey.submit((await services.familyAuth.child(req)).child, surveySubmit.parse(req.body)));
   dailyRoutes(app, services.daily, services.admin, services.familyAuth, services.adminAuth);
   devStorageRoutes(app, services.storage, d.clock, Math.max(...Object.values(d.cfg.uploads.maxBytes)));
-  return { app, services };
+  return { app, services, adminRouteKeys };
 }
