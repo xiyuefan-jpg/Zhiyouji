@@ -54,7 +54,7 @@
 |---|---|---|
 | `FakeSms` | `apps/server/src/providers.ts` | 阿里云短信 |
 | `FakeCaptcha` | 同上 | 阿里云验证码 2.0 |
-| `LocalStorage` | `apps/server/src/storage.ts` | OSS（上传用带签名的直传地址，下载用有时效的签名链接） |
+| `LocalStorage` | `apps/server/src/storage.ts` | OSS（上传用带签名的直传地址，下载用有时效的签名链接；大文件用分片上传：InitiateMultipartUpload、带签名的 UploadPart、ListParts、CompleteMultipartUpload，对应 `startMultipart` / `partTicket` / `listParts` / `completeMultipart`。存储桶的跨域设置要允许网站域名的 PUT；没完成的分片设生命周期规则 7 天后清掉） |
 | `FakeContentSafety` | `apps/server/src/providers.ts` | 内容安全 |
 | `FakeMediaProcessor` | `apps/server/src/media.ts` | 录音文件识别 + 媒体处理（抽帧）+ 文档解析 |
 | `FakeAiScorer`、`FakeAiDaily`、`FakeAiSupply`、`FakeAiSummarizer` | `apps/server/src/ai.ts` | 百炼（经过 AI 网关，管理端可以换模型） |

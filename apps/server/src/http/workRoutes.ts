@@ -5,7 +5,7 @@
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { materialRequest, slotParam, uploadRequest, workSubmit } from "@zhiyouji/shared";
+import { materialRequest, partsRequest, slotParam, uploadRequest, workSubmit } from "@zhiyouji/shared";
 import type { Clock } from "../clock.js";
 import type { SeasonPlay } from "../season/play.js";
 import type { Works } from "../season/works.js";
@@ -20,6 +20,8 @@ export function workRoutes(app: FastifyInstance, works: Works, play: SeasonPlay,
   const ctx = async (req: FastifyRequest) => play.ctx((await auth.child(req)).child.id);
 
   app.post("/v1/season/uploads", async (req) => works.requestUpload(await ctx(req), uploadRequest.parse(req.body)));
+  app.get("/v1/season/uploads/:id/parts", async (req) => works.uploadProgress(await ctx(req), idParam.parse(req.params).id));
+  app.post("/v1/season/uploads/:id/parts", async (req) => works.partTickets(await ctx(req), idParam.parse(req.params).id, partsRequest.parse(req.body).partNumbers));
   app.post("/v1/season/uploads/:id/complete", async (req) => works.completeUpload(await ctx(req), idParam.parse(req.params).id));
   app.get("/v1/season/files/:id/url", async (req) => works.fileUrl(await ctx(req), idParam.parse(req.params).id));
 
@@ -40,14 +42,20 @@ export function workRoutes(app: FastifyInstance, works: Works, play: SeasonPlay,
 export function devStorageRoutes(app: FastifyInstance, storage: ObjectStorage, clock: Clock, maxBytes: number): void {
   if (!(storage instanceof LocalStorage)) return;
   const local = storage;
-  const q = z.object({ op: z.enum(["put", "get"]), exp: z.coerce.number(), sig: z.string() });
+  const q = z.object({ op: z.enum(["put", "get", "part"]), exp: z.coerce.number(), sig: z.string(), upload: z.string().optional(), part: z.coerce.number().int().positive().optional() });
   app.register(async (sub) => {
     sub.addContentTypeParser("*", { parseAs: "buffer", bodyLimit: maxBytes }, (_req, body, done) => done(null, body));
     sub.put("/v1/dev-storage/*", async (req) => {
       const key = decodeURIComponent((req.params as { "*": string })["*"]);
       const p = q.parse(req.query);
-      if (p.op !== "put" || !local.verify(key, "put", p.exp, p.sig, +clock.now())) fail(403, "forbidden");
       const body = req.body as Buffer;
+      if (p.op === "part") {
+        if (!p.upload || !p.part || !local.verify(key, "part", p.exp, p.sig, +clock.now(), `${p.upload}\n${p.part}`)) fail(403, "forbidden");
+        if (!(await local.putPart(key, p.upload!, p.part!, Buffer.isBuffer(body) ? body : Buffer.from(String(body ?? ""))))) fail(404, "not_found");
+        // OSS returns the part's ETag; the server lists parts itself, so the website does not need it.
+        return { ok: true };
+      }
+      if (p.op !== "put" || !local.verify(key, "put", p.exp, p.sig, +clock.now())) fail(403, "forbidden");
       await local.put(key, Buffer.isBuffer(body) ? body : Buffer.from(String(body ?? "")), String(req.headers["content-type"] ?? "application/octet-stream"));
       return { ok: true };
     });

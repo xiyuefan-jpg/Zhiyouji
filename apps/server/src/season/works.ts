@@ -40,6 +40,11 @@ export interface SlotInfo {
   stage?: "opening" | "rebuttal";
 }
 
+/** Bytes the n-th part (1-based) of a multipart upload must have. */
+export function expectedPartSize(size: number, partSize: number, n: number): number {
+  return Math.max(0, Math.min(partSize, size - (n - 1) * partSize));
+}
+
 /** Hard length limit of one file of this kind (null: no length, e.g. images). */
 export function mediaMaxSec(cfg: ServerConfig, kind: FileKind): number | null {
   return kind === "video" || kind === "audio" ? cfg.uploads.maxDurationSec[kind] : null;
@@ -145,8 +150,40 @@ export class Works {
         createdAt: this.clock.now(),
       })
       .returning();
+    // Big files go up in parts that can resume (part 2 §4.5, part 5 §5).
+    const mp = lim.multipart;
+    if (b.size > mp.from) {
+      const { uploadId } = await this.storage.startMultipart(key, b.contentType);
+      await this.db.update(files).set({ multipartId: uploadId, partSize: mp.partSize }).where(eq(files.id, row!.id));
+      return { fileId: row!.id, multipart: { partSize: mp.partSize, parts: Math.ceil(b.size / mp.partSize) } };
+    }
     const ticket = await this.storage.uploadTicket(key, b.contentType, b.size, this.now());
     return { fileId: row!.id, upload: ticket };
+  }
+
+  private async multipartFile(ctx: PlayCtx, fileId: string) {
+    const [f] = await this.db.select().from(files).where(and(eq(files.id, fileId), eq(files.teamId, ctx.teamId)));
+    if (!f) fail(404, "not_found");
+    if (!f!.multipartId || !f!.partSize) fail(400, "bad_request");
+    return { f: f!, uploadId: f!.multipartId!, partSize: f!.partSize!, parts: Math.ceil(f!.size / f!.partSize!) };
+  }
+
+  /** Which parts storage already has: a resumed upload sends only the rest. */
+  async uploadProgress(ctx: PlayCtx, fileId: string) {
+    const m = await this.multipartFile(ctx, fileId);
+    if (m.f.status !== "uploading") return { partSize: m.partSize, parts: m.parts, done: Array.from({ length: m.parts }, (_, i) => i + 1), complete: true };
+    const have = await this.storage.listParts(m.f.storageKey, m.uploadId);
+    const done = have.filter((p) => p.size === expectedPartSize(m.f.size, m.partSize, p.partNumber)).map((p) => p.partNumber);
+    return { partSize: m.partSize, parts: m.parts, done, complete: false };
+  }
+
+  /** Signed URLs for some parts. */
+  async partTickets(ctx: PlayCtx, fileId: string, partNumbers: number[]) {
+    const m = await this.multipartFile(ctx, fileId);
+    if (m.f.status !== "uploading") fail(409, "already_uploaded");
+    if (partNumbers.some((n) => n > m.parts)) fail(400, "bad_request");
+    const now = this.now();
+    return { parts: await Promise.all([...new Set(partNumbers)].map(async (partNumber) => ({ partNumber, ...(await this.storage.partTicket(m.f.storageKey, m.uploadId, partNumber, now)) }))) };
   }
 
   /** The website says the bytes are in storage; the server checks. */
@@ -154,6 +191,13 @@ export class Works {
     const [f] = await this.db.select().from(files).where(and(eq(files.id, fileId), eq(files.teamId, ctx.teamId)));
     if (!f) fail(404, "not_found");
     if (f!.status !== "uploading") return { file: this.fileView(f!) };
+    if (f!.multipartId && f!.partSize) {
+      const parts = Math.ceil(f!.size / f!.partSize);
+      const have = new Map((await this.storage.listParts(f!.storageKey, f!.multipartId)).map((p) => [p.partNumber, p.size]));
+      const missing = Array.from({ length: parts }, (_, i) => i + 1).filter((n) => have.get(n) !== expectedPartSize(f!.size, f!.partSize!, n));
+      if (missing.length > 0) fail(409, "upload_missing", { missing });
+      await this.storage.completeMultipart(f!.storageKey, f!.multipartId, parts);
+    }
     const head = await this.storage.head(f!.storageKey);
     if (!head) fail(409, "upload_missing");
     if (head!.size !== f!.size) fail(409, "upload_size");

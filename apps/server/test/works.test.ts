@@ -55,3 +55,39 @@ describe("作品工坊: uploads, materials, submitting (part 5 E4, §3.3)", () =
     await t.close();
   });
 });
+
+describe("big files go up in parts and resume after a break (part 2 §4.5, part 5 §5)", () => {
+  it("multipart: parts, a broken upload resumes with the missing parts, the server joins them and checks the size", async () => {
+    const t = await contestSetup();
+    t.cfg.uploads.multipart = { from: 10, partSize: 4 };
+    const a1 = t.a1api;
+    const bytes = Buffer.from("0123456789abc"); // 13 bytes → parts of 4, 4, 4, 1
+    const up = (await a1("POST", "/v1/season/uploads", { kind: "video", contentType: "video/mp4", size: bytes.length, filename: "大视频.mp4" })).json();
+    expect(up.upload).toBeUndefined();
+    expect(up.multipart).toEqual({ partSize: 4, parts: 4 });
+    const put = async (n: number, b: Buffer) => {
+      const r = (await a1("POST", `/v1/season/uploads/${up.fileId}/parts`, { partNumbers: [n] })).json();
+      return t.app.inject({ method: "PUT", url: r.parts[0].url, payload: b, headers: { "content-type": "application/octet-stream" } });
+    };
+    expect((await put(1, bytes.subarray(0, 4))).statusCode).toBe(200);
+    expect((await put(3, bytes.subarray(8, 12))).statusCode).toBe(200);
+    expect((await put(2, bytes.subarray(4, 6))).statusCode).toBe(200); // the connection broke halfway: a short part
+    // the network came back (or the page was opened again): what is already there?
+    expect((await a1("GET", `/v1/season/uploads/${up.fileId}/parts`)).json()).toEqual({ partSize: 4, parts: 4, done: [1, 3], complete: false });
+    const early = (await a1("POST", `/v1/season/uploads/${up.fileId}/complete`)).json();
+    expect(early).toMatchObject({ error: "upload_missing", missing: [2, 4] });
+    // a tampered URL is refused
+    const r = (await a1("POST", `/v1/season/uploads/${up.fileId}/parts`, { partNumbers: [2] })).json();
+    expect((await t.app.inject({ method: "PUT", url: r.parts[0].url.replace("part=2", "part=4"), payload: Buffer.from("x") })).statusCode).toBe(403);
+    expect((await a1("POST", `/v1/season/uploads/${up.fileId}/parts`, { partNumbers: [5] })).statusCode).toBe(400);
+    await put(2, bytes.subarray(4, 8));
+    await put(4, bytes.subarray(12));
+    const done = (await a1("POST", `/v1/season/uploads/${up.fileId}/complete`)).json();
+    expect(done.file).toMatchObject({ status: "uploaded", size: 13 });
+    const url = (await a1("GET", `/v1/season/files/${up.fileId}/url`)).json().url;
+    expect((await t.app.inject({ method: "GET", url })).rawPayload.toString()).toBe("0123456789abc");
+    expect((await a1("GET", `/v1/season/uploads/${up.fileId}/parts`)).json().complete).toBe(true);
+    expect((await a1("POST", `/v1/season/uploads/${up.fileId}/parts`, { partNumbers: [1] })).json().error).toBe("already_uploaded");
+    await t.close();
+  });
+});

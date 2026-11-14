@@ -56,6 +56,7 @@ export const ERROR_TEXT = {
   file_too_long: "视频、音频最长 10 分钟，请剪短一点再传",
   upload_missing: "文件还没传完，请稍等或重新上传",
   upload_size: "文件没传完整，请重新上传",
+  already_uploaded: "这个文件已经传完了",
   no_slot: "找不到这份作品",
   media_mismatch: "选的文件和作品类型对不上",
   work_empty: "作品还是空的",

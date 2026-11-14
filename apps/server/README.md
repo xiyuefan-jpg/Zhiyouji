@@ -65,7 +65,7 @@ npm run revoke-sessions -w @zhiyouji/server -- all "原因"               # 出�
 | GET / POST | `/v1/season/rounds/:round` | `blind_auction` / `starter_items` / `center_round` / `rare_round`：`{ bid?, prefs }`，截止前可改 |
 | GET | `/v1/season/wars`、`/big-battle`；POST `/big-battle/lines` | 周战争、大团战；战线分配 `{ lines: [teamId…] }` |
 | GET | `/v1/season/reports`、`/reports/:id`、`/broadcasts`、`/team-feed` | 战报（一天三份）、全服广播、组内动态 |
-| POST | `/v1/season/uploads` → PUT 到返回的地址 → POST `/uploads/:id/complete` | 上传文件（`{ kind, contentType, size, filename? }`） |
+| POST | `/v1/season/uploads` → PUT 到返回的地址 → POST `/uploads/:id/complete` | 上传文件（`{ kind, contentType, size, filename?, durationSec? }`；视频、音频超过 10 分钟 `file_too_long`）。超过 16 MB 的返回 `multipart: { partSize, parts }`：POST `/uploads/:id/parts`（`{ partNumbers }`，一次最多 20 个）拿每片的地址，PUT 每片；断了以后 GET `/uploads/:id/parts` 看已经有哪些片（`done`），只传剩下的；最后 complete（缺片时 409 `upload_missing` 带 `missing`） |
 | GET | `/v1/season/works` | 本组的作品位（争夺、周战争、战线、主战场），截止时间、交了第几版 |
 | GET / POST | `/v1/season/works/:slot/materials`；DELETE `/materials/:id` | 素材箱 |
 | POST | `/v1/season/works/:slot`；GET `/works/:slot/versions` | 提交作品 `{ mediaKind, fileIds, text?, aiNote?, members }`；历史版本 |
@@ -116,7 +116,7 @@ npm run revoke-sessions -w @zhiyouji/server -- all "原因"               # 出�
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/v1/daily/today` | 今天交了几次、通过几次、还能重交几次；赛季玩家另有"今天已计 x/2、本周 y/4"；6 个模板 |
-| POST | `/v1/daily/uploads` → PUT → POST `/v1/daily/uploads/:id/complete` | 证据图片（`image`）、讲解录音（`audio`） |
+| POST | `/v1/daily/uploads` → PUT → POST `/v1/daily/uploads/:id/complete` | 证据图片（`image`）、讲解录音（`audio`，带 `durationSec`，超过 90 秒 `explain_too_long`） |
 | POST | `/v1/daily/submissions` | `{ templateId, evidenceFileIds, explain: { kind: "voice", fileId } \| { kind: "text", text }, aiNote?, noAi? }`，立即审核 |
 | GET | `/v1/daily/submissions/:id` | 结果：通过（做得好的 / 可以更好的、粮草、知识卡片）或不通过（原因和改法） |
 | GET | `/v1/journal/calendar?month=2027-03`、`/journal/subjects`、`/journal/cards?tag=&q=`、`/journal/cards/:id` | 修行日志：日历、学科、筛选和搜索、卡片详情（讲解、证据） |

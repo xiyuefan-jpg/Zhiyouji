@@ -545,6 +545,10 @@ export const files = pgTable(
     /** Size the website announced; checked against storage on completion. */
     size: bigint("size", { mode: "number" }).notNull(),
     storageKey: text("storage_key").notNull().unique(),
+    /** Big files go up in parts that can resume after a break (PRD part 2 §4.5, part 5 §5): the storage's multipart upload id. */
+    multipartId: text("multipart_id"),
+    /** Bytes per part of a multipart upload (the last part may be shorter). */
+    partSize: integer("part_size"),
     /** uploading | uploaded | processed | failed */
     status: text("status").notNull().default("uploading"),
     durationSec: integer("duration_sec"),

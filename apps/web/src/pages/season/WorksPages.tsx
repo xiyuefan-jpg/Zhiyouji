@@ -111,6 +111,7 @@ export function WorkSlot() {
   const task = useLoad(() => (contestId ? Promise.resolve(null) : request<TaskView>("GET", `/v1/season/works/${encodeURIComponent(slot)}/task`)), [slot]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const [mediaKind, setMediaKind] = useState<"text" | "images" | "video" | "audio">("video");
   const [aiNote, setAiNote] = useState("");
   const [text, setText] = useState("");
@@ -139,13 +140,14 @@ export function WorkSlot() {
     try {
       const durationSec = kind === "video" || kind === "audio" ? await mediaDuration(f) : null;
       if (durationSec !== null && durationSec > MEDIA_MAX_SEC + 2) throw new Error(`这个${kind === "video" ? "视频" : "音频"}有 ${Math.ceil(durationSec / 60)} 分钟，最长 10 分钟，请剪短一点再传`);
-      const { fileId } = await uploader.upload(f, { purpose: kind, durationSec });
+      const { fileId } = await uploader.upload(f, { purpose: kind, durationSec, onProgress: (p) => setProgress(p.total ? Math.floor((100 * p.sent) / p.total) : null) });
       await request("POST", `/v1/season/works/${encodeURIComponent(slot)}/materials`, { fileId });
       mats.reload();
     } catch (e) {
       fail(e);
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -230,6 +232,7 @@ export function WorkSlot() {
               放进素材箱
             </Button>
             <FilePicker label="上传图片、视频、音频或 PDF" accept="image/*,video/*,audio/*,application/pdf" files={[]} disabled={busy} onChange={(fs) => fs[0] && void addFile(fs[0])} />
+            {progress !== null && <div className="hint">上传中 {progress}%……网不好断开了也没关系，再选一次同一个文件会接着传</div>}
           </div>
         </>
       )}

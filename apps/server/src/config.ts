@@ -57,6 +57,8 @@ export interface ServerConfig {
     maxDurationSec: { video: number; audio: number; narration: number };
     /** Slack for container rounding (a 90-second recording can report 91 s). */
     durationGraceSec: number;
+    /** Team files bigger than `from` bytes go up in parts of `partSize` (OSS: ≥100 KB per part, ≤10,000 parts). */
+    multipart: { from: number; partSize: number };
     /** Content rules for works (content library §2): longer only warns on the submit page. */
     contentSec: { work: number; opening: number; rebuttal: number };
   };
@@ -90,6 +92,7 @@ export function defaultConfig(env: Record<string, string | undefined> = {}): Ser
       maxImages: 9,
       maxDurationSec: { video: MEDIA_MAX_SEC, audio: MEDIA_MAX_SEC, narration: DAILY_VOICE_MAX_SEC },
       durationGraceSec: 2,
+      multipart: { from: 16 * 1024 * 1024, partSize: 8 * 1024 * 1024 },
       contentSec: { work: 300, opening: 180, rebuttal: 120 },
       allowedTypes: {
         video: ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "video/3gpp"],

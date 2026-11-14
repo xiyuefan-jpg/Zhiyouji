@@ -54,6 +54,9 @@ export const uploadRequest = z.object({
   durationSec: z.number().nonnegative().max(86_400).optional(),
 });
 
+/** Signed URLs for these parts of a multipart upload (1-based; a few at a time). */
+export const partsRequest = z.object({ partNumbers: z.array(z.number().int().min(1).max(10_000)).min(1).max(20) });
+
 export const slotParam = z.object({ slot: z.string().regex(/^(contest:[A-Za-z0-9]+(:open)?|war:\d+|line|main:[ab])$/) });
 export const sideRequest = z.object({ side: z.enum(["pro", "con"]) });
 
