@@ -59,3 +59,21 @@ describe("异步辩论 on debate lands (part 3 §10.4)", () => {
     await t.close();
   });
 });
+
+describe("a pause moves the debate's deadlines too (part 3 §18)", () => {
+  it("side and opening deadlines, and the contest deadline, move by the paused time", async () => {
+    const t = await contestSetup({ landNames: { E1: "火焰山", ...DEBATE } });
+    const boss = await t.adminUser();
+    const before = (await t.a1api("GET", `/v1/season/contests/${t.contestId}/debate`)).json();
+    const deadline0 = (await t.services.store.state(t.serverId)).contests[t.contestId]!.deadline;
+    expect((await t.call("POST", `/v1/admin/servers/${t.serverId}/pause`, { reason: "维护" }, boss.token)).statusCode).toBe(200);
+    t.clock.advance(24 * 3_600_000);
+    const r = (await t.call("POST", `/v1/admin/servers/${t.serverId}/resume`, undefined, await boss.relogin())).json();
+    expect(r.pausedMs).toBeGreaterThanOrEqual(24 * 3_600_000);
+    const after = (await t.a1api("GET", `/v1/season/contests/${t.contestId}/debate`)).json();
+    expect(+new Date(after.sideDeadline) - +new Date(before.sideDeadline)).toBe(r.pausedMs);
+    expect(+new Date(after.openingDeadline) - +new Date(before.openingDeadline)).toBe(r.pausedMs);
+    expect((await t.services.store.state(t.serverId)).contests[t.contestId]!.deadline - deadline0).toBe(r.pausedMs);
+    await t.close();
+  });
+});

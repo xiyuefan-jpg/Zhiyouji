@@ -142,7 +142,17 @@ export function resumeSeason(input: SeasonState, e: { at: Instant }): Result<Adm
   s.paused = false;
   const open = s.pauses[s.pauses.length - 1]!;
   open.until = e.at;
-  return { ok: true, state: s, notices: [notice("season_resumed", e.at, true, { pausedFor: e.at - open.from })] };
+  // §18: deadlines that were still ahead when the pause began move by the paused time
+  // (the planned events move the same way, in the server's scheduler).
+  const d = e.at - open.from;
+  const shift = (t: Instant) => (t > open.from ? t + d : t);
+  for (const c of Object.values(s.contests)) {
+    if (c.status !== "active") continue;
+    c.joinDeadline = shift(c.joinDeadline);
+    c.deadline = shift(c.deadline);
+  }
+  for (const a of s.shop.auctions) if (!a.closed) a.endAt = shift(a.endAt);
+  return { ok: true, state: s, notices: [notice("season_resumed", e.at, true, { pausedFor: d })] };
 }
 
 /**

@@ -10,7 +10,7 @@
  */
 
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import { calendarDays, children, feed, lands as landRows, opLog, paramVersions, plannedEvents, seasonPlayers, seasons, servers, teamMembers, type Db } from "@zhiyouji/db";
+import { calendarDays, children, debates, feed, lands as landRows, opLog, paramVersions, plannedEvents, seasonPlayers, seasons, servers, teamMembers, type Db } from "@zhiyouji/db";
 import {
   activeContestOnLand,
   frozenGrain,
@@ -250,7 +250,17 @@ export class SeasonControl {
     const open = st.pauses[st.pauses.length - 1];
     const at = +this.clock.now();
     await this.apply(serverId, { type: "resume", at }, by);
-    if (open && open.until === null) await this.scheduler.shiftAfter(serverId, new Date(open.from), at - open.from);
+    if (open && open.until === null) {
+      await this.scheduler.shiftAfter(serverId, new Date(open.from), at - open.from);
+      // §18: the debate deadlines kept by the server move with the contest deadlines (the engine moves those)
+      const d = at - open.from;
+      const from = new Date(open.from);
+      for (const x of await this.db.select().from(debates).where(eq(debates.serverId, serverId))) {
+        const side = !x.defenderSide && +x.sideDeadline > +from ? new Date(+x.sideDeadline + d) : x.sideDeadline;
+        const opening = !x.openingsSharedAt && +x.openingDeadline > +from ? new Date(+x.openingDeadline + d) : x.openingDeadline;
+        if (side !== x.sideDeadline || opening !== x.openingDeadline) await this.db.update(debates).set({ sideDeadline: side, openingDeadline: opening }).where(eq(debates.id, x.id));
+      }
+    }
     await this.log(by, "season_resume", `server:${serverId}`, null, { pausedMs: open ? at - open.from : 0 });
     return { paused: false, pausedMs: open ? at - open.from : 0 };
   }

@@ -76,6 +76,29 @@ describe("admin interventions (§16)", () => {
     s = ok(settleDay(s, 4));
     expect(pointsOf(s, "T1")).toBe(pts(1));
   });
+  it("§18: deadlines still ahead when the pause began move by the paused time; past and settled ones stay", () => {
+    let s = withOwners(newSeason(), defaultOwners);
+    s = ok(startContest(s, { contestId: "K1", teamId: "T1", landId: "E2", at: at(2, 10) }));
+    const before = { join: s.contests.K1!.joinDeadline, deadline: s.contests.K1!.deadline };
+    s.shop.auctions.push({ itemId: "bagua", startAt: at(2, 9), endAt: at(3, 21), bids: [], closed: false, winner: null });
+    s.shop.auctions.push({ itemId: "qibao", startAt: at(1, 9), endAt: at(2, 21), bids: [], closed: true, winner: null });
+    // paused D2 11:00 → D3 11:00 (one day)
+    s = ok(pauseSeason(s, { at: at(2, 11), reason: "维护" }));
+    s = ok(resumeSeason(s, { at: at(3, 11) }));
+    expect(s.contests.K1!.joinDeadline).toBe(before.join + DAY);
+    expect(s.contests.K1!.deadline).toBe(before.deadline + DAY);
+    expect(s.shop.auctions[0]!.endAt).toBe(at(4, 21));
+    expect(s.shop.auctions[1]!.endAt).toBe(at(2, 21)); // closed: untouched
+    // a deadline that had already passed when the pause began does not move
+    let t = withOwners(newSeason(), defaultOwners);
+    t = ok(startContest(t, { contestId: "K2", teamId: "T1", landId: "E2", at: at(2, 10) }));
+    const join = t.contests.K2!.joinDeadline;
+    const deadline = t.contests.K2!.deadline;
+    t = ok(pauseSeason(t, { at: join + 60_000, reason: "维护" }));
+    t = ok(resumeSeason(t, { at: join + 60_000 + DAY }));
+    expect(t.contests.K2!.joinDeadline).toBe(join);
+    expect(t.contests.K2!.deadline).toBe(deadline + DAY);
+  });
   it("ledger adjustments need a reason; reversals cancel exactly once", () => {
     let s = newSeason();
     expect(adjustLedger(s, { teamId: "T1", currency: "grain", amount: 10, at: at(2, 0), by: "a", reason: " " })).toMatchObject({ refusal: "needs_reason" });
