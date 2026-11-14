@@ -18,8 +18,11 @@ const OPENING = "2027-02-07";
 const HOUR = 3_600_000;
 const TEXT = "我今天用AI学了大气压。原来我以为空气没有重量，后来懂了空气也有重量会压在我们身上。我自己想到的例子是用吸管喝饮料，其实是外面的大气把饮料压进嘴里。";
 
+/** Three seasons in a row (PRD part 9 §2: 加速模拟赛季连续 3 次账本平衡、不需要人工干预). */
+const SEEDS = [99, 7, 2031];
+
 describe("a whole season through the server (part 9 §1 step 4)", () => {
-  it("runs D0 → final settlement with bots, ticks and AI-timeout settlements; the ledger balances", async () => {
+  it.each(SEEDS)("seed %i: runs D0 → final settlement with bots, ticks and AI-timeout settlements; the ledger balances", async (seed) => {
     const t = await setup(bj("2027-02-01", 10));
     const s = t.services;
     const kids: string[] = [];
@@ -28,7 +31,7 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
       const [c] = await t.db.insert(children).values({ familyId: f!.id, nickname: `孩子${i}`, grade: 1 + (i % 10) }).returning();
       kids.push(c!.id);
     }
-    const season = await s.seasons.create({ name: "S3", opening: OPENING, seed: 99 }, ADMIN);
+    const season = await s.seasons.create({ name: "S3", opening: OPENING, seed }, ADMIN);
     await s.seasons.openEnrollment(season.id, ADMIN);
     await s.seasons.enroll(season.id, kids.map((childId) => ({ childId })), ADMIN);
     await s.seasons.generateGrouping(season.id, ADMIN);
@@ -37,7 +40,7 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
     const conf = await s.seasons.confirmGrouping(season.id, { prompts, landNames: { E7: "朱紫国" } }, ADMIN);
     const serverId = conf.servers[0]!.serverId;
     const worker = new Worker(t.db, s.scheduler, s.smsDispatcher, s.notifier, s.reports, s.reminders, s.scoring, s.dataRights, s.daily, s.supply, s.debates, s.ops);
-    const rng: Rng = createRng(2027);
+    const rng: Rng = createRng(seed + 1928);
     const ctxOf = async (childId: string): Promise<PlayCtx> => s.play.ctx(childId);
     const leaderCtx = async (teamId: string): Promise<PlayCtx | null> => {
       const st = await s.store.state(serverId);
