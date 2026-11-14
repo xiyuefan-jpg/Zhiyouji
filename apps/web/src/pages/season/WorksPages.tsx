@@ -10,12 +10,13 @@ import { TaskGuide } from "../../components/TaskGuide";
 
 import { useState } from "react";
 import { Link, useParams } from "react-router";
-import { Button, Checkbox, Selector, TextArea, Toast } from "antd-mobile";
+import { Button, Checkbox, Dialog, Selector, TextArea, Toast } from "antd-mobile";
 import { RightOutline } from "antd-mobile-icons";
 import { ApiError, request } from "../../api";
 import { shortTime } from "../../format";
 import { Empty, PageHeader } from "../../components/ui";
-import { ticketUploader } from "../../platform/upload";
+import { mediaDuration, ticketUploader } from "../../platform/upload";
+import { MEDIA_MAX_SEC } from "@zhiyouji/shared";
 import { seasonApi, type RubricGuide, type TaskInfo } from "../../seasonApi";
 
 interface TaskView {
@@ -39,7 +40,7 @@ interface Material {
   id: string;
   text: string | null;
   addedBy: string;
-  file: { id: string; kind: string; filename: string | null } | null;
+  file: { id: string; kind: string; filename: string | null; durationSec?: number | null } | null;
 }
 
 interface Result {
@@ -136,7 +137,9 @@ export function WorkSlot() {
     const kind = f.type.startsWith("video/") ? "video" : f.type.startsWith("audio/") ? "audio" : f.type === "application/pdf" ? "pdf" : "image";
     setBusy(true);
     try {
-      const { fileId } = await uploader.upload(f, { purpose: kind });
+      const durationSec = kind === "video" || kind === "audio" ? await mediaDuration(f) : null;
+      if (durationSec !== null && durationSec > MEDIA_MAX_SEC + 2) throw new Error(`这个${kind === "video" ? "视频" : "音频"}有 ${Math.ceil(durationSec / 60)} 分钟，最长 10 分钟，请剪短一点再传`);
+      const { fileId } = await uploader.upload(f, { purpose: kind, durationSec });
       await request("POST", `/v1/season/works/${encodeURIComponent(slot)}/materials`, { fileId });
       mats.reload();
     } catch (e) {
@@ -149,8 +152,9 @@ export function WorkSlot() {
   const submit = async () => {
     setBusy(true);
     try {
-      const r = await request<{ work: { version: number } }>("POST", `/v1/season/works/${encodeURIComponent(slot)}`, { mediaKind, fileIds: picked, text, members, aiNote: aiNote.trim() || undefined });
-      Toast.show({ content: `交上去了（第 ${r.work.version} 版）` });
+      const r = await request<{ work: { version: number }; warnings?: string[] }>("POST", `/v1/season/works/${encodeURIComponent(slot)}`, { mediaKind, fileIds: picked, text, members, aiNote: aiNote.trim() || undefined });
+      if (r.warnings?.length) await Dialog.alert({ title: `交上去了（第 ${r.work.version} 版）`, content: r.warnings.join("\n") });
+      else Toast.show({ content: `交上去了（第 ${r.work.version} 版）` });
       slots.reload();
       versions.reload();
     } catch (e) {
@@ -213,7 +217,7 @@ export function WorkSlot() {
         {mats.data?.materials.length === 0 && <div className="hint">还没有素材，所有组员都可以往里放。</div>}
         {mats.data?.materials.map((m) => (
           <div key={m.id} style={{ padding: "4px 0" }}>
-            {m.file ? `📎 ${m.file.filename ?? MATERIAL_KIND[m.file.kind] ?? m.file.kind}` : m.text}
+            {m.file ? `📎 ${m.file.filename ?? MATERIAL_KIND[m.file.kind] ?? m.file.kind}${lengthText(m.file.durationSec)}` : m.text}
             <span className="hint">（{nickname(m.addedBy)}放的）</span>
           </div>
         ))}
@@ -255,7 +259,7 @@ export function WorkSlot() {
                 .filter((m) => m.file)
                 .map((m) => (
                   <Checkbox key={m.id} checked={picked.includes(m.file!.id)} onChange={(c) => setPicked(c ? [...picked, m.file!.id] : picked.filter((x) => x !== m.file!.id))} style={{ display: "block", margin: "6px 0" }}>
-                    {m.file!.filename ?? MATERIAL_KIND[m.file!.kind] ?? m.file!.kind}（{nickname(m.addedBy)}放的）
+                    {m.file!.filename ?? MATERIAL_KIND[m.file!.kind] ?? m.file!.kind}{lengthText(m.file!.durationSec)}（{nickname(m.addedBy)}放的）
                   </Checkbox>
                 ))}
             </>
@@ -305,4 +309,12 @@ export function WorkSlot() {
       )}
     </div>
   );
+}
+
+/** " · 3分20秒" for a video or recording whose length is known. */
+function lengthText(sec: number | null | undefined): string {
+  if (sec == null) return "";
+  const m = Math.floor(sec / 60);
+  const r = Math.round(sec % 60);
+  return ` · ${m > 0 ? `${m}分` : ""}${r}秒`;
 }

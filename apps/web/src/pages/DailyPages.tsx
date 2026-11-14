@@ -88,7 +88,7 @@ export function DailyNew() {
     try {
       const ids: string[] = [];
       for (const f of files) ids.push((await uploader.upload(f, { purpose: "image" })).fileId);
-      const explain = mode === "voice" ? { kind: "voice" as const, fileId: (await uploader.upload(voice!.blob, { purpose: "audio" })).fileId } : { kind: "text" as const, text };
+      const explain = mode === "voice" ? { kind: "voice" as const, fileId: (await uploader.upload(voice!.blob, { purpose: "audio", durationSec: voice!.durationMs / 1000 })).fileId } : { kind: "text" as const, text };
       const r = await request<Result>("POST", "/v1/daily/submissions", {
         templateId: tpl.id,
         evidenceFileIds: ids,

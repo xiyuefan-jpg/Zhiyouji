@@ -62,6 +62,8 @@ export const dailyUploadRequest = z.object({
   kind: z.enum(["image", "audio"]),
   contentType: z.string().min(1).max(100),
   size: z.number().int().positive(),
+  /** Length of the recorded narration (the recorder knows it); checked before the upload starts. */
+  durationSec: z.number().nonnegative().max(86_400).optional(),
 });
 
 export const dailySubmit = z.object({

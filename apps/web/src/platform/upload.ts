@@ -13,7 +13,7 @@ export interface UploadProgress {
 
 export interface Uploader {
   /** Upload a file for a submission; resolves with the stored file id. */
-  upload(file: Blob, opts: { purpose: string; onProgress?: (p: UploadProgress) => void; signal?: AbortSignal }): Promise<{ fileId: string }>;
+  upload(file: Blob, opts: { purpose: string; durationSec?: number | null; onProgress?: (p: UploadProgress) => void; signal?: AbortSignal }): Promise<{ fileId: string }>;
 }
 
 /** Split a file into chunks for resumable upload. */
@@ -36,6 +36,8 @@ export function ticketUploader(prefix: "/v1/daily" | "/v1/season", request: <T>(
         // "audio/webm;codecs=opus" → "audio/webm": the server checks the bare type.
         contentType: (file.type || "application/octet-stream").split(";")[0]!.trim(),
         size: file.size,
+        // Length of a video or recording, when known: the server refuses ones over the limit before any bytes move.
+        ...(opts.durationSec != null && Number.isFinite(opts.durationSec) ? { durationSec: opts.durationSec } : {}),
       });
       opts.onProgress?.({ sent: 0, total: file.size });
       const res = await fetch(t.upload.url, { method: "PUT", headers: t.upload.headers, body: file, signal: opts.signal });
@@ -45,4 +47,31 @@ export function ticketUploader(prefix: "/v1/daily" | "/v1/season", request: <T>(
       return { fileId: t.fileId };
     },
   };
+}
+
+/**
+ * Length of a chosen video or audio file in seconds, read from its metadata
+ * in the browser; null when the browser cannot tell (then the server finds
+ * out after the upload). Never waits more than `timeoutMs`.
+ */
+export function mediaDuration(file: Blob, timeoutMs = 5000): Promise<number | null> {
+  const kind = file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : null;
+  if (!kind || typeof document === "undefined" || typeof URL.createObjectURL !== "function") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const el = document.createElement(kind);
+    const url = URL.createObjectURL(file);
+    let done = false;
+    const finish = (v: number | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      URL.revokeObjectURL(url);
+      resolve(v);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    el.preload = "metadata";
+    el.onloadedmetadata = () => finish(Number.isFinite(el.duration) ? el.duration : null);
+    el.onerror = () => finish(null);
+    el.src = url;
+  });
 }

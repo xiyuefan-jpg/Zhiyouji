@@ -3,6 +3,8 @@
  * Everything has a default so tests and local runs need no setup.
  */
 
+import { DAILY_VOICE_MAX_SEC, MEDIA_MAX_SEC } from "@zhiyouji/shared";
+
 export interface ServerConfig {
   /** Secret for keyed hashes of SMS codes (set SERVER_SECRET in production). */
   secret: string;
@@ -51,6 +53,12 @@ export interface ServerConfig {
     /** Images per work. */
     maxImages: number;
     allowedTypes: Record<"video" | "audio" | "image" | "pdf", string[]>;
+    /** Hard length limits in seconds: one video or audio file of a work, and a daily-task narration (§20.6). */
+    maxDurationSec: { video: number; audio: number; narration: number };
+    /** Slack for container rounding (a 90-second recording can report 91 s). */
+    durationGraceSec: number;
+    /** Content rules for works (content library §2): longer only warns on the submit page. */
+    contentSec: { work: number; opening: number; rebuttal: number };
   };
   /** Session cookie names; cookies are httpOnly, SameSite=Lax, Secure in production. */
   cookies: { family: string; admin: string; secure: boolean };
@@ -80,6 +88,9 @@ export function defaultConfig(env: Record<string, string | undefined> = {}): Ser
     uploads: {
       maxBytes: { video: 500 * 1024 * 1024, audio: 100 * 1024 * 1024, image: 20 * 1024 * 1024, pdf: 50 * 1024 * 1024 },
       maxImages: 9,
+      maxDurationSec: { video: MEDIA_MAX_SEC, audio: MEDIA_MAX_SEC, narration: DAILY_VOICE_MAX_SEC },
+      durationGraceSec: 2,
+      contentSec: { work: 300, opening: 180, rebuttal: 120 },
       allowedTypes: {
         video: ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "video/3gpp"],
         audio: ["audio/mpeg", "audio/mp4", "audio/aac", "audio/webm", "audio/ogg", "audio/wav", "audio/x-m4a", "audio/amr"],

@@ -84,7 +84,7 @@ export function SurveyPage({ random }: { random?: () => number }) {
     setError(null);
     try {
       let challenge: SurveySubmit["challenge"] = null;
-      if (!skip && mode === "voice" && voice) challenge = { kind: "voice", fileId: (await uploader.upload(voice.blob, { purpose: "audio" })).fileId };
+      if (!skip && mode === "voice" && voice) challenge = { kind: "voice", fileId: (await uploader.upload(voice.blob, { purpose: "audio", durationSec: voice.durationMs / 1000 })).fileId };
       if (!skip && mode === "text" && text.trim()) challenge = { kind: "text", text: text.trim() };
       const body: SurveySubmit = {
         curiosity: { rounds: pairs.map((p, i) => [p[0], p[1], picks[i]!]), final: final! },

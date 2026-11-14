@@ -68,14 +68,17 @@ export class DailyTasks {
 
   // ---- uploads ------------------------------------------------------------------------------
 
-  async requestUpload(child: ChildRow, b: { kind: "image" | "audio"; contentType: string; size: number }) {
+  async requestUpload(child: ChildRow, b: { kind: "image" | "audio"; contentType: string; size: number; durationSec?: number }) {
     const lim = this.cfg.uploads;
     if (!lim.allowedTypes[b.kind].includes(b.contentType)) fail(400, "file_type");
     if (b.size > lim.maxBytes[b.kind]) fail(400, "file_too_big", { maxBytes: lim.maxBytes[b.kind] });
+    // A child's own audio is always the narration: ≤90 s (part 5 §3.1, part 3 §20.6).
+    const timed = b.kind === "audio" && b.durationSec !== undefined;
+    if (timed && b.durationSec! > lim.maxDurationSec.narration + lim.durationGraceSec) fail(400, "explain_too_long", { maxSec: lim.maxDurationSec.narration });
     const key = `daily/${child.id}/${randomUUID()}`;
     const [row] = await this.db
       .insert(files)
-      .values({ childId: child.id, kind: b.kind, contentType: b.contentType, size: b.size, storageKey: key, createdAt: this.clock.now() })
+      .values({ childId: child.id, kind: b.kind, contentType: b.contentType, size: b.size, storageKey: key, durationSec: timed ? Math.round(b.durationSec!) : null, createdAt: this.clock.now() })
       .returning();
     return { fileId: row!.id, upload: await this.storage.uploadTicket(key, b.contentType, b.size, this.now()) };
   }
@@ -108,6 +111,8 @@ export class DailyTasks {
     if (b.explain.kind === "voice") {
       const f = byId.get(b.explain.fileId);
       if (!f || f.status === "uploading" || f.kind !== "audio") fail(409, "explain_missing");
+      const lim = this.cfg.uploads;
+      if (f!.durationSec !== null && f!.durationSec > lim.maxDurationSec.narration + lim.durationGraceSec) fail(400, "explain_too_long", { maxSec: lim.maxDurationSec.narration });
     } else {
       const n = [...b.explain.text].length;
       if (n < DAILY_TEXT_MIN || n > DAILY_TEXT_MAX) fail(400, "explain_length", { length: n });

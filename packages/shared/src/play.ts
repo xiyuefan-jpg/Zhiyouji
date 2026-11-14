@@ -42,11 +42,16 @@ export const ledgerQuery = z.object({ currency: z.enum(["grain", "points"]).defa
 export const FILE_KINDS = ["video", "audio", "image", "pdf"] as const;
 export const MEDIA_KINDS = ["video", "audio", "images", "text"] as const;
 
+/** Hard length limit of one video or audio file (PRD part 3 §20.6); the content rules (≤5 minutes, debates ≤3 / ≤2) only warn. */
+export const MEDIA_MAX_SEC = 600;
+
 export const uploadRequest = z.object({
   kind: z.enum(FILE_KINDS),
   contentType: z.string().min(1).max(100),
   size: z.number().int().positive(),
   filename: z.string().trim().max(200).optional(),
+  /** Length the browser measured (video, audio); checked before the upload starts. */
+  durationSec: z.number().nonnegative().max(86_400).optional(),
 });
 
 export const slotParam = z.object({ slot: z.string().regex(/^(contest:[A-Za-z0-9]+(:open)?|war:\d+|line|main:[ab])$/) });

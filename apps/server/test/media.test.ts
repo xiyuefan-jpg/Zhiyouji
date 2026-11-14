@@ -125,3 +125,66 @@ describe("新标签建议整理 (part 6 T10)", () => {
     await t.close();
   });
 });
+
+describe("length limits (part 3 §20.6)", () => {
+  it("daily narration: the recorder's length over 90 s is refused before the upload; a known long file is refused when handed in", async () => {
+    const t = await setup(bj("2027-03-10", 16));
+    const media = t.services.mediaProcessor as FakeMediaProcessor;
+    const f = await t.family("13500000001", [{ nickname: "小雨", grade: 4 }]);
+    await t.call("POST", "/v1/session/child", { childId: f.childIds[0] }, f.token);
+    const call: Call = (m, url, body) => t.call(m, url, body, f.token);
+    const tooLong = await call("POST", "/v1/daily/uploads", { kind: "audio", contentType: "audio/webm", size: 4, durationSec: 95 });
+    expect(tooLong.statusCode).toBe(400);
+    expect(tooLong.json()).toMatchObject({ error: "explain_too_long", message: "讲解录音最长 90 秒，请重新录一段" });
+    // 91 s: rounding slack of the container
+    expect((await call("POST", "/v1/daily/uploads", { kind: "audio", contentType: "audio/webm", size: 4, durationSec: 91 })).statusCode).toBe(200);
+    // the browser said nothing; the worker transcribed it first and found 2 minutes
+    const pic = await upload(t, call, "/v1/daily", "image", "image/jpeg", "a.jpg");
+    const voice = await upload(t, call, "/v1/daily", "audio", "audio/webm", "long.webm");
+    media.durations.set(voice, 120);
+    await t.services.media.runDue();
+    const r = await call("POST", "/v1/daily/submissions", { templateId: 1, evidenceFileIds: [pic], explain: { kind: "voice", fileId: voice }, aiNote: "让 AI 举例子" });
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error).toBe("explain_too_long");
+    await t.close();
+  });
+
+  it("team works: over 10 minutes refused at the upload and when handing in (the uploader is told); over the content rule only warns", async () => {
+    const t = await contestSetup();
+    const media = t.services.mediaProcessor as FakeMediaProcessor;
+    const call: Call = (m, url, body) => t.a1api(m as "GET", url, body);
+    const r = await call("POST", "/v1/season/uploads", { kind: "video", contentType: "video/mp4", size: 4, durationSec: 11 * 60 });
+    expect(r.statusCode).toBe(400);
+    expect(r.json()).toMatchObject({ error: "file_too_long", maxSec: 600 });
+    // a picture has no length: whatever the browser says
+    expect((await call("POST", "/v1/season/uploads", { kind: "image", contentType: "image/jpeg", size: 4, durationSec: 9999 })).statusCode).toBe(200);
+
+    const long = await upload(t, call, "/v1/season", "video", "video/mp4", "long.mp4");
+    media.durations.set(long, 12 * 60);
+    await t.services.media.runDue();
+    const msg = (await t.db.select().from(messages)).find((m) => m.dedupeKey === `media_too_long:${long}`)!;
+    expect(msg).toMatchObject({ recipientId: t.a1, title: "视频太长了" });
+    expect(msg.body).toContain("超过了 10 分钟");
+    const slot = `contest:${t.contestId}`;
+    const refused = await call("POST", `/v1/season/works/${slot}`, { mediaKind: "video", fileIds: [long], members: [t.a1] });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toMatchObject({ error: "file_too_long", fileId: long });
+
+    // 7 minutes: accepted, with the content-rule reminder; the file list shows the length
+    const seven = await upload(t, call, "/v1/season", "video", "video/mp4", "seven.mp4");
+    media.durations.set(seven, 7 * 60);
+    await t.services.media.runDue();
+    const ok = (await call("POST", `/v1/season/works/${slot}`, { mediaKind: "video", fileIds: [seven], members: [t.a1] })).json();
+    expect(ok.work.version).toBe(1);
+    expect(ok.warnings).toEqual([expect.stringContaining("不超过 5 分钟，这次交的有 7 分钟")]);
+    await call("POST", `/v1/season/works/${slot}/materials`, { fileId: seven });
+    const mats = (await call("GET", `/v1/season/works/${slot}/materials`)).json().materials;
+    expect(mats[0].file.durationSec).toBe(420);
+    // 4 minutes: no reminder
+    const four = await upload(t, call, "/v1/season", "video", "video/mp4", "four.mp4");
+    media.durations.set(four, 4 * 60);
+    await t.services.media.runDue();
+    expect((await call("POST", `/v1/season/works/${slot}`, { mediaKind: "video", fileIds: [four], members: [t.a1] })).json().warnings).toEqual([]);
+    await t.close();
+  });
+});

@@ -18,6 +18,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { files, type Db } from "@zhiyouji/db";
 import type { Clock } from "./clock.js";
+import type { ServerConfig } from "./config.js";
 import type { Notifier } from "./notify/notifier.js";
 import type { ObjectStorage } from "./storage.js";
 
@@ -42,6 +43,8 @@ export interface MediaProcessor {
 /** Deterministic stand-in: tests can set a transcript per file id or name, or make a file fail. */
 export class FakeMediaProcessor implements MediaProcessor {
   readonly texts = new Map<string, string>();
+  /** Length in seconds per file id or name (default 30). */
+  readonly durations = new Map<string, number>();
   readonly failing = new Set<string>();
   calls = 0;
 
@@ -51,7 +54,7 @@ export class FakeMediaProcessor implements MediaProcessor {
   }
   async transcribe(i: MediaInput) {
     this.check(i);
-    return { text: this.texts.get(i.fileId) ?? this.texts.get(i.filename ?? "") ?? `（语音转写）${i.filename ?? "录音"}`, durationSec: 30 };
+    return { text: this.texts.get(i.fileId) ?? this.texts.get(i.filename ?? "") ?? `（语音转写）${i.filename ?? "录音"}`, durationSec: this.durations.get(i.fileId) ?? this.durations.get(i.filename ?? "") ?? 30 };
   }
   async keyFrames(i: MediaInput, opts: { everySec: number; max: number }) {
     this.check(i);
@@ -76,7 +79,39 @@ export class MediaPipeline {
     private readonly storage: ObjectStorage,
     private readonly processor: MediaProcessor,
     private readonly notifier?: Notifier,
+    private readonly limits?: ServerConfig["uploads"],
   ) {}
+
+  /**
+   * Hard length limit of a processed team file (part 3 §20.6): video or audio
+   * ≤10 minutes. A child's daily narration (≤90 s) is capped by the recorder
+   * and checked when the upload starts and when it is handed in; once handed
+   * in it is reviewed as it is (no message here, it would only confuse).
+   */
+  private maxSec(f: FileRow): number | null {
+    if (!this.limits || !f.teamId || (f.kind !== "audio" && f.kind !== "video")) return null;
+    return this.limits.maxDurationSec[f.kind];
+  }
+
+  /**
+   * The browser did not say (or said less): the real length is over the limit.
+   * Tell the child who uploaded it; handing the file in is refused from now on.
+   */
+  private async tooLong(f: FileRow, durationSec: number): Promise<void> {
+    const max = this.maxSec(f);
+    if (max === null || !this.limits || durationSec <= max + this.limits.durationGraceSec || !this.notifier) return;
+    const what = f.kind === "video" ? "视频" : "音频";
+    const limit = max % 60 === 0 ? `${max / 60} 分钟` : `${max} 秒`;
+    await this.notifier.notify({
+      kind: "system",
+      childIds: [f.childId],
+      serverId: f.serverId,
+      title: `${what}太长了`,
+      body: `你传的${what}${f.filename ? `「${f.filename}」` : ""}超过了 ${limit}，交作品时用不了。请剪短一点再传。`,
+      link: null,
+      dedupeKey: `media_too_long:${f.id}`,
+    });
+  }
 
   /** Process one file now. Returns false when it failed this time (it may be tried again). */
   async process(f: FileRow): Promise<boolean> {
@@ -92,7 +127,7 @@ export class MediaPipeline {
       if (f.kind === "audio" || f.kind === "video") {
         const t = await this.processor.transcribe(input);
         set.transcript = t.text;
-        if (t.durationSec !== null) set.durationSec = t.durationSec;
+        if (t.durationSec !== null) set.durationSec = Math.round(t.durationSec);
       }
       if (f.kind === "video") {
         const frames = await this.processor.keyFrames(input, { everySec: FRAME_EVERY_SEC, max: FRAME_MAX });
@@ -106,6 +141,7 @@ export class MediaPipeline {
       }
       if (f.kind === "pdf") set.transcript = (await this.processor.parseDocument(input)).text;
       await this.db.update(files).set(set).where(eq(files.id, f.id));
+      if (set.durationSec != null) await this.tooLong(f, set.durationSec);
       return true;
     } catch (err) {
       const attempts = f.processAttempts + 1;

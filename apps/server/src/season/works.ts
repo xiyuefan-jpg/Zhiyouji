@@ -40,6 +40,33 @@ export interface SlotInfo {
   stage?: "opening" | "rebuttal";
 }
 
+/** Hard length limit of one file of this kind (null: no length, e.g. images). */
+export function mediaMaxSec(cfg: ServerConfig, kind: FileKind): number | null {
+  return kind === "video" || kind === "audio" ? cfg.uploads.maxDurationSec[kind] : null;
+}
+
+/**
+ * Content-rule reminders for the submit page (content library §2, part 3 §20.6):
+ * videos and audio ≤5 minutes in all, debate openings ≤3, rebuttals ≤2.
+ * Longer works are accepted; the team just sees the reminder.
+ */
+export function lengthWarnings(cfg: ServerConfig, slot: Pick<SlotInfo, "stage">, fs: { kind: string; durationSec: number | null }[]): string[] {
+  const timed = fs.filter((f) => (f.kind === "video" || f.kind === "audio") && f.durationSec !== null);
+  if (timed.length === 0) return [];
+  const total = timed.reduce((a, f) => a + f.durationSec!, 0);
+  const c = cfg.uploads.contentSec;
+  const limit = slot.stage === "opening" ? c.opening : slot.stage === "rebuttal" ? c.rebuttal : c.work;
+  if (total <= limit + cfg.uploads.durationGraceSec) return [];
+  const what = slot.stage === "opening" ? "立论" : slot.stage === "rebuttal" ? "驳论" : "作品";
+  return [`${what}的内容要求是不超过 ${limit / 60} 分钟，这次交的有 ${minutesText(total)}。已经交上去了（照样有效）；如果来得及，剪短一点更容易讲清楚。`];
+}
+
+function minutesText(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const r = Math.round(sec % 60);
+  return m === 0 ? `${r} 秒` : r === 0 ? `${m} 分钟` : `${m} 分 ${r} 秒`;
+}
+
 export type DebateDeadlines = ReadonlyMap<string, { openingDeadline: number }>;
 
 /** Every slot the team has (open or closed), from the season state. */
@@ -95,14 +122,28 @@ export class Works {
   // ---- uploads ------------------------------------------------------------------------------
 
   /** Upload ticket for one file of the team's materials. */
-  async requestUpload(ctx: PlayCtx, b: { kind: FileKind; contentType: string; size: number; filename?: string }) {
+  async requestUpload(ctx: PlayCtx, b: { kind: FileKind; contentType: string; size: number; filename?: string; durationSec?: number }) {
     const lim = this.cfg.uploads;
     if (!lim.allowedTypes[b.kind].includes(b.contentType)) fail(400, "file_type");
     if (b.size <= 0 || b.size > lim.maxBytes[b.kind]) fail(400, "file_too_big", { maxBytes: lim.maxBytes[b.kind] });
+    const maxSec = mediaMaxSec(this.cfg, b.kind);
+    if (maxSec !== null && b.durationSec !== undefined && b.durationSec > maxSec + lim.durationGraceSec) fail(400, "file_too_long", { maxSec });
     const key = `works/${ctx.serverId}/${ctx.teamId}/${randomUUID()}`;
     const [row] = await this.db
       .insert(files)
-      .values({ serverId: ctx.serverId, teamId: ctx.teamId, childId: ctx.childId, kind: b.kind, contentType: b.contentType, filename: b.filename ?? null, size: b.size, storageKey: key, createdAt: this.clock.now() })
+      .values({
+        serverId: ctx.serverId,
+        teamId: ctx.teamId,
+        childId: ctx.childId,
+        kind: b.kind,
+        contentType: b.contentType,
+        filename: b.filename ?? null,
+        size: b.size,
+        storageKey: key,
+        // What the browser measured; the speech-to-text service later writes the real length.
+        durationSec: maxSec !== null && b.durationSec !== undefined ? Math.round(b.durationSec) : null,
+        createdAt: this.clock.now(),
+      })
       .returning();
     const ticket = await this.storage.uploadTicket(key, b.contentType, b.size, this.now());
     return { fileId: row!.id, upload: ticket };
@@ -121,7 +162,17 @@ export class Works {
   }
 
   private fileView(f: typeof files.$inferSelect) {
-    return { id: f.id, kind: f.kind, contentType: f.contentType, filename: f.filename, size: f.size, status: f.status, uploadedBy: f.childId, createdAt: f.createdAt.toISOString() };
+    return {
+      id: f.id,
+      kind: f.kind,
+      contentType: f.contentType,
+      filename: f.filename,
+      size: f.size,
+      durationSec: f.durationSec,
+      status: f.status,
+      uploadedBy: f.childId,
+      createdAt: f.createdAt.toISOString(),
+    };
   }
 
   async fileUrl(ctx: PlayCtx, fileId: string) {
@@ -242,6 +293,12 @@ export class Works {
     if (b.mediaKind === "text" && !b.text?.trim()) fail(400, "work_empty");
     if (b.mediaKind !== "text" && fs.length === 0) fail(400, "work_empty");
     if (b.mediaKind === "images" && fs.length > this.cfg.uploads.maxImages) fail(400, "too_many_images");
+    // Hard length limit (part 3 §20.6): a file known to be longer is refused; the content rule only warns.
+    for (const f of fs) {
+      const maxSec = mediaMaxSec(this.cfg, f.kind as FileKind);
+      if (maxSec !== null && f.durationSec !== null && f.durationSec > maxSec + this.cfg.uploads.durationGraceSec) fail(400, "file_too_long", { fileId: f.id, maxSec });
+    }
+    const warnings = lengthWarnings(this.cfg, s!, fs);
     const active = new Set(t.members.filter((m) => m.active).map((m) => m.childId));
     const members = [...new Set(b.members)];
     if (members.length === 0 || members.some((m) => !active.has(m))) fail(400, "bad_members");
@@ -270,7 +327,7 @@ export class Works {
         members,
       })
       .returning();
-    return { work: this.workView(row!) };
+    return { work: this.workView(row!), warnings };
   }
 
   workView(w: typeof works.$inferSelect) {
