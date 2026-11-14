@@ -7,6 +7,8 @@
  * - 账本: entries by team and currency; reverse one;
  * - 人工干预: adjust grain / points, set a land's owner, give / take an item,
  *   set the leader or deputy, withdraw a member — always with a reason;
+ * - 军需: each task's teams (participation, AI quality and summary, score,
+ *   tier); open one team's hand-ins and move it to another tier (抽查改档);
  * - 战报预览: the feed as the whole server reads it; hide a line.
  * Every action asks for a reason and lands in the operation log.
  */
@@ -325,6 +327,7 @@ function ServerMonitor({ serverId }: { serverId: string }) {
             ),
           },
           { key: "season", label: "周战争 / 商店 / 大团战 / 法宝 / 分数来源", children: <SeasonTabs d={d} teamName={teamName} /> },
+          { key: "supply", label: "军需", children: <SupplyMonitor serverId={serverId} /> },
           { key: "planned", label: "计划事件（周战争、大团战的截止也在这里改）", children: <Planned serverId={serverId} /> },
           { key: "ledger", label: "账本", children: <Ledger serverId={serverId} teams={d.teams} /> },
           { key: "intervene", label: "人工干预", children: <Intervene serverId={serverId} d={d} onDone={o.reload} /> },
@@ -347,6 +350,138 @@ function ServerMonitor({ serverId }: { serverId: string }) {
         <DatePicker showTime aria-label="新的截止时间" value={contestAt} onChange={setContestAt} />
       </Modal>
     </>
+  );
+}
+
+interface SupplyTeam {
+  teamId: string;
+  name: string;
+  activeMembers: number;
+  submittedMembers: number;
+  hasSummary: boolean;
+  quality: number | null;
+  summary: number | null;
+  score: number | null;
+  model: string | null;
+  grain: number | null;
+  aiGrain: number | null;
+  regrade: { grain: number; note: string | null; at: string | null } | null;
+}
+interface SupplyTask {
+  supplyId: string;
+  week: number;
+  title: string;
+  opensAt: string;
+  deadline: string;
+  status: "planned" | "open" | "scoring" | "settled";
+  teams: SupplyTeam[];
+}
+const SUPPLY_STATUS: Record<string, { color: string; text: string }> = {
+  planned: { color: "default", text: "还没发布" },
+  open: { color: "blue", text: "进行中" },
+  scoring: { color: "gold", text: "打分中" },
+  settled: { color: "green", text: "已结算" },
+};
+
+/** 军需 (part 7 §7): AI scores, no human review; spot-check a team and move it to another tier. */
+function SupplyMonitor({ serverId }: { serverId: string }) {
+  const l = useLoad(() => request<{ tiers: number[]; bounds: number[]; tasks: SupplyTask[] }>("GET", `/v1/admin/servers/${serverId}/supply`), [serverId]);
+  const [open, setOpen] = useState<{ task: SupplyTask; team: SupplyTeam } | null>(null);
+  const detail = useLoad(
+    () => (open ? request<{ entries: { kind: string; nickname: string; text: string; files: number; at: string }[]; comment: string | null }>("GET", `/v1/admin/servers/${serverId}/supply/${open.task.supplyId}/teams/${open.team.teamId}`) : Promise.resolve(null)),
+    [open?.task.supplyId, open?.team.teamId],
+  );
+  const [grain, setGrain] = useState<number | null>(null);
+  const tiers = l.data?.tiers ?? [];
+  const regrade = () => {
+    if (!open || grain === null) return;
+    withReason(`改成 ${grain} 粮草？差额记进账本，这个组会收到消息。`, (reason) => request("POST", `/v1/admin/servers/${serverId}/supply/${open.task.supplyId}/teams/${open.team.teamId}/regrade`, { grain, reason }), () => {
+      setOpen(null);
+      l.reload();
+    });
+  };
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      {l.data && (
+        <Typography.Text type="secondary">
+          总分 = 参与面 40 × 交了的人数 / 组员数 + 内容质量（AI，40）+ 小组总结（AI，20）；低于 {l.data.bounds[0]} 分 {tiers[0]} 粮草，{l.data.bounds[0]}–{l.data.bounds[1]} 分 {tiers[1]} 粮草，{l.data.bounds[1]} 分以上 {tiers[2]} 粮草；没人交 0。
+        </Typography.Text>
+      )}
+      {(l.data?.tasks ?? []).map((task) => (
+        <Card
+          key={task.supplyId}
+          size="small"
+          title={
+            <Space>
+              第 {task.week} 周 · {task.title}
+              <Tag color={SUPPLY_STATUS[task.status]?.color}>{SUPPLY_STATUS[task.status]?.text}</Tag>
+            </Space>
+          }
+          extra={
+            <span>
+              截止 <Time iso={task.deadline} />
+            </span>
+          }
+        >
+          {task.status === "planned" ? (
+            <Typography.Text type="secondary">
+              <Time iso={task.opensAt} /> 发布
+            </Typography.Text>
+          ) : (
+            <Table<SupplyTeam>
+              rowKey="teamId"
+              size="small"
+              pagination={false}
+              dataSource={task.teams}
+              columns={[
+                { title: "组", dataIndex: "name" },
+                { title: "交了", render: (_, r) => `${r.submittedMembers} / ${r.activeMembers}${r.hasSummary ? "，有小结" : ""}` },
+                { title: "质量 / 小结", render: (_, r) => (r.quality === null ? "—" : `${r.quality} / ${r.summary}`) },
+                { title: "总分", render: (_, r) => r.score ?? "—" },
+                {
+                  title: "粮草",
+                  render: (_, r) =>
+                    r.grain === null ? "—" : r.regrade ? (
+                      <span>
+                        <b>{r.grain}</b>（AI 档 {r.aiGrain}，已改档）
+                      </span>
+                    ) : (
+                      r.grain
+                    ),
+                },
+                {
+                  title: "",
+                  render: (_, r) =>
+                    task.status === "settled" && (
+                      <Button size="small" onClick={() => (setGrain(r.grain), setOpen({ task, team: r }))}>
+                        抽查
+                      </Button>
+                    ),
+                },
+              ]}
+            />
+          )}
+        </Card>
+      ))}
+      <Modal open={!!open} width={720} title={open ? `抽查：${open.team.name} · ${open.task.title}` : ""} okText="改档" cancelText="关闭" onCancel={() => setOpen(null)} onOk={regrade} okButtonProps={{ disabled: grain === null || grain === open?.team.grain }}>
+        {detail.data && (
+          <Space direction="vertical" style={{ width: "100%" }}>
+            {detail.data.entries.length === 0 && <Typography.Text type="secondary">这个组没有人交。</Typography.Text>}
+            {detail.data.entries.map((e, i) => (
+              <Card key={i} size="small" title={`${e.kind === "summary" ? "小结 · " : ""}${e.nickname}`} extra={<Time iso={e.at} />}>
+                <Typography.Paragraph style={{ whiteSpace: "pre-wrap", margin: 0 }}>{e.text}</Typography.Paragraph>
+                {e.files > 0 && <Typography.Text type="secondary">另有 {e.files} 张图片</Typography.Text>}
+              </Card>
+            ))}
+            {detail.data.comment && <Alert type="info" message={`AI 评语：${detail.data.comment}`} />}
+            <Space>
+              改成
+              <Radio.Group value={grain} onChange={(e) => setGrain(e.target.value)} options={tiers.map((g) => ({ value: g, label: `${g} 粮草` }))} />
+            </Space>
+          </Space>
+        )}
+      </Modal>
+    </Space>
   );
 }
 

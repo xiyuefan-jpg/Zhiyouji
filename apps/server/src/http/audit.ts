@@ -93,6 +93,9 @@ export const ADMIN_AUDIT: Record<string, AuditPolicy> = {
   "POST /v1/admin/feed/:id/hide": domain("feed_hide"),
   "POST /v1/admin/servers/:id/finalize": domain("finalize"),
   "GET /v1/admin/servers/:id/scholarship.csv": view("scholarship", false),
+  "GET /v1/admin/servers/:id/supply": none("各组军需的分数和档位，不含孩子的内容"),
+  "GET /v1/admin/servers/:id/supply/:supplyId/teams/:teamId": view("supply"),
+  "POST /v1/admin/servers/:id/supply/:supplyId/teams/:teamId/regrade": route("supply_regrade", "supply:{supplyId}:{teamId}"),
   "GET /v1/admin/servers/:id/final-preview": none("小组的分数和奖学金预览，不含孩子的数据"),
 
   // review (part 7 §5–§6)

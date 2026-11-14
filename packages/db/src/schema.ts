@@ -865,6 +865,11 @@ export const supplyResults = pgTable(
     model: text("model").notNull(),
     comment: text("comment"),
     at: ts("at").notNull(),
+    /** 抽查改档 (part 7 §7): the grain tier an admin set (the difference is a ledger adjustment). */
+    regradedGrain: integer("regraded_grain"),
+    regradeNote: text("regrade_note"),
+    regradedBy: text("regraded_by"),
+    regradedAt: ts("regraded_at"),
   },
   (t) => [uniqueIndex("supply_results_team").on(t.serverId, t.supplyId, t.teamId)],
 );

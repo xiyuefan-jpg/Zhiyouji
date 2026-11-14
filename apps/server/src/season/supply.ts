@@ -12,7 +12,8 @@
  */
 
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { files, plannedEvents, supplyEntries, supplyResults, type Db } from "@zhiyouji/db";
+import { children, files, plannedEvents, supplyEntries, supplyResults, type Db } from "@zhiyouji/db";
+import { grainOf, supplyScore } from "@zhiyouji/engine";
 import { SUPPLY_PRESETS, SUPPLY_SCHEDULE, formatBeijing } from "@zhiyouji/shared";
 import type { AiSupplyScorer } from "../ai.js";
 import type { Clock } from "../clock.js";
@@ -116,7 +117,7 @@ export class Supply {
         mine: mine ? { text: mine.text, fileIds: mine.fileIds as string[], at: mine.at.toISOString() } : null,
         summary: summary ? { text: summary.text, by: summary.childId, at: summary.at.toISOString() } : null,
         result: result
-          ? { submittedMembers: result.submittedMembers, quality: result.quality, summary: result.summary, grain: paid?.amount ?? null, comment: result.comment }
+          ? { submittedMembers: result.submittedMembers, quality: result.quality, summary: result.summary, grain: result.regradedGrain ?? paid?.amount ?? null, comment: result.comment, regraded: result.regradedGrain !== null }
           : null,
       });
     }
@@ -193,6 +194,108 @@ export class Supply {
    * tries again (1, 2, 5, 10, 15, 30 … minutes); after 2 hours it settles on participation alone
    * and tells the admins, who can add points by hand (人工干预). Returns whether it settled.
    */
+  // ---- admin: 军需 list, spot check, re-tier (part 7 §7) --------------------------------------------------
+
+  /** Every supply task of a server with each team's result (no child content). */
+  async adminList(serverId: string) {
+    const now = this.now();
+    const st = await this.store.state(serverId);
+    const results = await this.db.select().from(supplyResults).where(eq(supplyResults.serverId, serverId));
+    const entries = await this.db.select({ supplyId: supplyEntries.supplyId, teamId: supplyEntries.teamId, kind: supplyEntries.kind, childId: supplyEntries.childId }).from(supplyEntries).where(eq(supplyEntries.serverId, serverId));
+    const out = [];
+    for (const w of await this.windows(serverId)) {
+      const settled = st.ledger.some((e) => e.source === "supply" && e.refId === w.supplyId) || results.some((r) => r.supplyId === w.supplyId);
+      out.push({
+        supplyId: w.supplyId,
+        week: w.week,
+        ...supplyTask(w.supplyId),
+        opensAt: new Date(w.opensAt).toISOString(),
+        deadline: new Date(w.deadline).toISOString(),
+        status: now < w.opensAt ? "planned" : now < w.deadline ? "open" : settled ? "settled" : "scoring",
+        teams: st.teamOrder.map((teamId) => {
+          const team = st.teams[teamId]!;
+          const active = team.members.filter((m) => m.active).length;
+          const r = results.find((x) => x.supplyId === w.supplyId && x.teamId === teamId);
+          const mine = entries.filter((e) => e.supplyId === w.supplyId && e.teamId === teamId);
+          const submitted = new Set(mine.filter((e) => e.kind === "member").map((e) => e.childId)).size;
+          const paid = st.ledger.find((e) => e.teamId === teamId && e.source === "supply" && e.refId === w.supplyId)?.amount ?? null;
+          const score = r ? Math.round(supplyScore({ submittedMembers: r.submittedMembers, activeMembers: active, quality: r.quality, summary: r.summary }, st.params) * 10) / 10 : null;
+          return {
+            teamId,
+            name: team.name,
+            activeMembers: active,
+            submittedMembers: r?.submittedMembers ?? submitted,
+            hasSummary: mine.some((e) => e.kind === "summary"),
+            quality: r?.quality ?? null,
+            summary: r?.summary ?? null,
+            score,
+            model: r?.model ?? null,
+            grain: r?.regradedGrain ?? paid ?? (r ? 0 : null),
+            aiGrain: paid ?? (r ? 0 : null),
+            regrade: r?.regradedGrain != null ? { grain: r.regradedGrain, note: r.regradeNote, by: r.regradedBy, at: r.regradedAt?.toISOString() ?? null } : null,
+          };
+        }),
+      });
+    }
+    return { tiers: st.params.supply.tierGrain, bounds: st.params.supply.tierBounds, tasks: out };
+  }
+
+  /** One team's hand-ins for a spot check (the route records the view per child). */
+  async adminTeam(serverId: string, supplyId: string, teamId: string) {
+    await this.window(serverId, supplyId);
+    const st = await this.store.state(serverId);
+    if (!st.teams[teamId]) fail(404, "not_found");
+    const entries = await this.latest(serverId, supplyId, [teamId]);
+    const ids = [...new Set(entries.map((e) => e.childId))];
+    const names = new Map((ids.length ? await this.db.select({ id: children.id, nickname: children.nickname }).from(children).where(inArray(children.id, ids)) : []).map((c) => [c.id, c.nickname]));
+    const [r] = await this.db.select().from(supplyResults).where(and(eq(supplyResults.serverId, serverId), eq(supplyResults.supplyId, supplyId), eq(supplyResults.teamId, teamId)));
+    return {
+      ...supplyTask(supplyId),
+      team: st.teams[teamId]!.name,
+      entries: entries.map((e) => ({ kind: e.kind, childId: e.childId, nickname: names.get(e.childId) ?? "", text: e.text, files: (e.fileIds as string[]).length, at: e.at.toISOString() })),
+      comment: r?.comment ?? null,
+      children: ids,
+    };
+  }
+
+  /**
+   * 抽查改档: move a settled team to another grain tier. The difference from
+   * what it has now is a grain adjustment (ledger, with the reason); refused
+   * when the team no longer has the grain a lower tier would take back.
+   */
+  async regrade(serverId: string, supplyId: string, teamId: string, b: { grain: number; reason: string }, by: string) {
+    const st = await this.store.state(serverId);
+    const [r] = await this.db.select().from(supplyResults).where(and(eq(supplyResults.serverId, serverId), eq(supplyResults.supplyId, supplyId), eq(supplyResults.teamId, teamId)));
+    if (!r || !st.teams[teamId]) fail(409, "supply_not_settled");
+    if (!st.params.supply.tierGrain.includes(b.grain)) fail(400, "bad_request", { message: `档位只能是 ${st.params.supply.tierGrain.join(" / ")} 粮草` });
+    const paid = st.ledger.find((e) => e.teamId === teamId && e.source === "supply" && e.refId === supplyId)?.amount ?? 0;
+    const now = r!.regradedGrain ?? paid;
+    const diff = b.grain - now;
+    if (diff < 0 && grainOf(st, teamId) < -diff) fail(409, "not_enough_grain_to_take_back");
+    if (diff !== 0) {
+      const res = await this.store.apply(
+        serverId,
+        { type: "adjust_ledger", teamId, currency: "grain", amount: diff, at: this.now(), by, reason: `军需改档（${supplyTask(supplyId).title}）：${now} → ${b.grain} 粮草。${b.reason}` },
+        "admin",
+      );
+      if (!res.ok) fail(409, String(res.refusal));
+    }
+    await this.db
+      .update(supplyResults)
+      .set({ regradedGrain: b.grain, regradeNote: b.reason, regradedBy: by, regradedAt: new Date(this.now()) })
+      .where(eq(supplyResults.id, r!.id));
+    await this.notifier.notify({
+      kind: "system",
+      childIds: st.teams[teamId]!.members.filter((m) => m.active).map((m) => m.childId),
+      serverId,
+      title: "军需任务的结果调整了",
+      body: `「${supplyTask(supplyId).title}」管理员复查后改为 ${b.grain} 粮草（${diff > 0 ? `多给 ${diff}` : `收回 ${-diff}`}）。`,
+      link: "/season/supply",
+      dedupeKey: `supply_regrade:${serverId}:${supplyId}:${teamId}:${this.now()}:${now}->${b.grain}`,
+    });
+    return { grain: b.grain, change: diff };
+  }
+
   private async settle(serverId: string, w: SupplyWindow): Promise<boolean> {
     const now = this.now();
     const key = `${serverId}:${w.supplyId}`;
@@ -239,7 +342,7 @@ export class Supply {
       await this.notifier.notifyAdmins({
         kind: "ai_failed",
         title: "军需任务打分失败",
-        body: `军需任务 ${w.supplyId} 的 AI 打分 2 小时都没成功（${String((failure as Error).message ?? failure)}），没打上分的组只按参与面结算。要补分请在"赛季监控与干预 → 人工干预"里给这些组加团队分。`,
+        body: `军需任务 ${w.supplyId} 的 AI 打分 2 小时都没成功（${String((failure as Error).message ?? failure)}），没打上分的组只按参与面结算。要补分请在"赛季监控与干预 → 军需"里给这些组改档。`,
         dedupeKey: `supply_ai_failed:${serverId}:${w.supplyId}`,
         roles: ["admin"],
       });

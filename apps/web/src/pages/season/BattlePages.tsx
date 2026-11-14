@@ -230,7 +230,7 @@ interface SupplyTask {
   progress: { submitted: number; members: number };
   mine: { text: string; at: string } | null;
   summary: { text: string; by: string; at: string } | null;
-  result: { submittedMembers: number; quality: number; summary: number; grain: number | null; comment: string | null } | null;
+  result: { submittedMembers: number; quality: number; summary: number; grain: number | null; comment: string | null; regraded?: boolean } | null;
 }
 
 export function SupplyPage() {
@@ -288,7 +288,7 @@ function SupplyCard({ t, canAct, active, onDone }: { t: SupplyTask; canAct: bool
       </div>
       {t.result && (
         <div style={{ marginTop: 8, fontWeight: 600 }}>
-          结果：{t.result.grain !== null ? `+${t.result.grain} 粮草` : "没有粮草"}（参与 {t.result.submittedMembers} 人，质量 {t.result.quality}，小结 {t.result.summary}）
+          结果：{t.result.grain !== null ? `+${t.result.grain} 粮草` : "没有粮草"}（参与 {t.result.submittedMembers} 人，质量 {t.result.quality}，小结 {t.result.summary}）{t.result.regraded ? "，管理员复查后调整过" : ""}
           {t.result.comment && <div className="hint" style={{ fontWeight: 400 }}>{t.result.comment}</div>}
         </div>
       )}

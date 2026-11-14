@@ -169,6 +169,13 @@
       "when": 1794659288466,
       "tag": "0023_ai_prices",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794660924209,
+      "tag": "0024_supply_regrade",
+      "breakpoints": true
     }
   ]
 }

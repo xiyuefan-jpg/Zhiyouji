@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { messages, smsOutbox } from "@zhiyouji/db";
+import { messages, opLog, smsOutbox, viewLog } from "@zhiyouji/db";
 import type { FakeAiSupply } from "../src/index.js";
 import { balanceOf } from "@zhiyouji/engine";
 import { bj } from "./helpers.js";
@@ -98,7 +98,56 @@ describe("军需任务 (part 3 §12; part 5 E9)", () => {
     const res = (await t.a1api("GET", "/v1/season/supply")).json().tasks.find((x: { supplyId: string }) => x.supplyId === "1a").result;
     expect(res).toMatchObject({ submittedMembers: 1, quality: 0, summary: 0 });
     const msg = (await t.db.select().from(messages)).find((m) => m.type === "ai_failed")!;
-    expect(msg.body).toContain("人工干预");
+    expect(msg.body).toContain("改档");
+    await t.close();
+  });
+
+  it("抽查改档 (part 7 §7): the admin sees every team's score and tier, opens one team's hand-ins and moves it to another tier", async () => {
+    const t = await contestSetup();
+    const a1 = t.a1api;
+    t.clock.set(bj("2027-02-09", 19, 1));
+    await a1("POST", "/v1/season/supply/1a/entry", { text: "为什么天是蓝的？查了资料：瑞利散射。" });
+    t.clock.set(bj("2027-02-10", 21, 1));
+    await t.services.supply.runDue(t.serverId);
+    const boss = await t.adminUser();
+    const list = (await t.call("GET", `/v1/admin/servers/${t.serverId}/supply`, undefined, boss.token)).json();
+    expect(list.tiers).toEqual([10, 20, 30]);
+    const task = list.tasks.find((x: { supplyId: string }) => x.supplyId === "1a");
+    expect(task.status).toBe("settled");
+    const mine = task.teams.find((x: { teamId: string }) => x.teamId === t.myTeam);
+    expect(mine).toMatchObject({ submittedMembers: 1, quality: 8, summary: 0, grain: 10, aiGrain: 10, regrade: null });
+    expect(task.teams.find((x: { teamId: string }) => x.teamId !== t.myTeam).grain).toBe(0);
+    // later tasks are listed as planned
+    expect(list.tasks.some((x: { status: string }) => x.status === "planned")).toBe(true);
+
+    // the spot check shows the hand-ins with nicknames; the view is recorded per child
+    const detail = (await t.call("GET", `/v1/admin/servers/${t.serverId}/supply/1a/teams/${t.myTeam}`, undefined, boss.token)).json();
+    expect(detail.entries).toEqual([expect.objectContaining({ kind: "member", childId: t.a1, text: "为什么天是蓝的？查了资料：瑞利散射。" })]);
+    expect((await t.db.select().from(viewLog)).map((v) => [v.childId, v.contentKind])).toContainEqual([t.a1, "supply"]);
+
+    const grain = () => t.services.store.state(t.serverId).then((st) => balanceOf(st.ledger, t.myTeam, "grain"));
+    const before = await grain();
+    const up = (b: unknown) => t.call("POST", `/v1/admin/servers/${t.serverId}/supply/1a/teams/${t.myTeam}/regrade`, b, boss.token);
+    expect((await up({ grain: 25, reason: "x" })).statusCode).toBe(400); // only the tiers
+    expect((await up({ grain: 30, reason: "内容很扎实，AI 低估了" })).json()).toEqual({ grain: 30, change: 20 });
+    expect(await grain()).toBe(before + 20);
+    // back down to 20: 10 is taken back
+    expect((await up({ grain: 20, reason: "再看一次，中间那档更合适" })).json()).toEqual({ grain: 20, change: -10 });
+    expect(await grain()).toBe(before + 10);
+    const st = await t.services.store.state(t.serverId);
+    expect(st.ledger.filter((e) => e.teamId === t.myTeam && e.source === "admin").map((e) => [e.amount, e.note])).toEqual([
+      [20, "军需改档（好奇心接力）：10 → 30 粮草。内容很扎实，AI 低估了"],
+      [-10, "军需改档（好奇心接力）：30 → 20 粮草。再看一次，中间那档更合适"],
+    ]);
+    // the team sees the new tier and gets a message; the op log has both
+    const res = (await a1("GET", "/v1/season/supply")).json().tasks.find((x: { supplyId: string }) => x.supplyId === "1a").result;
+    expect(res).toMatchObject({ grain: 20, regraded: true });
+    expect((await a1("GET", "/v1/messages")).json().messages.filter((m: { title: string }) => m.title === "军需任务的结果调整了")).toHaveLength(2);
+    expect((await t.db.select().from(opLog)).filter((o) => o.action === "supply_regrade")).toHaveLength(2);
+    const after = (await t.call("GET", `/v1/admin/servers/${t.serverId}/supply`, undefined, boss.token)).json().tasks[0].teams.find((x: { teamId: string }) => x.teamId === t.myTeam);
+    expect(after).toMatchObject({ grain: 20, aiGrain: 10, regrade: { grain: 20, note: "再看一次，中间那档更合适" } });
+    // a team that has not been settled for this task cannot be re-tiered
+    expect((await t.call("POST", `/v1/admin/servers/${t.serverId}/supply/1b/teams/${t.myTeam}/regrade`, { grain: 30, reason: "x" }, boss.token)).json().error).toBe("supply_not_settled");
     await t.close();
   });
 });

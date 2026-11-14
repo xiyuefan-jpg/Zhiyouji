@@ -26,6 +26,8 @@ export const ERROR_TEXT = {
   child_not_found: "找不到这个孩子",
   too_many_children: "一个手机号下最多 6 个孩子",
   not_found: "找不到",
+  supply_not_settled: "这个军需任务这个组还没有结算",
+  not_enough_grain_to_take_back: "这个组现在的粮草不够收回",
   forbidden: "没有权限",
   login_failed: "邮箱、密码或两步验证码不对",
   locked: "失败次数太多，请 15 分钟后再试",
