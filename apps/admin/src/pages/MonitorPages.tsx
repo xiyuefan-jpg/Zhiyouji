@@ -264,7 +264,7 @@ function Planned({ serverId }: { serverId: string }) {
   );
 }
 
-const SOURCE_TEXT: Record<string, string> = {
+export const SOURCE_TEXT: Record<string, string> = {
   opening: "开营", daily_task: "每日任务", supply: "军需任务", attack: "进攻", join: "加入进攻", auction_bid: "盲拍", center_land: "中心地", shop: "商店", epic_auction: "竞价",
   refund: "退还", reversal: "冲正", admin: "管理员调整", territory: "领地收益", merit_capture: "夺地战功", merit_defend: "守地战功", war: "周战争", bye: "轮空",
   participation: "全员参与奖", big_battle_line: "大团战战线", big_battle_seize: "夺取产出", main_battlefield: "主战场", item_effect: "法宝效果", grain_conversion: "粮草折算", territory_transfer: "收益转移",

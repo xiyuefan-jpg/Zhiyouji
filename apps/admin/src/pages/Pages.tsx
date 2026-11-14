@@ -49,7 +49,17 @@ export function DashboardPage() {
   const nav = useNavigate();
   const { data } = useLoad(() => api.messages());
   const dash = useLoad(() => request<DashboardData>("GET", "/v1/admin/dashboard"));
-  const open = (data?.messages ?? []).filter((m) => !m.read);
+  // Unread messages, one line per kind of message (newest first): a reviewer back after a few days
+  // sees "复核快到时限了（12 条）" once, not twelve times.
+  const open = (() => {
+    const groups = new Map<string, { id: string; title: string; body: string; n: number }>();
+    for (const m of (data?.messages ?? []).filter((x) => !x.read)) {
+      const g = groups.get(m.title);
+      if (g) g.n++;
+      else groups.set(m.title, { id: m.id, title: m.title, body: m.body, n: 1 });
+    }
+    return [...groups.values()].map((g) => (g.n > 1 ? { ...g, title: `${g.title}（${g.n} 条）`, body: `最新一条：${g.body}` } : g));
+  })();
   const d = dash.data;
   const todo = d
     ? [

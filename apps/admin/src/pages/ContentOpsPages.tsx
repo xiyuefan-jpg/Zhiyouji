@@ -18,7 +18,7 @@ import { ApiError, request } from "../api";
 import { useAdmin } from "../auth";
 import { Time } from "../time";
 import { downloadText, useLoad } from "../useLoad";
-import { ServerPicker } from "./MonitorPages";
+import { ServerPicker, SOURCE_TEXT } from "./MonitorPages";
 import { useParams } from "react-router";
 
 const errText = (e: unknown) => (e instanceof ApiError ? e.message : String(e));
@@ -166,6 +166,11 @@ function Prompts({ canEdit }: { canEdit: boolean }) {
           </>
         )}
       </Space>
+      {(category === "battle_line" || category === "battle_main") && (
+        <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+          大团战：启用的战线题按创建先后对应第 1、2、3…条线（第 1 条分值最低），8 个组要 4 条、6 个组要 3 条；主战场用第 1 条启用的主战场题。评分族不填按 C（设计创造）。
+        </Typography.Paragraph>
+      )}
       <Table<Prompt>
         rowKey="id"
         size="small"
@@ -521,10 +526,46 @@ function AiConfig() {
 
 // ---- 终局与导出 (§9) ------------------------------------------------------------------------------------
 
+interface FinalPreview {
+  done: boolean;
+  poolYuan: number;
+  teams: { teamId: string; name: string; rank: number; points: number; grain: number; bySource: Record<string, number>; yuan: number }[];
+}
+
+/** 终局结算预览 (part 7 §9): points by source, grain conversion, ranking and scholarship, before confirming. */
+function FinalPreviewTable({ serverId, pool, version }: { serverId: string; pool: number | null; version: number }) {
+  const pv = useLoad(() => request<FinalPreview>("GET", `/v1/admin/servers/${serverId}/final-preview?poolYuan=${pool ?? 0}`), [serverId, pool, version]);
+  if (pv.error) return <Alert type="info" message={pv.error} />;
+  if (!pv.data) return null;
+  const pts = (n: number | undefined) => ((n ?? 0) / 100).toFixed(1);
+  const sources = [...new Set(pv.data.teams.flatMap((t) => Object.keys(t.bySource)))];
+  return (
+    <>
+      {pv.data.done ? <Alert type="success" message={`已结算（奖池 ${pv.data.poolYuan} 元）`} /> : <Alert type="info" message="预览：还没公布。核对每组的分数来源、粮草折算和奖学金，再点终局结算。" />}
+      <Table
+        rowKey="teamId"
+        size="small"
+        pagination={false}
+        scroll={{ x: true }}
+        dataSource={pv.data.teams}
+        columns={[
+          { title: "名次", dataIndex: "rank" },
+          { title: "组", dataIndex: "name" },
+          ...sources.map((k) => ({ title: SOURCE_TEXT[k] ?? k, render: (_: unknown, r: FinalPreview["teams"][number]) => pts(r.bySource[k]) })),
+          { title: "剩余粮草", dataIndex: "grain" },
+          { title: "团队分", render: (_, r) => <b>{pts(r.points)}</b> },
+          { title: "奖学金（元）", render: (_, r) => <b>{r.yuan}</b> },
+        ]}
+      />
+    </>
+  );
+}
+
 export function FinalPage() {
   const { serverId } = useParams();
   const seasons = useLoad(() => request<{ seasons: { id: string; name: string; statusLabel: string }[] }>("GET", "/v1/admin/seasons"));
   const [pool, setPool] = useState<number | null>(null);
+  const [finalVersion, setFinalVersion] = useState(0);
   const [reviewSeason, setReviewSeason] = useState<string | null>(null);
   const reviews = useLoad(() => (reviewSeason ? request<{ reviews: { id: string; childId: string; releasedAt: string | null }[] }>("GET", `/v1/admin/seasons/${reviewSeason}/reviews`) : Promise.resolve({ reviews: [] })), [reviewSeason]);
   const requests = useLoad(() => request<{ requests: { id: string; kind: string; status: string; requestedAt: string; dueAt: string }[] }>("GET", "/v1/admin/data-requests"));
@@ -542,7 +583,7 @@ export function FinalPage() {
               <InputNumber aria-label="奖池（元）" placeholder="奖池（元）" min={0} value={pool} onChange={setPool} />
               <Popconfirm
                 title="确认终局结算？剩余粮草折成团队分，按名次分奖学金，之后赛季只读。"
-                onConfirm={() => void run(() => request("POST", `/v1/admin/servers/${serverId}/finalize`, { poolYuan: pool ?? 0 }), "已结算")}
+                onConfirm={() => void run(() => request("POST", `/v1/admin/servers/${serverId}/finalize`, { poolYuan: pool ?? 0 }), "已结算", () => setFinalVersion((v) => v + 1))}
               >
                 <Button type="primary" disabled={pool === null}>
                   终局结算
@@ -551,6 +592,7 @@ export function FinalPage() {
               <Button onClick={() => dl(`/v1/admin/servers/${serverId}/scholarship.csv`, "奖学金发放表.csv")}>下载奖学金发放表</Button>
             </Space>
           )}
+          {serverId && <FinalPreviewTable serverId={serverId} pool={pool} version={finalVersion} />}
         </Space>
       </Card>
       <Card size="small" title="赛季回顾">
