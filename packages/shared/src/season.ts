@@ -171,6 +171,14 @@ export const promptCreate = z.object({
   rubric: z.enum(["A", "B", "C", "D", "E"]).nullable().optional(),
   status: z.enum(PROMPT_STATUSES).optional(),
   todo: z.boolean().optional(),
+  /** 周战争主题: the fixed card of a fixed week; 军需任务: what each member hands in and the summary task. */
+  extra: z
+    .object({
+      fixedCard: z.string().trim().max(200).nullable().optional(),
+      perPerson: z.string().trim().max(500).nullable().optional(),
+      summaryTask: z.string().trim().max(500).nullable().optional(),
+    })
+    .optional(),
 });
 export const promptUpdate = promptCreate.partial();
 export const promptImport = z.object({ prompts: z.array(promptCreate).min(1).max(500) });

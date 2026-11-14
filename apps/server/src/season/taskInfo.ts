@@ -65,6 +65,32 @@ export function lineOf(st: SeasonState, teamId: string): number {
   return bb?.final && camp ? bb.final[camp].indexOf(teamId) : -1;
 }
 
+export interface WarTheme {
+  title: string;
+  task: string;
+  /** The fixed card of a fixed week (W1, W3); null in gift weeks or when the theme has none. */
+  fixedCard: string | null;
+  /** The question-bank prompt, null for the content library draft. */
+  promptId: string | null;
+}
+
+/**
+ * 周战争主题 from the question bank (content library §5; PROGRESS "定了以后在管理端题库里录入即可"):
+ * the enabled 周战争主题 prompts in creation order are weeks 1, 2, 3…; a week with
+ * none keeps the content library draft (`WAR_THEMES`).
+ */
+export async function warThemes(db: Db): Promise<Record<number, WarTheme>> {
+  const rows = (await db.select().from(promptRows).where(and(eq(promptRows.status, "enabled"), eq(promptRows.category, "war_theme"))).orderBy(asc(promptRows.createdAt), asc(promptRows.id)));
+  const out: Record<number, WarTheme> = {};
+  const weeks = Math.max(4, rows.length);
+  for (let w = 1; w <= weeks; w++) {
+    const p = rows[w - 1];
+    if (p) out[w] = { title: p.title, task: p.body, fixedCard: (p.extra as { fixedCard?: string | null })?.fixedCard?.trim() || null, promptId: p.id };
+    else if (WAR_THEMES[w]) out[w] = { ...WAR_THEMES[w]!, promptId: null };
+  }
+  return out;
+}
+
 function promptTask(p: PromptRow | null | undefined, fallback: string): TaskInfo {
   return { title: p?.title ?? fallback, body: p?.body ?? null, audience: p?.audience ?? DEFAULT_AUDIENCE, questionType: p?.questionType ?? null, subject: null, landName: null, juniorHint: null };
 }
@@ -77,7 +103,7 @@ export async function workTask(db: Db, serverId: string, st: SeasonState, w: { k
   }
   if (w.kind === "war") {
     const week = Number(w.slot.split(":")[1]);
-    const t = WAR_THEMES[week];
+    const t = (await warThemes(db))[week];
     return t ? { title: t.title, body: t.task, audience: DEFAULT_AUDIENCE, questionType: null, subject: null, landName: null, juniorHint: null } : null;
   }
   if (w.kind === "line") {

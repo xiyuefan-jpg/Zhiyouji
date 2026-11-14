@@ -12,7 +12,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { plannedEvents, surveyAnswers, warCards, works, type Db } from "@zhiyouji/db";
 import { ITEMS, REGULAR_COMMON_ITEMS, createRng, seedFromString, warDeadline, type SeasonState } from "@zhiyouji/engine";
 import { liveRubricWithGuide, workRequirements } from "./rubrics.js";
-import { GRADE_LABELS, PLAY_STYLES, WAR_CARDS, WAR_THEMES } from "@zhiyouji/shared";
+import { GRADE_LABELS, PLAY_STYLES, WAR_CARDS } from "@zhiyouji/shared";
+import { warThemes, type WarTheme } from "./taskInfo.js";
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
 import type { Notifier } from "../notify/notifier.js";
@@ -20,11 +21,11 @@ import type { SeasonStore } from "../seasonStore.js";
 import { refuse, type PlayCtx } from "./play.js";
 
 
-const cardText = (id: string | null) => {
+const cardText = (id: string | null, themes: Record<number, WarTheme>) => {
   if (!id) return null;
   if (id.startsWith("fixed:")) {
     const w = Number(id.slice(6));
-    return { id, kind: "固定", text: WAR_THEMES[w]?.fixedCard ?? "" };
+    return { id, kind: "固定", text: themes[w]?.fixedCard ?? "" };
   }
   const c = WAR_CARDS.find((x) => x.id === id);
   return c ? { id: c.id, kind: c.kind, text: c.text } : { id, kind: "", text: id };
@@ -53,10 +54,11 @@ export class WarWords {
     if (!w) return;
     const now = this.clock.now();
     const gift = this.isGift(st, week);
+    const themes = await warThemes(this.db);
     const whitelist = WAR_CARDS.filter((c) => c.weeks.includes(week)).map((c) => c.id);
     for (const teamId of w.pairs.flat()) {
       const offered = gift ? this.rng(st, week, teamId).shuffle(whitelist).slice(0, st.params.war.giftOffered ?? 3) : [];
-      const fixed = !gift && WAR_THEMES[week]?.fixedCard ? `fixed:${week}` : null;
+      const fixed = !gift && themes[week]?.fixedCard ? `fixed:${week}` : null;
       await this.db
         .insert(warCards)
         .values({ serverId, week, teamId, offered, received: fixed, revealedAt: gift ? null : now })
@@ -91,6 +93,7 @@ export class WarWords {
     const rows = await this.db.select().from(warCards).where(and(eq(warCards.serverId, serverId), eq(warCards.week, week)));
     const by = new Map(rows.map((r) => [r.teamId, r]));
     const now = this.clock.now();
+    const themes = await warThemes(this.db);
     for (const r of rows) {
       if (r.chosen || (r.offered as string[]).length === 0) continue;
       const pick = this.rng(st, week, `${r.teamId}|auto`).pick(r.offered as string[]);
@@ -111,7 +114,7 @@ export class WarWords {
           childIds: st.teams[me]!.members.filter((m) => m.active).map((m) => m.childId),
           serverId,
           title: "本周收到的词条",
-          body: `第 ${week} 周对手送给你们的词条：${cardText(received)?.text ?? ""}`,
+          body: `第 ${week} 周对手送给你们的词条：${cardText(received, themes)?.text ?? ""}`,
           link: `/season/wars/${week}`,
           dedupeKey: `war_card:${serverId}:${week}`,
         });
@@ -127,6 +130,7 @@ export class WarWords {
     const opponent = pair ? (pair[0] === ctx.teamId ? pair[1] : pair[0]) : null;
     const [row] = await this.db.select().from(warCards).where(and(eq(warCards.serverId, ctx.serverId), eq(warCards.week, week), eq(warCards.teamId, ctx.teamId)));
     const dl = await this.giftDeadline(ctx.serverId, week);
+    const themes = await warThemes(this.db);
     const grades = (teamId: string) => {
       const counts = new Map<number, number>();
       for (const m of st.teams[teamId]!.members.filter((x) => x.active)) counts.set(m.grade, (counts.get(m.grade) ?? 0) + 1);
@@ -134,14 +138,14 @@ export class WarWords {
     };
     return {
       week,
-      theme: WAR_THEMES[week] ? { title: WAR_THEMES[week].title, task: WAR_THEMES[week].task } : null,
+      theme: themes[week] ? { title: themes[week].title, task: themes[week].task } : null,
       gift: this.isGift(st, week),
       giftDeadline: dl?.runAt.toISOString() ?? null,
       opponent: opponent ? { id: opponent, name: st.teams[opponent]!.name, grades: grades(opponent), styles: await this.styles(st, opponent), recentWorks: await this.recentWorks(ctx.serverId, opponent) } : null,
       bye: w!.bye === ctx.teamId,
-      offered: ((row?.offered as string[]) ?? []).map(cardText),
-      chosen: cardText(row?.chosen ?? null),
-      received: row?.revealedAt ? cardText(row.received) : null,
+      offered: ((row?.offered as string[]) ?? []).map((c) => cardText(c, themes)),
+      chosen: cardText(row?.chosen ?? null, themes),
+      received: row?.revealedAt ? cardText(row.received, themes) : null,
       settled: w!.settled,
       /** What winning and losing are worth, with the loser chest's odds (constitution 5: every random mechanism shows its odds). */
       stakes: warStakes(st),

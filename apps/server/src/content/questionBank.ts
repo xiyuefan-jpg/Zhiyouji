@@ -46,6 +46,7 @@ export interface PromptInput {
   rubric?: string | null;
   status?: "draft" | "enabled" | "disabled";
   todo?: boolean;
+  extra?: { fixedCard?: string | null; perPerson?: string | null; summaryTask?: string | null };
 }
 
 type PromptRow = typeof prompts.$inferSelect;
@@ -199,6 +200,7 @@ export class QuestionBank {
         rubric: i.rubric ?? null,
         status: i.status ?? "draft",
         todo: i.todo ?? false,
+        extra: i.extra ?? {},
         createdBy: by,
         createdAt: now,
         updatedAt: now,

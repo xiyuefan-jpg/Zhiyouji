@@ -12,7 +12,7 @@
  */
 
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { children, files, plannedEvents, supplyEntries, supplyResults, type Db } from "@zhiyouji/db";
+import { children, files, plannedEvents, prompts, supplyEntries, supplyResults, type Db } from "@zhiyouji/db";
 import { grainOf, supplyScore } from "@zhiyouji/engine";
 import { SUPPLY_PRESETS, SUPPLY_SCHEDULE, formatBeijing } from "@zhiyouji/shared";
 import type { AiSupplyScorer } from "../ai.js";
@@ -35,9 +35,26 @@ interface SupplyWindow {
   deadline: number;
 }
 
+/** The content library draft for a supply slot (1a, 1b, 2a …). */
 export function supplyTask(supplyId: string) {
   const preset = SUPPLY_PRESETS.find((p) => p.id === SUPPLY_SCHEDULE[supplyId]) ?? SUPPLY_PRESETS[0];
   return { presetId: preset.id, title: preset.title, perPerson: preset.perPerson, summaryTask: preset.summary };
+}
+
+/** The supply slots in season order. */
+export const SUPPLY_SLOTS = Object.keys(SUPPLY_SCHEDULE).sort();
+
+/**
+ * 军需任务 from the question bank: the enabled 军需任务 prompts in creation order
+ * are slots 1a, 1b, 2a, … (body = what each member hands in unless `perPerson`
+ * is set; `summaryTask` = the summary); a slot with none keeps the draft.
+ */
+export async function supplyTaskFor(db: Db, supplyId: string) {
+  const rows = await db.select().from(prompts).where(and(eq(prompts.status, "enabled"), eq(prompts.category, "supply"))).orderBy(asc(prompts.createdAt), asc(prompts.id));
+  const p = rows[SUPPLY_SLOTS.indexOf(supplyId)];
+  if (!p) return supplyTask(supplyId);
+  const x = (p.extra ?? {}) as { perPerson?: string | null; summaryTask?: string | null };
+  return { presetId: p.id, title: p.title, perPerson: x.perPerson?.trim() || p.body, summaryTask: x.summaryTask?.trim() || "小组总结：大家的内容里最值得记住的是什么" };
 }
 
 export class Supply {
@@ -109,7 +126,7 @@ export class Supply {
       out.push({
         supplyId: w.supplyId,
         week: w.week,
-        ...supplyTask(w.supplyId),
+        ...(await supplyTaskFor(this.db, w.supplyId)),
         opensAt: new Date(w.opensAt).toISOString(),
         deadline: new Date(w.deadline).toISOString(),
         open: now < w.deadline,
@@ -173,7 +190,7 @@ export class Supply {
           childIds: missing,
           serverId,
           title: "军需任务你还没交",
-          body: `「${supplyTask(w.supplyId).title}」你自己的那份还没交，${formatBeijing(w.deadline)} 截止。`,
+          body: `「${(await supplyTaskFor(this.db, w.supplyId)).title}」你自己的那份还没交，${formatBeijing(w.deadline)} 截止。`,
           link: `/season/supply`,
           dedupeKey: `supply_due:${serverId}:${w.supplyId}`,
         });
@@ -208,7 +225,7 @@ export class Supply {
       out.push({
         supplyId: w.supplyId,
         week: w.week,
-        ...supplyTask(w.supplyId),
+        ...(await supplyTaskFor(this.db, w.supplyId)),
         opensAt: new Date(w.opensAt).toISOString(),
         deadline: new Date(w.deadline).toISOString(),
         status: now < w.opensAt ? "planned" : now < w.deadline ? "open" : settled ? "settled" : "scoring",
@@ -250,7 +267,7 @@ export class Supply {
     const names = new Map((ids.length ? await this.db.select({ id: children.id, nickname: children.nickname }).from(children).where(inArray(children.id, ids)) : []).map((c) => [c.id, c.nickname]));
     const [r] = await this.db.select().from(supplyResults).where(and(eq(supplyResults.serverId, serverId), eq(supplyResults.supplyId, supplyId), eq(supplyResults.teamId, teamId)));
     return {
-      ...supplyTask(supplyId),
+      ...(await supplyTaskFor(this.db, supplyId)),
       team: st.teams[teamId]!.name,
       entries: entries.map((e) => ({ kind: e.kind, childId: e.childId, nickname: names.get(e.childId) ?? "", text: e.text, files: (e.fileIds as string[]).length, at: e.at.toISOString() })),
       comment: r?.comment ?? null,
@@ -275,7 +292,7 @@ export class Supply {
     if (diff !== 0) {
       const res = await this.store.apply(
         serverId,
-        { type: "adjust_ledger", teamId, currency: "grain", amount: diff, at: this.now(), by, reason: `军需改档（${supplyTask(supplyId).title}）：${now} → ${b.grain} 粮草。${b.reason}` },
+        { type: "adjust_ledger", teamId, currency: "grain", amount: diff, at: this.now(), by, reason: `军需改档（${(await supplyTaskFor(this.db, supplyId)).title}）：${now} → ${b.grain} 粮草。${b.reason}` },
         "admin",
       );
       if (!res.ok) fail(409, String(res.refusal));
@@ -289,7 +306,7 @@ export class Supply {
       childIds: st.teams[teamId]!.members.filter((m) => m.active).map((m) => m.childId),
       serverId,
       title: "军需任务的结果调整了",
-      body: `「${supplyTask(supplyId).title}」管理员复查后改为 ${b.grain} 粮草（${diff > 0 ? `多给 ${diff}` : `收回 ${-diff}`}）。`,
+      body: `「${(await supplyTaskFor(this.db, supplyId)).title}」管理员复查后改为 ${b.grain} 粮草（${diff > 0 ? `多给 ${diff}` : `收回 ${-diff}`}）。`,
       link: "/season/supply",
       dedupeKey: `supply_regrade:${serverId}:${supplyId}:${teamId}:${this.now()}:${now}->${b.grain}`,
     });
@@ -303,7 +320,7 @@ export class Supply {
     if (wait && now < wait.at) return false;
     const st = await this.store.state(serverId);
     const entries = await this.latest(serverId, w.supplyId);
-    const task = supplyTask(w.supplyId);
+    const task = await supplyTaskFor(this.db, w.supplyId);
     const giveUp = now - w.deadline >= SUPPLY_GIVE_UP_AFTER;
     const results = [];
     const rows = [];

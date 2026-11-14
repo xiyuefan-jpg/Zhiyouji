@@ -961,6 +961,11 @@ export const prompts = pgTable(
     status: text("status").notNull().default("draft"),
     /** 待补: still a placeholder. */
     todo: boolean("todo").notNull().default(false),
+    /**
+     * By category: a weekly war theme's fixed card (`fixedCard`, fixed weeks);
+     * a supply task's per-person part and summary task (`perPerson`, `summaryTask`).
+     */
+    extra: jsonb("extra").notNull().default({}),
     createdBy: text("created_by").notNull(),
     createdAt: ts("created_at").notNull(),
     updatedAt: ts("updated_at").notNull(),

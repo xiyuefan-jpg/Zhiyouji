@@ -57,6 +57,7 @@ interface Prompt {
   rubric: string | null;
   status: "draft" | "enabled" | "disabled";
   todo: boolean;
+  extra?: { fixedCard?: string | null; perPerson?: string | null; summaryTask?: string | null };
   /** 本季在哪个服用过 (part 7 §4). */
   usedIn?: { serverId: string; server: string; times: number }[];
 }
@@ -337,6 +338,25 @@ function Prompts({ canEdit }: { canEdit: boolean }) {
           </Form.Item>
           <Form.Item name="questionType" label="题型">
             <Input maxLength={60} />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(a, b) => a.category !== b.category}>
+            {({ getFieldValue }) =>
+              getFieldValue("category") === "war_theme" ? (
+                <Form.Item name={["extra", "fixedCard"]} label="固定词条（固定周用；启用的周战争主题按创建先后对应第 1、2、3… 周）">
+                  <Input maxLength={200} placeholder="例如：预算 ≤30 元，只能用家里已有的东西" />
+                </Form.Item>
+              ) : getFieldValue("category") === "supply" ? (
+                <>
+                  <Typography.Paragraph type="secondary">启用的军需任务按创建先后对应 1a、1b、2a… 每周两次。</Typography.Paragraph>
+                  <Form.Item name={["extra", "perPerson"]} label="每人交什么（不填就用正文）">
+                    <Input.TextArea rows={2} maxLength={500} />
+                  </Form.Item>
+                  <Form.Item name={["extra", "summaryTask"]} label="组长的小结要求">
+                    <Input.TextArea rows={2} maxLength={500} />
+                  </Form.Item>
+                </>
+              ) : null
+            }
           </Form.Item>
         </Form>
       </Modal>
