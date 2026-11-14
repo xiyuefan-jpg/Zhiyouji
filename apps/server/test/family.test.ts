@@ -140,14 +140,18 @@ describe("student login (part 5 A2, part 8 §3.1)", () => {
     await t.close();
   });
 
-  it("the login lasts a year from the last use", async () => {
+});
+
+describe("login lifetime (PRD part 3 §20.7: 180 days, a parameter)", () => {
+  it("stays valid while used within 180 days; 180 days unused → log in again", async () => {
     const t = await setup();
-    const f = await t.family(PHONE);
-    t.clock.advance(300 * DAY);
+    expect(t.cfg.family.sessionDays).toBe(180);
+    const f = await t.family("13812340000", [{ nickname: "小天", grade: 4 }]);
+    t.clock.advance(179 * DAY);
     expect((await t.call("GET", "/v1/me", undefined, f.token)).statusCode).toBe(200);
-    t.clock.advance(300 * DAY);
+    t.clock.advance(179 * DAY);
     expect((await t.call("GET", "/v1/me", undefined, f.token)).statusCode).toBe(200);
-    t.clock.advance(366 * DAY);
+    t.clock.advance(181 * DAY);
     expect((await t.call("GET", "/v1/me", undefined, f.token)).json().error).toBe("session_expired");
     await t.close();
   });

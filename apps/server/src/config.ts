@@ -75,7 +75,7 @@ export function defaultConfig(env: Record<string, string | undefined> = {}): Ser
       remindersPerDay: 5,
     },
     rateLimit: { perMinute: Number(env.RATE_LIMIT_PER_MINUTE ?? 600) },
-    family: { sessionDays: 365, maxChildren: 6 },
+    family: { sessionDays: 180, maxChildren: 6 },
     admin: { idleMinutes: 30, maxSessionHours: 12, maxFailedLogins: 5, lockMinutes: 15, inviteDays: 7 },
     uploads: {
       maxBytes: { video: 500 * 1024 * 1024, audio: 100 * 1024 * 1024, image: 20 * 1024 * 1024, pdf: 50 * 1024 * 1024 },
