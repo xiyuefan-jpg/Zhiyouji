@@ -110,6 +110,8 @@ export function MonitorPage() {
 }
 
 function ServerMonitor({ serverId }: { serverId: string }) {
+  const [movingContest, setMovingContest] = useState<string | null>(null);
+  const [contestAt, setContestAt] = useState<dayjs.Dayjs | null>(null);
   const o = useLoad(() => request<Overview>("GET", `/v1/admin/servers/${serverId}`), [serverId]);
   const d = o.data;
   const teamName = (id: string | null) => (id ? (d?.teams.find((t) => t.id === id)?.name ?? "") : "无主");
@@ -177,6 +179,9 @@ function ServerMonitor({ serverId }: { serverId: string }) {
                     render: (_, c) =>
                       c.status === "active" && (
                         <Space>
+                          <Button size="small" onClick={() => (setMovingContest(c.id), setContestAt(dayjs(c.deadline)))}>
+                            改截止
+                          </Button>
                           <Button size="small" onClick={() => withReason("取消这场争夺，退还进攻方的粮草？", (reason) => request("POST", `/v1/admin/servers/${serverId}/interventions`, { action: "cancel_contest", contestId: c.id, refund: true, reason }), o.reload)}>
                             取消并退粮草
                           </Button>
@@ -190,12 +195,27 @@ function ServerMonitor({ serverId }: { serverId: string }) {
               />
             ),
           },
-          { key: "planned", label: "计划事件", children: <Planned serverId={serverId} /> },
+          { key: "planned", label: "计划事件（周战争、大团战的截止也在这里改）", children: <Planned serverId={serverId} /> },
           { key: "ledger", label: "账本", children: <Ledger serverId={serverId} teams={d.teams} /> },
           { key: "intervene", label: "人工干预", children: <Intervene serverId={serverId} d={d} onDone={o.reload} /> },
           { key: "feed", label: "战报预览", children: <FeedPreview serverId={serverId} /> },
         ]}
       />
+      <Modal
+        open={!!movingContest}
+        title="改这场争夺的截止时间"
+        okText="保存"
+        cancelText="取消"
+        onCancel={() => setMovingContest(null)}
+        onOk={() =>
+          withReason("改截止时间？争夺双方都会收到消息。", (reason) => request("POST", `/v1/admin/servers/${serverId}/interventions`, { action: "set_deadline", target: `contest:${movingContest}`, deadline: contestAt!.toISOString(), reason }), () => {
+            setMovingContest(null);
+            o.reload();
+          })
+        }
+      >
+        <DatePicker showTime aria-label="新的截止时间" value={contestAt} onChange={setContestAt} />
+      </Modal>
     </>
   );
 }

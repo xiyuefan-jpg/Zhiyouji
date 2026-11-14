@@ -210,6 +210,24 @@ describe("每日任务 and 修行日志 (part 5 C1–C7; part 6 T4)", () => {
     await t.close();
   });
 
+  it("AI words the child would read are checked first: a blocked card stays hidden until an admin passes it (part 6 §7)", async () => {
+    const t = await setup(bj("2027-03-10", 16));
+    const k = await kid(t);
+    const boss = await t.adminUser();
+    const pic = await picture(t, k.call);
+    // the fake AI copies the explanation into the card; the fake check blocks "违规"
+    const r = (await k.call("POST", "/v1/daily/submissions", { templateId: 1, evidenceFileIds: [pic], explain: { kind: "text", text: `违规${TEXT}` }, aiNote: "问了 AI" })).json();
+    expect(r.status).toBe("passed");
+    expect(r.feedbackGood).toBe("内容正在检查");
+    expect((await k.call("GET", "/v1/journal/cards")).json().cards).toHaveLength(0);
+    expect((await k.call("GET", "/v1/messages")).json().messages[0].body).toContain("知识卡片正在检查");
+    const q = (await t.call("GET", "/v1/admin/safety", undefined, boss.token)).json().items;
+    expect(q[0]).toMatchObject({ objectKind: "card", status: "pending" });
+    expect((await t.call("POST", `/v1/admin/safety/${q[0].id}/pass`, undefined, boss.token)).statusCode).toBe(200);
+    expect((await k.call("GET", "/v1/journal/cards")).json().cards).toHaveLength(1);
+    await t.close();
+  });
+
   it("admins export the daily tasks as CSV (in the view log)", async () => {
     const t = await setup(bj("2027-03-10", 16));
     const k = await kid(t);

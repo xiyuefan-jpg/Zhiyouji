@@ -1,0 +1,1 @@
+ALTER TABLE "human_scores" ADD COLUMN "reasons" jsonb DEFAULT '{}'::jsonb NOT NULL;

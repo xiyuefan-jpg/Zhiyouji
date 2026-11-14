@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beijingInstant } from "@zhiyouji/engine";
-import { reviewAssignments, settledScores } from "@zhiyouji/db";
+import { humanScores, reviewAssignments, settledScores } from "@zhiyouji/db";
 import { startBackend } from "./backend";
 import { account, login, renderConsole, seasonWithWork } from "./helpers";
 
@@ -24,11 +24,21 @@ describe("admin console: 复核 (part 7 §5)", () => {
     for (const [dim, n] of [["准确", 20], ["教会受众", 25], ["深度", 15], ["呈现与创意", 5], ["人机协作", 5]] as const) {
       await user.type(screen.getByLabelText(`${dim}得分`), String(n));
     }
-    await user.type(screen.getByLabelText("评语"), "原理讲对了，例子可以更贴近受众。");
+    // the comment and each dimension's comment start from the AI's draft (part 7 §5.2)
+    const box = screen.getByLabelText("评语") as HTMLTextAreaElement;
+    expect(box.value).toContain("示例评语（假的 AI）");
+    expect((screen.getByLabelText("准确评语") as HTMLTextAreaElement).value).toContain("示例理由");
+    await user.clear(box);
+    await user.type(box, "原理讲对了，例子可以更贴近受众。");
+    await user.clear(screen.getByLabelText("教会受众评语"));
+    await user.type(screen.getByLabelText("教会受众评语"), "受众能听懂，但少了一个生活里的例子。");
     await user.click(screen.getByRole("button", { name: "交 分" }));
     expect((await screen.findAllByText("交分 70 分？")).length).toBeGreaterThan(0);
     await user.click((await screen.findAllByRole("button", { name: "交 分" })).at(-1)!);
     await waitFor(async () => expect((await be.db.select().from(settledScores)).map((x) => x.score)).toEqual([70]));
+    const [h] = await be.db.select().from(humanScores);
+    expect(h!.comment).toBe("原理讲对了，例子可以更贴近受众。");
+    expect((h!.reasons as Record<string, string>).teach).toBe("受众能听懂，但少了一个生活里的例子。");
     await be.stop();
   });
 });

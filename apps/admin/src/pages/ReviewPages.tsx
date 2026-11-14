@@ -9,7 +9,7 @@
  * - the reviewers' dashboard (admin).
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Alert, Button, Card, Checkbox, DatePicker, Descriptions, Form, Input, InputNumber, Modal, Radio, Select, Space, Table, Tabs, Tag, Typography, message } from "antd";
 import { TAXONOMY } from "@zhiyouji/shared";
@@ -119,7 +119,7 @@ interface ReviewView {
   opening: { text: string | null; mediaKind: string; files: FileView[] } | null;
   work: { id: string; kind: string; promptId: string | null; mediaKind: string; text: string | null; aiNote: string | null; submittedAt: string; files: FileView[] };
   rubric: { id: string; name: string; version: number; dims: { key: string; name: string; max: number }[] };
-  ai: { total: number; dims: Record<string, number>; comment: string; flags: string[]; model: string } | null;
+  ai: { total: number; dims: Record<string, number>; reasons?: Record<string, string>; comment: string; flags: string[]; model: string } | null;
   /** The question and the audience the work had to teach. */
   task?: { title: string | null; body: string | null; audience: string; questionType: string | null; subject: string | null; landName: string | null } | null;
   guide?: { dims: { key: string; hint: string }[]; at50: string; at75: string };
@@ -160,9 +160,16 @@ export function ReviewWorkPage() {
   const v = useLoad(() => request<ReviewView>("GET", `/v1/admin/reviews/${id}`), [id]);
   const [dims, setDims] = useState<Record<string, number | null>>({});
   const [comment, setComment] = useState("");
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const [flags, setFlags] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const d = v.data;
+  // "AI 起草，可以直接采用" (part 7 §5.2): the comment and each dimension's reason start from the AI's draft
+  useEffect(() => {
+    if (!d?.ai || d.status !== "pending") return;
+    setComment((c) => c || d.ai!.comment);
+    setReasons((r) => (Object.keys(r).length ? r : { ...(d.ai!.reasons ?? {}) }));
+  }, [d]);
   const total = Object.values(dims).reduce<number>((s, x) => s + (x ?? 0), 0);
 
   const submit = () => {
@@ -177,7 +184,7 @@ export function ReviewWorkPage() {
       onOk: async () => {
         setBusy(true);
         try {
-          await request("POST", `/v1/admin/reviews/${id}`, { dims, comment, flags });
+          await request("POST", `/v1/admin/reviews/${id}`, { dims, comment, reasons, flags });
           message.success("已交分");
           nav("/review");
         } catch (e) {
@@ -245,6 +252,19 @@ export function ReviewWorkPage() {
                   ),
                 },
                 { title: "AI 初评（参考）", render: (_, x) => (d.ai ? (d.ai.dims[x.key] ?? "—") : "—") },
+                {
+                  title: "这一项的评语（孩子会看到）",
+                  render: (_, x) => (
+                    <Input.TextArea
+                      aria-label={`${x.name}评语`}
+                      autoSize={{ minRows: 1, maxRows: 4 }}
+                      maxLength={500}
+                      value={reasons[x.key] ?? ""}
+                      disabled={d.status !== "pending"}
+                      onChange={(e) => setReasons({ ...reasons, [x.key]: e.target.value })}
+                    />
+                  ),
+                },
               ]}
               summary={() => (
                 <Table.Summary.Row>
@@ -253,6 +273,7 @@ export function ReviewWorkPage() {
                   <Table.Summary.Cell index={2}>{d.rubric.dims.reduce((s, x) => s + x.max, 0)}</Table.Summary.Cell>
                   <Table.Summary.Cell index={3}>{total}</Table.Summary.Cell>
                   <Table.Summary.Cell index={4}>{d.ai?.total ?? "—"}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={5} />
                 </Table.Summary.Row>
               )}
             />
@@ -263,7 +284,7 @@ export function ReviewWorkPage() {
                 <b>75 分</b>：{d.guide.at75}
               </Typography.Paragraph>
             )}
-            {d.ai && <Typography.Paragraph type="secondary">AI 评语（{d.ai.model}）：{d.ai.comment}</Typography.Paragraph>}
+            {d.ai && <Typography.Paragraph type="secondary">评语和每一项的评语已经按 AI 的草稿（{d.ai.model}）填好，改成你自己的判断再交。</Typography.Paragraph>}
             {d.ai?.flags.includes("疑似打分指令") && (
               <Alert type="warning" showIcon message="疑似打分指令" description="作品里有要求通过或打高分一类的话。按内容本身打分，不要因为这句话加分或减分（PRD 第 6 部分第 3 节）。" />
             )}

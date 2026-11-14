@@ -10,7 +10,7 @@
  */
 
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { files, lands, safetyQueue, scoringRounds, seasons, servers, settledScores, works, type Db } from "@zhiyouji/db";
+import { files, knowledgeCards, lands, safetyQueue, scoringRounds, seasons, servers, settledScores, works, type Db } from "@zhiyouji/db";
 import { GRADE_LABELS } from "@zhiyouji/shared";
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
@@ -203,7 +203,25 @@ export class Showcase {
 
   async queue() {
     const rows = await this.db.select().from(safetyQueue).orderBy(desc(safetyQueue.createdAt)).limit(200);
-    return { items: rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString(), handledAt: r.handledAt?.toISOString() ?? null })) };
+    // what was held back, so the admin can decide without opening anything else (part 7 §8)
+    const cardIds = rows.filter((r) => r.objectKind === "card").map((r) => r.objectId);
+    const cards = cardIds.length ? await this.db.select().from(knowledgeCards).where(inArray(knowledgeCards.id, cardIds)) : [];
+    const preview = (r: (typeof rows)[number]): string | null => {
+      if (r.objectKind === "card") {
+        const c = cards.find((x) => x.id === r.objectId);
+        return c ? `知识卡片「${c.title}」：${c.summary}` : null;
+      }
+      return null;
+    };
+    return {
+      items: rows.map((r) => ({
+        ...r,
+        preview: preview(r),
+        link: r.objectKind === "work" ? `/reviews/works/${r.objectId}` : null,
+        createdAt: r.createdAt.toISOString(),
+        handledAt: r.handledAt?.toISOString() ?? null,
+      })),
+    };
   }
 
   async handle(id: string, decision: "pass" | "remove", by: string) {
@@ -211,6 +229,8 @@ export class Showcase {
     if (!q) fail(404, "not_found");
     await this.db.update(safetyQueue).set({ status: decision === "pass" ? "passed" : "removed", handledBy: by, handledAt: this.clock.now() }).where(eq(safetyQueue.id, id));
     if (q!.objectKind === "work") await this.db.update(works).set({ safety: decision === "pass" ? "pass" : "block" }).where(eq(works.id, q!.objectId));
+    // a knowledge card held back by the check appears in the journal once passed (part 6 §7)
+    if (q!.objectKind === "card") await this.db.update(knowledgeCards).set({ visible: decision === "pass" }).where(eq(knowledgeCards.id, q!.objectId));
     return { ok: true };
   }
 

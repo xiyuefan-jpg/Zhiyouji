@@ -9,6 +9,8 @@
  * operation log.
  */
 
+import { formatBeijing } from "@zhiyouji/shared";
+import type { Notifier } from "../notify/notifier.js";
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { calendarDays, children, debates, feed, lands as landRows, opLog, paramVersions, plannedEvents, seasonPlayers, seasons, servers, teamMembers, type Db } from "@zhiyouji/db";
 import {
@@ -25,6 +27,7 @@ import {
   type Role,
   type SeasonEvent,
   type SeasonParams,
+  type SeasonState,
 } from "@zhiyouji/engine";
 import type { Clock } from "../clock.js";
 import { fail, HttpError } from "../http/errors.js";
@@ -42,7 +45,8 @@ export type Intervention =
   | { action: "remove_item"; teamId: string; uid: string; reason: string }
   | { action: "cancel_contest"; contestId: string; refund: boolean; reason: string }
   | { action: "set_role"; teamId: string; role: Role; childId: string | null; reason: string }
-  | { action: "withdraw"; childId: string; reason: string };
+  | { action: "withdraw"; childId: string; reason: string }
+  | { action: "set_deadline"; target: string; deadline: Date; reason: string };
 
 /** Flattened differences between two parameter sets: "dailyTask.grainPerTask": [3, 5]. */
 export function paramsDiff(a: unknown, b: unknown, path = ""): Record<string, [unknown, unknown]> {
@@ -62,6 +66,7 @@ export class SeasonControl {
     private readonly store: SeasonStore,
     private readonly scheduler: Scheduler,
     private readonly seasons: SeasonAdmin,
+    private readonly notifier?: Notifier,
   ) {}
 
   private async log(actor: string, action: string, object: string, before: unknown, after: unknown, reason?: string | null): Promise<void> {
@@ -222,6 +227,13 @@ export class SeasonControl {
     const [row] = await this.db.select().from(plannedEvents).where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.key, key)));
     if (!row) fail(404, "not_found");
     if (row!.status !== "pending") fail(409, "not_pending");
+    // the war and big-battle deadlines live in the season state; moving their rows moves them (§16)
+    const target = row!.kind === "war_deadline" ? `war:${(row!.params as { week?: number }).week ?? key.split(":")[1]}` : row!.kind === "battle_deadline" ? "battle" : null;
+    const st = target ? await this.store.state(serverId) : null;
+    if (target && st && (target === "battle" ? st.bigBattle : st.wars[Number(target.slice(4))])) {
+      const r = await this.apply(serverId, { type: "set_deadline", target, deadline: +runAt, at: +this.clock.now(), by, reason }, by);
+      await this.afterDeadlineMoved(serverId, r.state, target, +runAt);
+    }
     await this.db.update(plannedEvents).set({ runAt }).where(eq(plannedEvents.id, row!.id));
     await this.log(by, "planned_move", `server:${serverId}/planned:${key}`, { runAt: row!.runAt.toISOString() }, { runAt: runAt.toISOString() }, reason);
     return { key, runAt: runAt.toISOString() };
@@ -298,8 +310,12 @@ export class SeasonControl {
       case "withdraw":
         event = { type: "member_leaves", childId: i.childId, at };
         break;
+      case "set_deadline":
+        event = { type: "set_deadline", target: i.target, deadline: +i.deadline, at, by, reason: i.reason };
+        break;
     }
     const r = await this.apply(serverId, event!, by);
+    if (i.action === "set_deadline") await this.afterDeadlineMoved(serverId, r.state, i.target, +i.deadline);
     if (i.action === "withdraw") {
       const server = await this.server(serverId);
       await this.db
@@ -312,6 +328,43 @@ export class SeasonControl {
     const { reason, action, ...detail } = i;
     await this.log(by, `intervene_${action}`, `server:${serverId}`, null, detail, reason);
     return { ok: true, seq: r.seq };
+  }
+
+  /**
+   * A moved deadline: the planned row that shows it follows, and the children who have to hand
+   * something in are told (part 8 §1.2 "截止时间变了").
+   */
+  private async afterDeadlineMoved(serverId: string, st: SeasonState, target: string, deadline: number): Promise<void> {
+    const rowKey = target.startsWith("war:") ? `war_deadline:${target.slice(4)}` : target === "battle" ? "battle_deadline" : null;
+    if (rowKey)
+      await this.db
+        .update(plannedEvents)
+        .set({ runAt: new Date(deadline) })
+        .where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.key, rowKey), eq(plannedEvents.status, "pending")));
+    let teams: string[] = [];
+    let what = "";
+    if (target.startsWith("contest:")) {
+      const c = st.contests[target.slice(8)];
+      if (c) teams = [c.defender, ...c.attackers.map((a) => a.teamId)];
+      what = "区域争夺的作品";
+    } else if (target.startsWith("war:")) {
+      teams = (st.wars[Number(target.slice(4))]?.pairs ?? []).flat();
+      what = `第 ${target.slice(4)} 周周战争的作品`;
+    } else {
+      teams = st.bigBattle ? [...st.bigBattle.camps.a, ...st.bigBattle.camps.b] : [];
+      what = "大团战的作品";
+    }
+    const childIds = teams.flatMap((t) => st.teams[t]?.members.filter((m) => m.active).map((m) => m.childId) ?? []);
+    if (childIds.length)
+      await this.notifier?.notify({
+        kind: "system",
+        childIds,
+        serverId,
+        title: "截止时间改了",
+        body: `${what}截止时间改到 ${formatBeijing(deadline)}（北京时间）。`,
+        link: target.startsWith("contest:") ? `/season/contests/${target.slice(8)}` : "/team/works",
+        dedupeKey: `deadline_moved:${serverId}:${target}:${deadline}`,
+      });
   }
 
   // ---- final settlement (part 3 §15; part 7 §9) --------------------------------------------------------

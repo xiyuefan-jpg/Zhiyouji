@@ -82,6 +82,8 @@ export const reviewSubmit = z.object({
   /** Score per rubric dimension key, e.g. { accuracy: 20, teach: 25, … }. */
   dims: z.record(z.string(), z.number().int().min(0).max(100)),
   comment: z.string().trim().min(1).max(3000),
+  /** Per dimension: what was good, where points went, how to do better (shown to the team, part 5 E7). */
+  reasons: z.record(z.string(), z.string().trim().max(500)).optional(),
   flags: z.array(z.enum(["plagiarism", "inappropriate", "needs_admin"])).max(3).optional(),
 });
 export const reassignRequest = z.object({ reviewerId: z.uuid() });

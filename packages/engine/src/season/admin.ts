@@ -10,6 +10,8 @@ import { grainConversion } from "../final.js";
 import { computeScholarship } from "../scholarship.js";
 import { dateOfSeasonDay, publicationTime, type Instant } from "../time.js";
 import type { SeasonParams } from "../params.js";
+import { warDeadline } from "./war.js";
+import { battleDeadline } from "./bigBattle.js";
 import {
   addGrain,
   addPoints,
@@ -45,7 +47,13 @@ export type AdminRefusal =
   | "too_early"
   | "already_done"
   | "battle_not_settled"
-  | "contest_active";
+  | "contest_active"
+  | "unknown_contest"
+  | "not_active"
+  | "bad_week"
+  | "not_formed"
+  | "already_settled"
+  | "bad_deadline";
 
 // ---- roles (§5) ---------------------------------------------------------
 
@@ -271,4 +279,40 @@ export function finalizeSeason(input: SeasonState, e: { at: Instant; poolYuan: n
   const scholarship = computeScholarship(ranking, e.poolYuan, s.params).map((l) => ({ teamId: l.teamId, yuan: l.yuan }));
   s.final = { at: e.at, ranking, scholarship, poolYuan: e.poolYuan };
   return { ok: true, state: s, notices: [notice("season_final", e.at, false, { ranking, scholarship, points: Object.fromEntries(s.teamOrder.map((t) => [t, pointsOf(s, t)])) })] };
+}
+
+/**
+ * §16 "单场争夺、某周周战争、大团战可以改截止时间": move one deadline (later or earlier,
+ * but not into the past). A contest's join deadline never ends after its deadline.
+ * Supply tasks move through their planned rows in the server.
+ */
+export function setDeadline(
+  input: SeasonState,
+  e: { target: string; deadline: Instant; at: Instant; by: string; reason: string },
+): Result<AdminRefusal> {
+  if (!e.reason.trim()) return { ok: false, refusal: "needs_reason" };
+  if (!Number.isFinite(e.deadline) || e.deadline <= e.at) return { ok: false, refusal: "bad_deadline" };
+  const s = cloneState(input);
+  let before: Instant;
+  if (e.target.startsWith("contest:")) {
+    const c = s.contests[e.target.slice(8)];
+    if (!c) return { ok: false, refusal: "unknown_contest" };
+    if (c.status !== "active") return { ok: false, refusal: "not_active" };
+    before = c.deadline;
+    c.deadline = e.deadline;
+    if (c.joinDeadline > e.deadline) c.joinDeadline = e.deadline;
+  } else if (e.target.startsWith("war:")) {
+    const week = Number(e.target.slice(4));
+    const w = s.wars[week];
+    if (!Number.isInteger(week) || !w) return { ok: false, refusal: "bad_week" };
+    if (w.settled) return { ok: false, refusal: "already_settled" };
+    before = warDeadline(s, week);
+    (s.deadlines ??= {})[e.target] = e.deadline;
+  } else if (e.target === "battle") {
+    if (!s.bigBattle) return { ok: false, refusal: "not_formed" };
+    if (s.bigBattle.settled) return { ok: false, refusal: "already_settled" };
+    before = battleDeadline(s);
+    (s.deadlines ??= {}).battle = e.deadline;
+  } else return { ok: false, refusal: "bad_deadline" };
+  return { ok: true, state: s, notices: [notice("deadline_changed", e.at, false, { target: e.target, before, after: e.deadline, by: e.by, reason: e.reason })] };
 }

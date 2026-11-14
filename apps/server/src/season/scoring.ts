@@ -65,6 +65,8 @@ function slotsOf(key: string): string[] {
 
 const baseSlot = (slot: string) => slot.replace(/:open$/, "");
 
+const FLAG_TEXT: Record<string, string> = { plagiarism: "疑似抄袭", inappropriate: "内容不当", needs_admin: "需要管理员看" };
+
 export class Scoring {
   constructor(
     private readonly db: Db,
@@ -363,14 +365,24 @@ export class Scoring {
         ),
       },
       rubric,
-      ai: ai ? { total: ai.total, dims: ai.dims, comment: ai.comment, flags: ai.flags, model: ai.model } : null,
+      // per dimension: the AI's score and its reason (the reviewer's draft, part 7 §5.2)
+      ai: ai
+        ? {
+            total: ai.total,
+            dims: Object.fromEntries(((ai.dims as { key: string; score: number }[]) ?? []).map((x) => [x.key, x.score])),
+            reasons: Object.fromEntries(((ai.dims as { key: string; reason?: string }[]) ?? []).map((x) => [x.key, x.reason ?? ""])),
+            comment: ai.comment,
+            flags: ai.flags,
+            model: ai.model,
+          }
+        : null,
       /** Children whose data this is (for the view log). */
       members: w.members as string[],
     };
   }
 
   /** Submit a score: final (part 7 §5.2: corrections are an admin ruling). */
-  async submitScore(reviewerId: string, assignmentId: string, b: { dims: Record<string, number>; comment: string; flags?: string[] }) {
+  async submitScore(reviewerId: string, assignmentId: string, b: { dims: Record<string, number>; comment: string; reasons?: Record<string, string>; flags?: string[] }) {
     const { a, w } = await this.assignment(reviewerId, assignmentId);
     if (a.status !== "pending") fail(409, a.status === "timeout" ? "review_timeout" : "review_done");
     const st = await this.store.state(w.serverId);
@@ -378,7 +390,18 @@ export class Scoring {
     if (!checkDims(rubric, b.dims)) fail(400, "bad_dims");
     const total = Object.values(b.dims).reduce((s, v) => s + v, 0);
     const now = this.clock.now();
-    await this.db.insert(humanScores).values({ assignmentId, workId: w.id, reviewerId, total, dims: b.dims, comment: b.comment, flags: b.flags ?? [], at: now });
+    const reasons = Object.fromEntries(Object.entries(b.reasons ?? {}).filter(([k, v]) => rubric.dims.some((d) => d.key === k) && v.trim()));
+    await this.db.insert(humanScores).values({ assignmentId, workId: w.id, reviewerId, total, dims: b.dims, comment: b.comment, reasons, flags: b.flags ?? [], at: now });
+    // part 7 §5.2 "标记：疑似抄袭、内容不当、需要管理员看" → the admins look at it
+    if (b.flags?.length)
+      await this.notifier.notifyAdmins({
+        kind: "review_flagged",
+        title: "复核员标记了一件作品",
+        body: `标记：${b.flags.map((f) => FLAG_TEXT[f] ?? f).join("、")}。请打开作品查看${b.flags.includes("inappropriate") ? "，必要时到内容安全队列处理" : ""}。`,
+        link: `/reviews/works/${w.id}`,
+        dedupeKey: `review_flagged:${assignmentId}`,
+        roles: ["admin"],
+      });
     await this.db.update(reviewAssignments).set({ status: "done", doneAt: now }).where(eq(reviewAssignments.id, assignmentId));
     const settled = (await this.settledOf([w.id])).get(w.id);
     const round = await this.roundOfWork(w);
@@ -731,7 +754,7 @@ export class Scoring {
         name: d.name,
         max: d.max,
         score: human ? ((human.h.dims as Record<string, number>)[d.key] ?? null) : ((ai?.dims as { key: string; score: number; reason: string }[] | undefined)?.find((x) => x.key === d.key)?.score ?? null),
-        reason: human ? null : ((ai?.dims as { key: string; reason: string }[] | undefined)?.find((x) => x.key === d.key)?.reason ?? null),
+        reason: human ? ((human.h.reasons as Record<string, string> | null)?.[d.key] ?? null) : ((ai?.dims as { key: string; reason: string }[] | undefined)?.find((x) => x.key === d.key)?.reason ?? null),
       }));
       detail = { score: s.score, basis: s.basis, dims, comment: human?.h.comment ?? ai?.comment ?? null };
     }

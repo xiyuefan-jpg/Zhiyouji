@@ -4,7 +4,7 @@
  * the event log are the source of truth; §16: re-running is idempotent).
  */
 
-import { adjustLedger, adminGiveItem, adminRemoveItem, adminSetLandOwner, adminSetTeamRole, claimTeamRole, finalizeSeason, memberLeaves, pauseSeason, resumeSeason, reverseEntry, setLandPrompts, setParams, systemAssignLeaders, takeOverLeader, transferTeamRole } from "./admin.js";
+import { adjustLedger, setDeadline, adminGiveItem, adminRemoveItem, adminSetLandOwner, adminSetTeamRole, claimTeamRole, finalizeSeason, memberLeaves, pauseSeason, resumeSeason, reverseEntry, setLandPrompts, setParams, systemAssignLeaders, takeOverLeader, transferTeamRole } from "./admin.js";
 import { formBigBattle, lockLines, settleBigBattle, submitLines, useBattleItem } from "./bigBattle.js";
 import { adminCancelContest, joinContest, resettleContest, settleContest, startContest } from "./contests.js";
 import { settleDay } from "./daily.js";
@@ -75,6 +75,7 @@ const HANDLERS = {
   pause: pauseSeason,
   resume: resumeSeason,
   adjust_ledger: adjustLedger,
+  set_deadline: setDeadline,
   reverse_entry: reverseEntry,
   set_land_owner: adminSetLandOwner,
   give_item: adminGiveItem,

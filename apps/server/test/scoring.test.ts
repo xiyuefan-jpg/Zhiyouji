@@ -57,7 +57,16 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
     expect((await t.db.select().from(viewLog)).map((v) => v.childId).sort()).toEqual([t.a1, t.b1].sort());
 
     expect((await t.call("POST", `/v1/admin/reviews/${queue[0].assignmentId}`, { dims: { ...A_DIMS, accuracy: 26 }, comment: "x" }, token)).json().error).toBe("bad_dims");
-    expect((await t.call("POST", `/v1/admin/reviews/${queue[0].assignmentId}`, { dims: A_DIMS, comment: "原理讲对了，例子可以更贴近受众。" }, token)).json().total).toBe(70);
+    // the AI's draft per dimension comes with the view
+    expect(view.ai.dims.accuracy).toBeGreaterThan(0);
+    expect(view.ai.reasons.accuracy).toContain("示例理由");
+    await t.adminUser("flags-admin@example.com");
+    expect(
+      (await t.call("POST", `/v1/admin/reviews/${queue[0].assignmentId}`, { dims: A_DIMS, comment: "原理讲对了，例子可以更贴近受众。", reasons: { teach: "受众能听懂，少了一个生活里的例子。", bogus: "x" }, flags: ["needs_admin"] }, token)).json().total,
+    ).toBe(70);
+    // a flag goes to the admins (part 7 §5.2)
+    const flagged = (await t.db.select().from(messages).where(eq(messages.type, "review_flagged")))[0]!;
+    expect(flagged.body).toContain("需要管理员看");
     // the defender did not answer, 70 ≥ 50: the attacker takes the land
     const after = await t.services.store.state(t.serverId);
     expect(after.contests[t.contestId]!.status).toBe("settled");
@@ -69,6 +78,8 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
     expect(res.settled).toBe(true);
     expect(res.mine).toMatchObject({ score: 70, basis: "human", comment: "原理讲对了，例子可以更贴近受众。" });
     expect(res.mine.dims.map((d: { name: string; score: number }) => [d.name, d.score])).toEqual([["准确", 20], ["教会受众", 25], ["深度", 15], ["呈现与创意", 5], ["人机协作", 10 - 5]]);
+    expect(res.mine.dims.find((d: { name: string }) => d.name === "教会受众").reason).toBe("受众能听懂，少了一个生活里的例子。");
+    expect(res.mine.dims.find((d: { name: string }) => d.name === "准确").reason).toBeNull();
     expect((await a1("GET", `/v1/season/works/contest:${contest2}/result`)).json().settled).toBe(false);
 
     // the other review: reminder 6 hours before the limit, then the AI score at the limit

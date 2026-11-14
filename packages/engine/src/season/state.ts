@@ -210,6 +210,8 @@ export interface SeasonState {
   paused: boolean;
   /** Pause intervals; open while `until` is null (§16: scheduled events shift by the paused time). */
   pauses: { from: Instant; until: Instant | null; reason?: string }[];
+  /** Deadlines an admin moved (§16 "改截止时间"): "war:<week>" or "battle" → the new deadline. */
+  deadlines?: Record<string, Instant>;
   /** Counter for deterministic ids. */
   seq: number;
 }

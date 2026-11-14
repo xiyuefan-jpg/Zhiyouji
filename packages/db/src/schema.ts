@@ -666,6 +666,8 @@ export const humanScores = pgTable("human_scores", {
   total: integer("total").notNull(),
   dims: jsonb("dims").notNull(),
   comment: text("comment").notNull(),
+  /** One comment per rubric dimension (哪里好、哪里扣分), starting from the AI's draft (part 7 §5.2). */
+  reasons: jsonb("reasons").notNull().default({}),
   flags: jsonb("flags").notNull().default([]),
   at: ts("at").notNull(),
 });

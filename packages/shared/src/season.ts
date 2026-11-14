@@ -129,6 +129,8 @@ export const interventionRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("cancel_contest"), contestId: z.string().min(1).max(40), refund: z.boolean(), reason }),
   z.object({ action: z.literal("set_role"), teamId: z.uuid(), role: z.enum(["leader", "deputy"]), childId: z.uuid().nullable(), reason }),
   z.object({ action: z.literal("withdraw"), childId: z.uuid(), reason }),
+  /** §16 改截止时间: "contest:<id>", "war:<week>" or "battle". */
+  z.object({ action: z.literal("set_deadline"), target: z.string().regex(/^(contest:[A-Za-z0-9]{1,40}|war:[1-9]|battle)$/), deadline: z.coerce.date(), reason }),
 ]);
 
 export const opLogQuery = z.object({

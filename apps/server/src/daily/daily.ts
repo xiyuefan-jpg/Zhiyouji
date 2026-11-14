@@ -17,7 +17,8 @@
 import type { MediaPipeline } from "../media.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, ilike, inArray, lt, lte, or } from "drizzle-orm";
-import { dailyReviews, dailySubmissions, files, knowledgeCards, type Db } from "@zhiyouji/db";
+import { dailyReviews, dailySubmissions, files, knowledgeCards, safetyQueue, type Db } from "@zhiyouji/db";
+import type { ContentSafety } from "../providers.js";
 import { beijingDate, seasonDayOf, seasonWeekOf } from "@zhiyouji/engine";
 import {
   DAILY_TEMPLATES,
@@ -49,6 +50,10 @@ export const DAILY_RETRIES_PER_DAY = 2;
 
 type SubRow = typeof dailySubmissions.$inferSelect;
 
+/** What a child sees while the AI's words are being checked (part 6 §7 "内容正在检查"). */
+const CHECKING_TEXT = "内容正在检查";
+const SAFE_FAIL_REASON = "讲解还差一点：说一说为什么会这样，再举一个你自己想到的例子。";
+
 export class DailyTasks {
   constructor(
     private readonly db: Db,
@@ -60,7 +65,18 @@ export class DailyTasks {
     private readonly store: SeasonStore,
     private readonly play: SeasonPlay,
     private readonly media?: MediaPipeline,
+    private readonly safety?: ContentSafety,
   ) {}
+
+  /**
+   * Part 6 §7: the AI's words a child will read (knowledge card, feedback, the reason it did not
+   * pass) are checked before they are shown. Returns the labels when blocked, null when fine.
+   */
+  private async blocked(texts: (string | null | undefined)[]): Promise<string[] | null> {
+    if (!this.safety) return null;
+    const r = await this.safety.check({ texts: texts.filter((x): x is string => !!x), files: [] });
+    return r.pass ? null : r.labels;
+  }
 
   private now(): number {
     return +this.clock.now();
@@ -240,7 +256,20 @@ export class DailyTasks {
   }
 
   /** Store a review (AI or person) and carry out what follows: card, grain, message. */
-  private async decideWith(s: SubRow, r: DailyReviewResult, by: string): Promise<void> {
+  private async queueSafety(objectKind: "card" | "daily_task", objectId: string, labels: string[]): Promise<void> {
+    await this.db.insert(safetyQueue).values({ objectKind, objectId, labels, createdAt: this.clock.now() }).onConflictDoNothing();
+    await this.notifier.notifyAdmins({
+      kind: "safety_block",
+      title: "内容安全不通过",
+      body: objectKind === "card" ? "一张 AI 写的知识卡片没有通过内容安全检查，孩子暂时看不到，请在内容安全队列里处理。" : "一条 AI 写的每日任务反馈没有通过内容安全检查，孩子看到的是通用的说法，请在内容安全队列里看一下。",
+      link: `/safety`,
+      dedupeKey: `safety:${objectId}`,
+      roles: ["admin"],
+    });
+  }
+
+  private async decideWith(s: SubRow, input: DailyReviewResult, by: string): Promise<void> {
+    let r = input;
     const now = this.now();
     const mainTag = isKnownTag(r.mainTag) ? r.mainTag : `其他/${r.mainTag}`;
     const difficulty = Math.max(1, Math.min(6, Math.round(r.difficulty)));
@@ -263,8 +292,19 @@ export class DailyTasks {
     });
     let grain: number | null = null;
     let counted: boolean | null = null;
+    // AI-written words for the child pass the content check first (part 6 §7)
+    const labels = await this.blocked(r.passed ? [r.card.title, r.card.summary, r.feedbackGood, r.feedbackBetter] : [r.failReason, r.feedbackGood, r.feedbackBetter]);
+    if (labels) {
+      r = r.passed
+        ? { ...r, feedbackGood: CHECKING_TEXT, feedbackBetter: CHECKING_TEXT }
+        : { ...r, failReason: SAFE_FAIL_REASON, feedbackGood: CHECKING_TEXT, feedbackBetter: CHECKING_TEXT };
+    }
     if (r.passed) {
-      await this.db.insert(knowledgeCards).values({ childId: s.childId, submissionId: s.id, title: [...r.card.title].slice(0, 15).join(""), summary: r.card.summary, tag: mainTag, difficulty, day: s.day, createdAt: new Date(now) });
+      const [card] = await this.db
+        .insert(knowledgeCards)
+        .values({ childId: s.childId, submissionId: s.id, title: [...r.card.title].slice(0, 15).join(""), summary: r.card.summary, tag: mainTag, difficulty, day: s.day, visible: !labels, createdAt: new Date(now) })
+        .returning();
+      if (labels) await this.queueSafety("card", card!.id, labels);
       const season = await this.countInSeason(s, now);
       grain = season?.grain ?? null;
       counted = season?.counted ?? null;
@@ -281,8 +321,11 @@ export class DailyTasks {
         decidedAt: new Date(now),
       })
       .where(eq(dailySubmissions.id, s.id));
+    if (labels && !r.passed) await this.queueSafety("daily_task", s.id, labels);
     const body = r.passed
-      ? counted
+      ? labels
+        ? "通过了！知识卡片正在检查，检查完就会出现在修行日志里。"
+        : counted
         ? `通过了！本组粮草 +${grain}。`
         : counted === false
           ? "通过了！今天或本周已经计满，这次记进修行日志。"

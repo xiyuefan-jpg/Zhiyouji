@@ -35,7 +35,7 @@ export function warPairingAt(s: SeasonState, week: number): Instant {
 }
 
 export function warDeadline(s: SeasonState, week: number): Instant {
-  return afterPauses(s, deadlineOn(dateOfSeasonDay(s.opening, 7 * week), s.params));
+  return s.deadlines?.[`war:${week}`] ?? afterPauses(s, deadlineOn(dateOfSeasonDay(s.opening, 7 * week), s.params));
 }
 
 function validWeek(s: SeasonState, week: number): boolean {

@@ -19,7 +19,7 @@ import { useAdmin } from "../auth";
 import { Time } from "../time";
 import { downloadText, useLoad } from "../useLoad";
 import { ServerPicker, SOURCE_TEXT } from "./MonitorPages";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 
 const errText = (e: unknown) => (e instanceof ApiError ? e.message : String(e));
 const run = async (fn: () => Promise<unknown>, ok: string, then?: () => void) => {
@@ -395,7 +395,9 @@ function Announcements() {
 }
 
 function SafetyQueue({ isAdmin }: { isAdmin: boolean }) {
-  const q = useLoad(() => request<{ items: { id: string; objectKind: string; objectId: string; labels: string[]; status: string; forwardNote: string | null; createdAt: string }[] }>("GET", "/v1/admin/safety"));
+  const q = useLoad(() =>
+    request<{ items: { id: string; objectKind: string; objectId: string; labels: string[]; status: string; forwardNote: string | null; preview?: string | null; link?: string | null; createdAt: string }[] }>("GET", "/v1/admin/safety"),
+  );
   return (
     <Table
       rowKey="id"
@@ -407,6 +409,7 @@ function SafetyQueue({ isAdmin }: { isAdmin: boolean }) {
         { title: "时间", render: (_, r) => <Time iso={r.createdAt} /> },
         { title: "类型", render: (_, r) => ({ work: "团队作品", daily_task: "每日任务", card: "知识卡片" })[r.objectKind] ?? r.objectKind },
         { title: "标签", render: (_, r) => (r.labels as string[]).join("、") },
+        { title: "内容", render: (_, r) => (r.link ? <Link to={r.link}>打开作品</Link> : (r.preview ?? "—")) },
         { title: "复核员备注", dataIndex: "forwardNote" },
         { title: "状态", render: (_, r) => ({ pending: "待处理", passed: "已通过", removed: "已删除" })[r.status] ?? r.status },
         {

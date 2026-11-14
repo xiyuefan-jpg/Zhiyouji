@@ -73,3 +73,28 @@ describe("§14 the camps form only after the last war is settled", () => {
     expect(formBigBattle(s, { at: camps + 60_000 }).ok).toBe(true);
   });
 });
+
+describe("§16 an admin moves one deadline", () => {
+  it("a contest, a weekly war and the big battle; not into the past, not once settled", async () => {
+    const { setDeadline } = await import("../../src/season/index.js");
+    let s = ok(startContest(base(), { contestId: "K1", teamId: "T1", landId: "E2", at: at(2, 10) }));
+    const later = s.contests.K1!.deadline + DAY;
+    expect(setDeadline(s, { target: "contest:K1", deadline: later, at: at(2, 11), by: "a", reason: "" })).toMatchObject({ refusal: "needs_reason" });
+    expect(setDeadline(s, { target: "contest:K1", deadline: at(2, 10), at: at(2, 11), by: "a", reason: "x" })).toMatchObject({ refusal: "bad_deadline" });
+    s = ok(setDeadline(s, { target: "contest:K1", deadline: later, at: at(2, 11), by: "a", reason: "停电" }));
+    expect(s.contests.K1!.deadline).toBe(later);
+    // earlier than the join deadline: the join deadline follows
+    s = ok(setDeadline(s, { target: "contest:K1", deadline: at(2, 20), at: at(2, 11), by: "a", reason: "改错了" }));
+    expect(s.contests.K1!.joinDeadline).toBe(at(2, 20));
+
+    const scores = Object.fromEntries(TEAMS.map((t, i) => [t, 50 + i]));
+    s = ok(pairWar(s, { week: 1, at: at(4, 21) }));
+    const w1 = warDeadline(s, 1) + 2 * 3_600_000;
+    s = ok(setDeadline(s, { target: "war:1", deadline: w1, at: at(5, 10), by: "a", reason: "主题出错，延两小时" }));
+    expect(warDeadline(s, 1)).toBe(w1);
+    expect(settleWar(s, { week: 1, at: w1 - 1, scores })).toMatchObject({ refusal: "too_early" });
+    s = ok(settleWar(s, { week: 1, at: w1, scores }));
+    expect(setDeadline(s, { target: "war:1", deadline: w1 + DAY, at: w1 + 1, by: "a", reason: "x" })).toMatchObject({ refusal: "already_settled" });
+    expect(setDeadline(s, { target: "battle", deadline: at(40, 21), at: at(5, 10), by: "a", reason: "x" })).toMatchObject({ refusal: "not_formed" });
+  });
+});

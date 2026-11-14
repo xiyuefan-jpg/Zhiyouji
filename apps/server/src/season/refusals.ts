@@ -19,6 +19,7 @@ export const REFUSAL_TEXT: Record<SeasonRefusal, string> = {
   not_leader: "请组长或副组长操作",
   out_of_season: "现在不在赛季时间里",
   war_unsettled: "周战争还没结算完",
+  bad_deadline: "新的截止时间不对（不能早于现在）",
   too_early: "还没到时间",
   too_late: "已经过了截止时间",
   already_done: "这件事已经做过了",

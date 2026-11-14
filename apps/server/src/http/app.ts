@@ -172,6 +172,7 @@ export function buildServices(d: AppDeps): Services {
   const mediaProcessor = d.media ?? new FakeMediaProcessor();
   const media = new MediaPipeline(d.db, d.clock, storage, mediaProcessor, notifier, d.cfg.uploads);
   const aiSupply = d.aiSupply ?? new FakeAiSupply();
+  const safety = d.safety ?? new FakeContentSafety();
   const aiSummary = d.aiSummary ?? new FakeAiSummarizer();
   const supply = new Supply(d.db, d.clock, store, gateway.wrapSupply(aiSupply), notifier);
   return {
@@ -182,11 +183,11 @@ export function buildServices(d: AppDeps): Services {
     gateway,
     summaries: new Summaries(d.db, d.clock, gateway.wrapSummary(aiSummary), notifier, store),
     aiSummary,
-    showcase: new Showcase(d.db, d.clock, store, d.safety ?? new FakeContentSafety(), notifier, storage, play, reports),
+    showcase: new Showcase(d.db, d.clock, store, safety, notifier, storage, play, reports),
     supply,
     aiDaily,
     aiSupply,
-    daily: new DailyTasks(d.db, d.clock, d.cfg, storage, gateway.wrapDaily(aiDaily), notifier, store, play, media),
+    daily: new DailyTasks(d.db, d.clock, d.cfg, storage, gateway.wrapDaily(aiDaily), notifier, store, play, media, safety),
     ai,
     dataRights: new DataRights(d.db, d.clock, storage, notifier),
     scoring: new Scoring(d.db, d.clock, store, gateway.wrapScorer(ai), notifier, storage, media),
@@ -200,7 +201,7 @@ export function buildServices(d: AppDeps): Services {
     store,
     scheduler,
     seasons,
-    control: new SeasonControl(d.db, d.clock, store, scheduler, seasons),
+    control: new SeasonControl(d.db, d.clock, store, scheduler, seasons, notifier),
     play,
     reports,
     reminders: new Reminders(d.db, d.clock, store, notifier, warWords, debates),

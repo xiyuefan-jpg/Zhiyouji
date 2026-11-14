@@ -65,7 +65,7 @@ export function linesPublishedAt(s: SeasonState): Instant {
 }
 
 export function battleDeadline(s: SeasonState): Instant {
-  return afterPauses(s, deadlineOn(dateOfSeasonDay(s.opening, s.params.time.seasonDays), s.params));
+  return s.deadlines?.battle ?? afterPauses(s, deadlineOn(dateOfSeasonDay(s.opening, s.params.time.seasonDays), s.params));
 }
 
 export function campOf(bb: BigBattleState, teamId: string): Camp | null {
