@@ -47,7 +47,7 @@ import type { SeasonStore } from "../seasonStore.js";
 import type { ObjectStorage } from "../storage.js";
 import { refusalText } from "./refusals.js";
 import { checkDims, RUBRICS, rubricFor, rubricWithGuide, type RubricId } from "./rubrics.js";
-import { workTask } from "./taskInfo.js";
+import { workRubric, workTask } from "./taskInfo.js";
 
 const HOUR = 3_600_000;
 type WorkRow = typeof works.$inferSelect;
@@ -121,10 +121,7 @@ export class Scoring {
   }
 
   private async rubricOf(serverId: string, st: SeasonState, w: WorkRow): Promise<RubricId> {
-    if (w.kind !== "contest") return rubricFor(w.kind, null);
-    const landId = st.contests[baseSlot(w.slot).slice("contest:".length)]?.landId;
-    const [land] = landId ? await this.db.select().from(lands).where(and(eq(lands.serverId, serverId), eq(lands.code, landId))) : [];
-    return rubricFor("contest", land?.name ?? null);
+    return workRubric(this.db, serverId, st, w);
   }
 
   private async close(serverId: string, st: SeasonState, key: string): Promise<boolean> {

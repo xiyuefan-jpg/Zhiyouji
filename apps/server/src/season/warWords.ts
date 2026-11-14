@@ -10,7 +10,8 @@
 
 import { and, eq } from "drizzle-orm";
 import { plannedEvents, warCards, type Db } from "@zhiyouji/db";
-import { createRng, seedFromString, type SeasonState } from "@zhiyouji/engine";
+import { ITEMS, REGULAR_COMMON_ITEMS, createRng, seedFromString, warDeadline, type SeasonState } from "@zhiyouji/engine";
+import { rubricWithGuide, workRequirements } from "./rubrics.js";
 import { GRADE_LABELS, WAR_CARDS, WAR_THEMES } from "@zhiyouji/shared";
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
@@ -143,6 +144,11 @@ export class WarWords {
       chosen: cardText(row?.chosen ?? null),
       received: row?.revealedAt ? cardText(row.received) : null,
       settled: w!.settled,
+      /** What winning and losing are worth, with the loser chest's odds (constitution 5: every random mechanism shows its odds). */
+      stakes: warStakes(st),
+      deadline: warDeadline(st, week),
+      rubric: rubricWithGuide("C"),
+      requirements: workRequirements("war"),
     };
   }
 
@@ -151,4 +157,11 @@ export class WarWords {
     const rows = await this.db.select().from(warCards).where(and(eq(warCards.serverId, serverId), eq(warCards.week, week)));
     return rows.filter((r) => !r.chosen && (r.offered as string[]).length > 0).map((r) => r.teamId);
   }
+}
+
+/** Plain-words stakes of a weekly war (part 3 §11; loser chest odds published). */
+export function warStakes(st: SeasonState): string {
+  const p = st.params;
+  const chest = p.items.loserChestEnabled ? `，再开一个败者宝箱：从 ${REGULAR_COMMON_ITEMS.length} 件常规凡品（${REGULAR_COMMON_ITEMS.map((id) => ITEMS.find((i) => i.id === id)?.name ?? id).join("、")}）里随机得 1 件，每件的机会都是 ${Math.round(100 / REGULAR_COMMON_ITEMS.length)}%。宝箱远不如赢一场` : "";
+  return `赢了 +${p.war.win} 分；输了 ${p.war.lose} 分${chest}。同分时双方各 +${p.war.tie}；一方没交作品，交了的一方赢；轮空的组 +${p.war.bye}。`;
 }

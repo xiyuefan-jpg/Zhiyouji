@@ -14,6 +14,7 @@ import { addDays, DEFAULT_PARAMS } from "@zhiyouji/engine";
 import { adminUsers, calendarDays, landTemplates, paramVersions, prompts, reviewerLeaves, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
 import type { AiGateway } from "../aiGateway.js";
 import type { Clock } from "../clock.js";
+import { battlePrompts } from "./taskInfo.js";
 import { QuestionBank } from "../content/questionBank.js";
 import type { SeasonStore } from "../seasonStore.js";
 import type { SeasonAdmin } from "./seasons.js";
@@ -136,6 +137,25 @@ export class Preflight {
         "题库",
         !tpl.length ? "fail" : thin.length ? "warn" : "ok",
         !tpl.length ? "还没有地块模板（题库与评分 → 一键导入）" : thin.length ? `启用的题少于 2 条的地块：${thin.map((t) => t.name).join("、")}` : `${tpl.length} 个地块模板，每个都至少有 2 条启用的题`,
+      );
+    }
+
+    // 6b. big-battle prompts (content library §7): one per line, plus the main battlefield
+    {
+      const bp = await battlePrompts(this.db);
+      const svs = await this.db.select().from(servers).where(eq(servers.seasonId, seasonId));
+      const counts = await Promise.all(svs.map(async (sv) => (await this.store.state(sv.id)).teamOrder.length));
+      // One line per pair of groups (part 3 §14: 8 groups → 4, 6 → 3); before grouping assume 8 groups.
+      const grouped = counts.filter((n) => n > 0);
+      const need = grouped.length ? Math.max(...grouped.map((n) => Math.ceil(n / 2))) : 4;
+      const short = bp.lines.length < need || !bp.main;
+      add(
+        "battle",
+        "大团战题目",
+        short ? "warn" : "ok",
+        short
+          ? `启用的大团战战线题 ${bp.lines.length} 条（要 ${need} 条，按创建先后对应第 1、2、3…条线），主战场题 ${bp.main ? 1 : 0} 条（要 1 条）；D29 之前补上（题库与评分）`
+          : `${bp.lines.length} 条战线题，1 条主战场题`,
       );
     }
 

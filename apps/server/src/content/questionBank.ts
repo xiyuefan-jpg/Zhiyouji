@@ -140,8 +140,9 @@ export class QuestionBank {
   async importMany(items: PromptInput[], by: string) {
     const out = [];
     const touched = new Set<string>();
-    for (const i of items) {
-      const r = await this.createRaw(i, by);
+    for (const [n, i] of items.entries()) {
+      // 1 ms apart, so prompts keep the import order (big-battle lines are numbered by it).
+      const r = await this.createRaw(i, by, n);
       out.push(r);
       if (r.status === "enabled" && r.landTemplateId) touched.add(r.landTemplateId);
     }
@@ -150,9 +151,9 @@ export class QuestionBank {
     return { imported: out.length };
   }
 
-  private async createRaw(i: PromptInput, by: string) {
+  private async createRaw(i: PromptInput, by: string, seq = 0) {
     if (i.category === "land" && !i.landTemplateId) fail(400, "bad_request");
-    const now = this.clock.now();
+    const now = new Date(+this.clock.now() + seq);
     const [row] = await this.db
       .insert(prompts)
       .values({

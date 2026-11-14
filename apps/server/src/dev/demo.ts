@@ -15,7 +15,8 @@
  * - an admin (boss@demo.cn) and a reviewer (rev@demo.cn), password demo-password-1;
  *   their two-step code for the simulated time: GET /v1/dev/totp?email=…;
  * - any phone number can log in; the code: GET /v1/dev/code?phone=…;
- * - bots play every team that has no human child in it.
+ * - bots play every team that has no human child in it;
+ * - DEMO_HUMAN="phone:昵称:年级" adds one real family to the season, DEMO_GROUP=1 confirms the grouping at start.
  */
 
 import { readFileSync } from "node:fs";
@@ -38,6 +39,33 @@ const ADMIN = "demo";
 const OPENING = process.env.DEMO_OPENING ?? "2027-02-07";
 const PASSWORD = "demo-password-1";
 const BOT_NAMES = ["悟空", "八戒", "沙僧", "白龙", "红孩儿", "哪吒", "金角", "银角", "玉兔", "嫦娥", "织女", "牛郎", "土行孙", "雷震子", "杨戬", "哮天", "灵吉", "镇元", "观音", "弥勒", "太白", "托塔", "巨灵", "千里眼", "顺风耳", "赤脚", "福星", "禄星", "寿星", "龙女", "善财"];
+
+/**
+ * Big-battle prompts for the demo from the content library's draft theme (§7.1, a table:
+ * 战线 | 分值 | 学科 | 任务 | 本组印记 | 评分族). The real theme is still 待补, so titles say 草案.
+ */
+function battleFromContentLibrary(): { category: "battle_line" | "battle_main"; title: string; body: string; rubric: string | null }[] {
+  let md = "";
+  try {
+    md = readFileSync(new URL("../../../../docs/design/智游记S3_试运行内容库.md", import.meta.url), "utf8");
+  } catch {
+    return [];
+  }
+  const sec = md.split("### 7.1")[1]?.split("###")[0] ?? "";
+  const out: { category: "battle_line" | "battle_main"; title: string; body: string; rubric: string | null }[] = [];
+  for (const line of sec.split("\n")) {
+    const c = line.split("|").map((x) => x.trim());
+    if (c.length < 8 || !/^[甲乙丙丁] · |^主战场/.test(c[1]!)) continue;
+    const main = c[1]!.startsWith("主战场");
+    out.push({
+      category: main ? "battle_main" : "battle_line",
+      title: `（草案）${c[1]!.replace(/^[甲乙丙丁] · /, "")}`,
+      body: `${c[4]}。学科：${c[3]}；要有本组印记：${c[5]}。`,
+      rubric: /^[A-E]$/.test(c[6]!) ? c[6]! : null,
+    });
+  }
+  return out;
+}
 
 /** Land prompts from the content library (§4.3–4.14: "### 4.x 名字 · 学科", numbered 素材). */
 function promptsFromContentLibrary(): Map<string, { title: string; body: string }[]> {
@@ -99,6 +127,8 @@ async function main() {
     const items = library.get(t.name) ?? [];
     if (items.length) await s.bank.importMany(items.map((p) => ({ category: "land" as const, landTemplateId: t.id, title: p.title, body: p.body, status: "enabled" as const })), ADMIN);
   }
+  const battle = battleFromContentLibrary();
+  if (battle.length) await s.bank.importMany(battle.map((p) => ({ ...p, status: "enabled" as const })), ADMIN);
   const botIds: string[] = [];
   for (let i = 0; i < 31; i++) {
     const [f] = await db.insert(families).values({ phone: `1390000${String(1000 + i)}`, consentVersion: cfg.policyVersion, consentAt: clock.now() }).returning();
@@ -108,6 +138,18 @@ async function main() {
   const season = await s.seasons.create({ name: "S3 演示", opening: OPENING, seed: 7 }, ADMIN);
   await s.seasons.openEnrollment(season.id, ADMIN);
   await s.seasons.enroll(season.id, botIds.map((childId) => ({ childId, paymentNote: "机器人" })), ADMIN);
+  // DEMO_HUMAN="phone:昵称:年级" puts one real family into the season (logs in with /v1/dev/login?phone=…);
+  // DEMO_GROUP=1 also generates and confirms the grouping, so the season starts at D0 evening.
+  if (env.DEMO_HUMAN) {
+    const [phone, nickname, grade] = env.DEMO_HUMAN.split(":");
+    const [f] = await db.insert(families).values({ phone: phone!, consentVersion: cfg.policyVersion, consentAt: clock.now() }).returning();
+    const [c] = await db.insert(children).values({ familyId: f!.id, nickname: nickname ?? "小满", grade: Number(grade ?? 5) }).returning();
+    await s.seasons.enroll(season.id, [{ childId: c!.id, paymentNote: "演示" }], ADMIN);
+  }
+  if (env.DEMO_GROUP === "1") {
+    await s.seasons.generateGrouping(season.id, ADMIN);
+    await s.seasons.confirmGrouping(season.id, {}, ADMIN);
+  }
   const bots = new Bots(db, s, OPENING, new Set(botIds));
 
   /** Teams with at least one child who is not a bot. */

@@ -10,12 +10,12 @@
  * children (part 7 §7: 孩子之间保密).
  */
 
-import { contestTask, landInfo } from "./taskInfo.js";
+import { battlePrompts, contestTask, landInfo } from "./taskInfo.js";
 import { rubricFor, rubricWithGuide, workRequirements } from "./rubrics.js";
 import { itemGuide } from "./itemGuide.js";
 import { randomBytes } from "node:crypto";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
-import { children, landTemplates, lands as landRows, plannedEvents, prompts as promptRows, roleTransfers, seasonPlayers, seasons, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
+import { children, feed, landTemplates, lands as landRows, plannedEvents, prompts as promptRows, roleTransfers, seasonPlayers, seasons, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
 import {
   ITEMS,
   REGULAR_COMMON_ITEMS,
@@ -740,8 +740,33 @@ export class SeasonPlay {
     const published = bb.final !== null && now >= publishAt;
     const sub = camp ? bb.submitted[camp] : null;
     const by = sub?.by ? (await this.nicknames([sub.by])).get(sub.by)?.nickname ?? null : null;
+    const bp = await battlePrompts(this.db);
+    const p = s.params;
+    const [res] = bb.settled
+      ? await this.db
+          .select()
+          .from(feed)
+          .where(and(eq(feed.serverId, ctx.serverId), eq(feed.kind, "big_battle_result")))
+          .orderBy(desc(feed.at))
+          .limit(1)
+      : [];
+    type Side = { teamId: string; outcome: string; linePoints: number; seized: number; compensation: boolean };
+    const rd = res?.data as { lines: { line: number; value: number; a: Side; b: Side }[]; main: { winner: "a" | "b" | "tie"; scores: Record<"a" | "b", number | null> } } | undefined;
     return {
       formed: true as const,
+      // What each line and the main battlefield ask (titles; the full task is in the workshop).
+      lineTasks: bb.lineValues.map((_, i) => (bp.lines[i] ? { title: bp.lines[i]!.title, body: bp.lines[i]!.body } : null)),
+      mainTask: bp.main ? { title: bp.main.title, body: bp.main.body } : null,
+      stakes:
+        `每个组派到一条战线，和对方阵营派到同一条线的组比作品分数。赢的组得这条线的分，再夺走输的组产出最高的一块地 ${p.bigBattle.seizeDays} 天的产出（输的组没有地时，改拿 ${p.bigBattle.seizeDays * p.bigBattle.noLandCompFactor} 分补偿）；同分时双方各得一半，不夺产出。` +
+        `两边阵营都看不到对方怎么派，截止后同时公布。主战场由各组的使者一起做一份作品，分数高的阵营每组 +${p.bigBattle.mainWin}。`,
+      mainWin: p.bigBattle.mainWin,
+      result: rd
+        ? {
+            lines: rd.lines.map((l) => ({ line: l.line, value: l.value, sides: [l.a, l.b].map((x) => ({ teamId: x.teamId, name: name(x.teamId), outcome: x.outcome, points: x.linePoints + x.seized, mine: x.teamId === ctx.teamId })) })),
+            main: rd.main.winner,
+          }
+        : null,
       myCamp: camp,
       camps: { a: bb.camps.a.map((id) => ({ id, name: name(id) })), b: bb.camps.b.map((id) => ({ id, name: name(id) })) },
       lineValues: bb.lineValues,

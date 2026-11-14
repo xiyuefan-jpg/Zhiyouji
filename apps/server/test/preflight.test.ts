@@ -20,6 +20,8 @@ describe("开营前检查清单 (PRD part 9 §3)", () => {
     expect(c.grouping).toMatchObject({ status: "fail", detail: "还没生成分组" });
     expect(c.reviewers!.status).toBe("fail");
     expect(c.prompts!.status).toBe("fail");
+    expect(c.battle).toMatchObject({ status: "warn" });
+    expect(c.battle!.detail).toContain("要 4 条");
     expect(c.ai!.detail).toMatch(/还在用假的 AI/);
     // reviewers may not see it
     const rv = await t.adminUser("rev@example.com", "reviewer");

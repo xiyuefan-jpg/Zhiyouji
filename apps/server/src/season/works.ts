@@ -22,6 +22,8 @@ import type { ObjectStorage } from "../storage.js";
 import { refuse, type PlayCtx } from "./play.js";
 import type { Debates } from "./debates.js";
 import type { Operations } from "./operations.js";
+import { rubricWithGuide, workRequirements } from "./rubrics.js";
+import { workRubric, workTask } from "./taskInfo.js";
 
 export type FileKind = "video" | "audio" | "image" | "pdf";
 export type MediaKind = "video" | "audio" | "images" | "text";
@@ -129,6 +131,19 @@ export class Works {
   }
 
   // ---- slots and materials ------------------------------------------------------------------------
+
+  /** What a slot asks for, how it is judged and what to hand in (shown in the workshop before making it). */
+  async task(ctx: PlayCtx, slot: string) {
+    const st = await this.store.state(ctx.serverId);
+    const s = (await this.slotsOf(ctx.serverId, st, ctx.teamId)).find((x) => x.slot === slot);
+    if (!s) fail(404, "not_found");
+    const w = { kind: s!.kind, slot, teamId: ctx.teamId };
+    return {
+      task: await workTask(this.db, ctx.serverId, st, w),
+      rubric: rubricWithGuide(await workRubric(this.db, ctx.serverId, st, w)),
+      requirements: workRequirements(s!.kind, s!.stage ?? null),
+    };
+  }
 
   async slots(ctx: PlayCtx) {
     const st = await this.store.state(ctx.serverId);

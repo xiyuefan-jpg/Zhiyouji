@@ -27,6 +27,7 @@ export function workRoutes(app: FastifyInstance, works: Works, play: SeasonPlay,
   app.get("/v1/season/works/:slot/materials", async (req) => works.listMaterials(await ctx(req), slotParam.parse(req.params).slot));
   app.post("/v1/season/works/:slot/materials", async (req) => works.addMaterial(await ctx(req), slotParam.parse(req.params).slot, materialRequest.parse(req.body)));
   app.delete("/v1/season/materials/:id", async (req) => works.removeMaterial(await ctx(req), idParam.parse(req.params).id));
+  app.get("/v1/season/works/:slot/task", async (req) => works.task(await ctx(req), slotParam.parse(req.params).slot));
   app.get("/v1/season/works/:slot/versions", async (req) => works.versions(await ctx(req), slotParam.parse(req.params).slot));
   app.get("/v1/season/works/:slot/result", async (req) => {
     const c = await ctx(req);

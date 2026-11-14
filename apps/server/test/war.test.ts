@@ -14,6 +14,15 @@ describe("weekly war cards and work reminders (part 3 §11; part 5 §3.5; part 8
     expect(w1).toMatchObject({ week: 1, gift: false, theme: { title: "家里的一个小麻烦" }, offered: [] });
     expect(w1.received.text).toContain("预算 ≤30 元");
     expect(w1.opponent.grades.length).toBeGreaterThan(0);
+    // what is at stake (loser's chest odds in the open), when it is due and how it is judged
+    expect(w1.stakes).toMatch(/赢了 \+15 分；输了 -5 分，再开一个败者宝箱：从 5 件常规凡品（.+）里随机得 1 件，每件的机会都是 20%/);
+    expect(w1.deadline).toBe(+bj("2027-02-14", 21)); // Sunday of week 1
+    expect(w1.rubric).toMatchObject({ id: "C", name: "设计创造" });
+    expect(w1.requirements).toContain("人机协作说明");
+    // the workshop shows the same task for the war slot
+    const task = (await t.a1api("GET", "/v1/season/works/war%3A1/task")).json();
+    expect(task).toMatchObject({ task: { title: "家里的一个小麻烦" }, rubric: { id: "C" } });
+    expect((await t.a1api("GET", "/v1/season/works/war%3A9/task")).statusCode).toBe(404);
     expect((await t.a1api("POST", "/v1/season/wars/1/card", { card: "S1" })).json().error).toBe("not_gift_week");
 
     // the contest is due Friday 21:00; at 15:01 the attacker's leader and the defenders are reminded
