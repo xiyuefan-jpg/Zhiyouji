@@ -77,6 +77,20 @@ export const enrollRequest = z.object({
 });
 export type EnrollRequest = z.infer<typeof enrollRequest>;
 
+/** 表格批量开通 (part 7 §3): rows of a pasted or uploaded table. */
+export const enrollTableRequest = z.object({
+  rows: z
+    .array(
+      z.object({
+        phone: z.string().trim().regex(/^1\d{10}$/),
+        nickname: z.string().trim().min(1).max(12).optional(),
+        paymentNote: z.string().trim().max(100).optional(),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+
 export const revokeRequest = z.object({ reason: z.string().trim().min(1).max(200) });
 
 export const moveRequest = z.object({

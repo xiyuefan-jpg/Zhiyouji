@@ -403,6 +403,7 @@ export function PlayersPage() {
         <Tabs
           items={[
             { key: "enable", label: "开通资格", children: <EnablePlayers season={season} /> },
+            { key: "table", label: "表格批量开通", children: <EnableFromTable season={season} /> },
             { key: "roster", label: "报名名单", children: <Roster season={season} /> },
             { key: "grouping", label: "分组", children: <GroupingEditor season={season} onLocked={seasons.reload} /> },
           ]}
@@ -456,6 +457,109 @@ function EnablePlayers({ season }: { season: Season }) {
           },
         ]}
       />
+    </Space>
+  );
+}
+
+interface MatchRow {
+  line: number;
+  phoneMasked: string;
+  nickname: string | null;
+  paymentNote: string | null;
+  status: "ok" | "already" | "ambiguous" | "no_child" | "no_family";
+  childId?: string;
+  childNickname?: string;
+  gradeLabel?: string;
+  candidates: { childId: string; nickname: string; grade: number }[];
+}
+const MATCH_TEXT: Record<MatchRow["status"], { color: string; text: string }> = {
+  ok: { color: "green", text: "可以开通" },
+  already: { color: "default", text: "已经开通" },
+  ambiguous: { color: "gold", text: "这个手机号下有几个孩子，请写昵称" },
+  no_child: { color: "red", text: "这个手机号下没有这个昵称" },
+  no_family: { color: "red", text: "没有这个手机号的家庭" },
+};
+
+/**
+ * 表格批量开通 (part 7 §3): paste rows from a spreadsheet (or open a CSV) —
+ * parent phone, nickname (needed when the family has more than one child),
+ * payment note — check what each row matched, then enable the matched ones.
+ */
+export function parseEnrollTable(text: string): { phone: string; nickname?: string; paymentNote?: string }[] {
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.split(/[\t,，]/).map((x) => x.trim()))
+    .filter((c) => /^1\d{10}$/.test(c[0] ?? ""))
+    .map(([phone, nickname, ...note]) => ({ phone: phone!, ...(nickname ? { nickname } : {}), ...(note.join(" ").trim() ? { paymentNote: note.join(" ").trim() } : {}) }));
+}
+
+function EnableFromTable({ season }: { season: Season }) {
+  const [text, setText] = useState("");
+  const [rows, setRows] = useState<MatchRow[] | null>(null);
+  const parsed = useMemo(() => parseEnrollTable(text), [text]);
+  const ready = (rows ?? []).filter((r) => r.status === "ok");
+  const check = async () => {
+    try {
+      setRows((await request<{ rows: MatchRow[] }>("POST", `/v1/admin/seasons/${season.id}/players/match`, { rows: parsed })).rows);
+    } catch (e) {
+      message.error(errText(e));
+    }
+  };
+  const enable = async () => {
+    try {
+      await request("POST", `/v1/admin/seasons/${season.id}/players`, { players: ready.map((r) => ({ childId: r.childId!, ...(r.paymentNote ? { paymentNote: r.paymentNote } : {}) })) });
+      message.success(`已开通 ${ready.length} 人`);
+      setRows(null);
+      setText("");
+    } catch (e) {
+      message.error(errText(e));
+    }
+  };
+  const openFile = async (f: File | undefined) => {
+    if (f) setText(await f.text());
+  };
+  if (season.status !== "enrolling") return <Alert type="info" message={`现在是"${season.statusLabel}"，只有"报名中"可以开通资格。`} />;
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary">
+        每行一个孩子：家长手机号、昵称（这个手机号下有几个孩子时必填）、缴费备注，用逗号或 Tab 隔开；从表格里直接复制粘贴即可。没有手机号的行（例如表头）会跳过。
+      </Typography.Paragraph>
+      <Input.TextArea aria-label="粘贴表格" rows={8} value={text} onChange={(e) => (setText(e.target.value), setRows(null))} placeholder={"13800000001,小明,订单 1001\n13800000002,,订单 1002"} />
+      <Space>
+        <input type="file" accept=".csv,.txt" aria-label="打开 CSV 文件" onChange={(e) => void openFile(e.target.files?.[0])} />
+        <Button type="primary" disabled={parsed.length === 0} onClick={() => void check()}>
+          核对 {parsed.length} 行
+        </Button>
+      </Space>
+      {rows && (
+        <>
+          <Table<MatchRow>
+            rowKey="line"
+            size="small"
+            pagination={false}
+            dataSource={rows}
+            columns={[
+              { title: "行", dataIndex: "line" },
+              { title: "家长手机号", dataIndex: "phoneMasked" },
+              { title: "昵称", render: (_, r) => r.childNickname ?? r.nickname ?? "—" },
+              { title: "年级", render: (_, r) => r.gradeLabel ?? "" },
+              { title: "缴费备注", render: (_, r) => r.paymentNote ?? "" },
+              {
+                title: "结果",
+                render: (_, r) => (
+                  <Space size={4} wrap>
+                    <Tag color={MATCH_TEXT[r.status].color}>{MATCH_TEXT[r.status].text}</Tag>
+                    {r.candidates.length > 0 && <Typography.Text type="secondary">（有：{r.candidates.map((c) => c.nickname).join("、")}）</Typography.Text>}
+                  </Space>
+                ),
+              },
+            ]}
+          />
+          <Button type="primary" disabled={ready.length === 0} onClick={() => void enable()}>
+            开通 {ready.length} 人
+          </Button>
+        </>
+      )}
     </Space>
   );
 }

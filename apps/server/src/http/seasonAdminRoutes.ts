@@ -9,6 +9,7 @@ import {
   childSearchQuery,
   confirmGroupingRequest,
   enrollRequest,
+  enrollTableRequest,
   moveRequest,
   renameTeamRequest,
   revokeRequest,
@@ -86,6 +87,16 @@ export function seasonAdminRoutes(app: FastifyInstance, seasons: SeasonAdmin, au
   app.post("/v1/admin/seasons/:id/players", async (req) => {
     const by = await admin(req);
     return seasons.enroll(idParam.parse(req.params).id, enrollRequest.parse(req.body).players, by);
+  });
+
+  // 表格批量开通: which child each row is (step 1; enabling is the route above)
+  app.post("/v1/admin/seasons/:id/players/match", async (req) => {
+    const { user } = await auth.user(req, ["admin"]);
+    const { id } = idParam.parse(req.params);
+    const r = await seasons.matchTable(id, enrollTableRequest.parse(req.body).rows);
+    const ids = r.rows.flatMap((x) => ("childId" in x && x.childId ? [x.childId] : x.candidates.map((c) => c.childId)));
+    await auth.view(user.id, ids, { contentKind: "child_search", objectId: `enroll_table:${id}`, action: "view" });
+    return r;
   });
 
   app.get("/v1/admin/seasons/:id/players", async (req) => {

@@ -180,4 +180,30 @@ describe("seasons, enrollment and grouping (part 3 §2, §4; part 7 §2–§3)",
     expect(await t.db.select().from(seasonPlayers)).toHaveLength(9);
     await t.close();
   });
+
+  it("表格批量开通 (part 7 §3): each row is matched by the parent's phone (and the nickname when there are siblings), then the matched ones are enabled", async () => {
+    const t = await seasonSetup();
+    const id = (await t.call("POST", "/v1/admin/seasons", { name: "S3", opening: "2027-02-07" })).json().season.id;
+    await t.call("POST", `/v1/admin/seasons/${id}/open-enrollment`);
+    // 6 children, siblings in pairs: 13910000000 has 孩子1 and 孩子2, 13910000002 has 孩子3 and 孩子4 …
+    const kids = await seedChildren(t.db, 6, 2);
+    await t.call("POST", `/v1/admin/seasons/${id}/players`, { players: [{ childId: kids[4]! }] });
+    const rows = [
+      { phone: "13910000000", nickname: "孩子2", paymentNote: "订单 A1" },
+      { phone: "13910000002" }, // two children, no nickname
+      { phone: "13910000002", nickname: "孩子9" }, // no such child
+      { phone: "13999999999" }, // no such family
+      { phone: "13910000004", nickname: "孩子5" }, // already enabled
+    ];
+    const m = (await t.call("POST", `/v1/admin/seasons/${id}/players/match`, { rows })).json().rows;
+    expect(m.map((r: { status: string }) => r.status)).toEqual(["ok", "ambiguous", "no_child", "no_family", "already"]);
+    expect(m[0]).toMatchObject({ line: 1, childId: kids[1], childNickname: "孩子2", paymentNote: "订单 A1", phoneMasked: "139****0000" });
+    expect(m[1].candidates.map((c: { nickname: string }) => c.nickname).sort()).toEqual(["孩子3", "孩子4"]);
+    expect((await t.call("POST", `/v1/admin/seasons/${id}/players/match`, { rows: [{ phone: "123" }] })).statusCode).toBe(400);
+    // step 2: enable the matched ones (the console sends the "ok" rows)
+    await t.call("POST", `/v1/admin/seasons/${id}/players`, { players: [{ childId: m[0].childId, paymentNote: m[0].paymentNote }] });
+    const enrolled = await t.db.select().from(seasonPlayers).where(eq(seasonPlayers.seasonId, id));
+    expect(enrolled.map((p) => [p.childId, p.paymentNote]).sort()).toEqual([[kids[1], "订单 A1"], [kids[4], null]].sort());
+    await t.close();
+  });
 });

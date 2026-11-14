@@ -167,6 +167,46 @@ export class SeasonAdmin {
     }));
   }
 
+  /**
+   * 表格批量开通, step 1 (part 7 §3): each row of the table (parent phone, the
+   * child's nickname when the family has more than one child, payment note) →
+   * which child it is. Nothing is enabled here; the admin checks the list and
+   * enables the matched ones with `enroll`.
+   */
+  async matchTable(seasonId: string, rows: { phone: string; nickname?: string; paymentNote?: string }[]) {
+    await this.season(seasonId);
+    const phones = [...new Set(rows.map((r) => r.phone))];
+    const found = phones.length
+      ? await this.db
+          .select({ child: children, phone: families.phone })
+          .from(children)
+          .innerJoin(families, eq(children.familyId, families.id))
+          .where(and(inArray(families.phone, phones), eq(children.status, "active")))
+      : [];
+    const enrolled = new Set(
+      found.length
+        ? (
+            await this.db
+              .select({ c: seasonPlayers.childId })
+              .from(seasonPlayers)
+              .where(and(eq(seasonPlayers.seasonId, seasonId), eq(seasonPlayers.status, "enrolled"), inArray(seasonPlayers.childId, found.map((f) => f.child.id))))
+          ).map((r) => r.c)
+        : [],
+    );
+    return {
+      rows: rows.map((r, i) => {
+        const kids = found.filter((f) => f.phone === r.phone);
+        const named = r.nickname ? kids.filter((k) => k.child.nickname === r.nickname) : kids;
+        const base = { line: i + 1, phoneMasked: maskPhone(r.phone), nickname: r.nickname ?? null, paymentNote: r.paymentNote ?? null };
+        if (kids.length === 0) return { ...base, status: "no_family" as const, candidates: [] };
+        if (named.length !== 1)
+          return { ...base, status: named.length === 0 ? ("no_child" as const) : ("ambiguous" as const), candidates: kids.map((k) => ({ childId: k.child.id, nickname: k.child.nickname, grade: k.child.grade })) };
+        const c = named[0]!.child;
+        return { ...base, status: enrolled.has(c.id) ? ("already" as const) : ("ok" as const), childId: c.id, childNickname: c.nickname, grade: c.grade, gradeLabel: GRADE_LABELS[c.grade] ?? String(c.grade), candidates: [] };
+      }),
+    };
+  }
+
   /** 开通赛季资格 (one or a batch). Re-enabling a revoked child works; enabled children are reported, not duplicated. */
   async enroll(seasonId: string, players: { childId: string; paymentNote?: string }[], by: string) {
     const s = await this.season(seasonId);
