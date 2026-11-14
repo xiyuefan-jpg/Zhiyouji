@@ -49,6 +49,7 @@ import { Operations } from "../season/operations.js";
 import { opsRoutes } from "./opsRoutes.js";
 import { Survey } from "../accounts/survey.js";
 import { Dashboard } from "../season/dashboard.js";
+import { Preflight } from "../season/preflight.js";
 import { Showcase } from "../season/showcase.js";
 import { watchRoutes } from "./watchRoutes.js";
 import { Summaries } from "../daily/summaries.js";
@@ -120,6 +121,7 @@ export interface Services {
   ops: Operations;
   survey: Survey;
   dashboard: Dashboard;
+  preflight: Preflight;
   showcase: Showcase;
   summaries: Summaries;
   gateway: AiGateway;
@@ -187,6 +189,7 @@ export function buildServices(d: AppDeps): Services {
     ops,
     survey,
     dashboard: new Dashboard(d.db, d.clock, store),
+    preflight: new Preflight(d.db, d.clock, store, seasons, gateway),
     debates,
     store,
     scheduler,
@@ -264,6 +267,11 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   app.post("/v1/admin/seasons/:id/reviews/release", async (req) => {
     await services.adminAuth.user(req, ["admin"]);
     return services.summaries.releaseSeasonReviews(seasonIdParam.parse(req.params).id);
+  });
+  // 开营前检查清单 (part 9 §3)
+  app.get("/v1/admin/seasons/:id/preflight", async (req) => {
+    await services.adminAuth.user(req, ["admin"]);
+    return services.preflight.check(seasonIdParam.parse(req.params).id);
   });
   // 新标签建议 (part 6 T10)
   app.get("/v1/admin/tags/suggestions", async (req) => {

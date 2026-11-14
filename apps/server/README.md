@@ -139,6 +139,7 @@ npm run invite-admin -w @zhiyouji/server -- boss@example.com 名字 admin   # �
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/v1/admin/dashboard` | 看板 |
+| GET | `/v1/admin/seasons/:id/preflight` | 开营前检查清单（参数、日历、奖池、分组、复核员、题库、二维码、AI 模型；`fail` / `warn` / `info`，`ready` = 没有 `fail`） |
 | GET / PATCH | `/v1/admin/land-templates`、`/land-templates/:id`；POST `/land-templates/seed-defaults` | 地块模板（一键导入内容库的 12 个） |
 | GET / POST / PATCH | `/v1/admin/prompts`、`/prompts/:id`；POST `/prompts/import`；GET `/prompts/low-stock` | 题目（草稿 / 启用 / 停用；启用和停用会同步到进行中的服）、批量导入、题库不足的地块 |
 | GET / POST | `/v1/admin/announcements`；POST `/announcements/:id/withdraw` | 公告 `{ scope: "all" \| "season" \| "server", seasonId?, serverId?, title, body, publishAt }` |
@@ -167,5 +168,16 @@ npm run invite-admin -w @zhiyouji/server -- boss@example.com 名字 admin   # �
 3. 战报（每个公布时刻一份）；
 4. 偏好、战线截止前 3 小时的提醒；
 5. 每日任务的重试和异常、军需任务的提醒和打分、辩论的持方和立论交换、公告、二维码提醒；
-6. 到期的删除申请、连续 2 年不登录的清理；
+6. 到期的删除申请、连续 2 年不登录的清理；每小时清一次过期的日志（登录验证码、结束的登录、发过的短信 183 天；操作日志和查看记录 400 天；AI 调用记录里的孩子内容 90 天）；
 7. 发到点的短信提醒：夜间 21:30–07:00 不发，顺延到 07:00；同一手机号、同一种提醒还没发出去时合并；每个手机号每天最多 5 条。
+
+## 操作日志和查看记录（PRD 第 8 部分 3.1、3.4）
+
+- 每个 `/v1/admin/...` 接口都在 `src/http/audit.ts` 的 `ADMIN_AUDIT` 里写明怎么留痕：`domain`（服务自己写操作日志，带改动前后和原因）、`route`（调用成功后统一写一条：谁、动作、对象、请求内容去掉密码验证码）、`view`（看到具体孩子的数据，写查看记录）、`none`（写明为什么不用记）。新加的管理端接口没写进去，服务器启动不了。
+- 查看记录：作品、每日任务、找孩子、报名名单（含家长手机号）、赛季回顾、家长申请，每个孩子一条；只有昵称和年级的列表（分组、服的总览、奖学金表）和导出，每次一条。
+
+## 安全测试（`test/security.test.ts`）
+
+- 除了登录、退出、协议、健康检查，所有接口不登录都返回 401（而且先查登录，再看请求内容）；
+- 复核员只能用 PRD 第 7 部分第 0 节给的那些（看板、复核、每日任务异常、题库和 AI 配置只读、内容安全"转给管理员"），其余都是 403；
+- 一个家庭不能选、改、导出、删除别的家庭的孩子。

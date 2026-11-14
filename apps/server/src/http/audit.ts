@@ -75,6 +75,7 @@ export const ADMIN_AUDIT: Record<string, AuditPolicy> = {
   "POST /v1/admin/seasons/:id/grouping/rename": domain("team_rename"),
   "POST /v1/admin/seasons/:id/grouping/confirm": domain("grouping_confirm"),
   "GET /v1/admin/seasons/:id/params": READ,
+  "GET /v1/admin/seasons/:id/preflight": none("开营前检查清单，只有数量"),
   "POST /v1/admin/seasons/:id/params": domain("params_set"),
   "GET /v1/admin/calendar": READ,
   "POST /v1/admin/calendar/:day": domain("calendar_set"),
