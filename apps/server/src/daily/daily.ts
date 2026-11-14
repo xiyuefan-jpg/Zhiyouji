@@ -237,6 +237,13 @@ export class DailyTasks {
    * 单条重跑 (part 6 §9 "对某件作品或某条每日任务重新跑一次 AI（不覆盖原记录）"): the answer
    * comes back to the admin and stays in the AI call log; the task's result does not change.
    */
+  /** 提示词试跑 on one daily task (part 7 §4): a draft prompt and / or another model; nothing is stored but the call log. */
+  async tryAi(id: string, trial: { prompt?: string; model?: string }) {
+    const [s] = await this.db.select().from(dailySubmissions).where(eq(dailySubmissions.id, id));
+    if (!s) fail(404, "not_found");
+    return { result: await this.ai.reviewDaily(await this.reviewRequest(s!), { trial }) };
+  }
+
   async rerunAi(id: string) {
     const [s] = await this.db.select().from(dailySubmissions).where(eq(dailySubmissions.id, id));
     if (!s) fail(404, "not_found");

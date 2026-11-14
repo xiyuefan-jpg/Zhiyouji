@@ -234,6 +234,46 @@ export class Scoring {
     });
   }
 
+  /** What the AI is given for a work (part 6 §4.2): question, audience, rubric and anchors, the work's words and pictures. */
+  private async scoreRequest(serverId: string, st: SeasonState, w: WorkRow): Promise<ScoreRequest> {
+    const rubric = RUBRICS[await this.rubricOf(serverId, st, w)];
+    const ids = (w.fileIds as string[]) ?? [];
+    const fs = ids.length ? await this.db.select().from(files).where(inArray(files.id, ids)) : [];
+    const transcript = fs.map((f) => f.transcript).filter(Boolean).join("\n") || null;
+    const now = this.now();
+    const imageKeys = [...fs.filter((f) => f.kind === "image" && f.status !== "deleted").map((f) => f.storageKey), ...fs.flatMap((f) => (f.frames as string[]) ?? [])];
+    const images = await Promise.all(imageKeys.slice(0, 40).map((k) => this.storage.downloadUrl(k, now)));
+    const guide = RUBRIC_GUIDE[rubric.id as RubricId];
+    return {
+      workId: w.id,
+      rubric,
+      promptId: w.promptId,
+      task: await workTask(this.db, serverId, st, w),
+      mediaKind: w.mediaKind,
+      text: w.text,
+      aiNote: w.aiNote,
+      transcript,
+      images,
+      subject: await this.subjectOf(serverId, st, w),
+      anchors: guide ? { at50: guide.at50, at75: guide.at75 } : undefined,
+      debate: await this.debateContext(serverId, st, w),
+    };
+  }
+
+  /**
+   * 提示词试跑 (part 7 §4 "用一件样例作品试跑，看输出"): score a work with a draft
+   * prompt and / or another model. Only the answer comes back (and the call log,
+   * role "trial"); no score is stored.
+   */
+  async tryAi(workId: string, trial: { prompt?: string; model?: string }) {
+    const [w] = await this.db.select().from(works).where(eq(works.id, workId));
+    if (!w) fail(404, "not_found");
+    const st = await this.store.state(w!.serverId);
+    await this.media?.ensure((w!.fileIds as string[]) ?? []).catch(() => undefined);
+    const r = await this.ai.score(await this.scoreRequest(w!.serverId, st, w!), { trial });
+    return { result: r };
+  }
+
   private async aiScore(serverId: string, st: SeasonState, w: WorkRow, official = true): Promise<void> {
     const rubric = RUBRICS[await this.rubricOf(serverId, st, w)];
     const ids = (w.fileIds as string[]) ?? [];
@@ -242,30 +282,8 @@ export class Scoring {
     // copied from another team? (the admins hear about it even when the AI fails)
     const similar = official ? await this.similarWork(w) : null;
     if (similar) await this.tellSimilar(st, w, similar);
-    const fs = ids.length ? await this.db.select().from(files).where(inArray(files.id, ids)) : [];
-    const transcript = fs.map((f) => f.transcript).filter(Boolean).join("\n") || null;
-    const now = this.now();
-    const imageKeys = [...fs.filter((f) => f.kind === "image" && f.status !== "deleted").map((f) => f.storageKey), ...fs.flatMap((f) => (f.frames as string[]) ?? [])];
-    const images = await Promise.all(imageKeys.slice(0, 40).map((k) => this.storage.downloadUrl(k, now)));
     try {
-      const subject = await this.subjectOf(serverId, st, w);
-      const task = await workTask(this.db, serverId, st, w);
-      const guide = RUBRIC_GUIDE[rubric.id as RubricId];
-      const debate = await this.debateContext(serverId, st, w);
-      const r = await this.ai.score({
-        workId: w.id,
-        rubric,
-        promptId: w.promptId,
-        task,
-        mediaKind: w.mediaKind,
-        text: w.text,
-        aiNote: w.aiNote,
-        transcript,
-        images,
-        subject,
-        anchors: guide ? { at50: guide.at50, at75: guide.at75 } : undefined,
-        debate,
-      });
+      const r = await this.ai.score(await this.scoreRequest(serverId, st, w));
       // T7: the work's knowledge tags (for the season review's exploration map, part 5 §4.1)
       if (official) {
         const tags = (r.tags ?? []).filter(isKnownTag).slice(0, 3);

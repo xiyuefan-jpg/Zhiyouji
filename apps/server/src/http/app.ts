@@ -261,7 +261,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   bankRoutes(app, services.bank, services.adminAuth);
   opsRoutes(app, services.ops, services.play, services.familyAuth, services.adminAuth);
   watchRoutes(app, services.showcase, services.familyAuth, services.adminAuth);
-  aiRoutes(app, services.gateway, services.scoring, services.adminAuth);
+  aiRoutes(app, services.gateway, services.scoring, services.daily, services.adminAuth);
   supplyAdminRoutes(app, services.supply, services.adminAuth);
   exportRoutes(app, d.db, services.admin, services.adminAuth);
   app.get("/v1/journal/summaries", async (req) => services.summaries.list((await services.familyAuth.child(req)).child.id));

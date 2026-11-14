@@ -3,6 +3,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { AI_TASKS, type AiGateway } from "../aiGateway.js";
+import type { DailyTasks } from "../daily/daily.js";
 import type { Scoring } from "../season/scoring.js";
 import type { AdminAuth } from "./adminRoutes.js";
 
@@ -20,8 +21,10 @@ const priceParam = z.object({ model: z.string().trim().min(1).max(80) });
 const priceBody = z.object({ inPerMillion: z.number().int().min(0).max(100_000_000), outPerMillion: z.number().int().min(0).max(100_000_000), perAudioHour: z.number().int().min(0).max(100_000_000) });
 const statsQuery = z.object({ from: z.coerce.date(), to: z.coerce.date() });
 const idParam = z.object({ id: z.uuid() });
+const tryParam = z.object({ task: z.enum(["work_score", "daily_review"]) });
+const tryBody = z.object({ targetId: z.uuid(), prompt: z.string().min(1).max(50_000).optional(), model: z.string().trim().min(1).max(80).optional() });
 
-export function aiRoutes(app: FastifyInstance, gateway: AiGateway, scoring: Scoring, auth: AdminAuth): void {
+export function aiRoutes(app: FastifyInstance, gateway: AiGateway, scoring: Scoring, daily: DailyTasks, auth: AdminAuth): void {
   app.get("/v1/admin/ai/config", async (req) => {
     await auth.user(req);
     return gateway.configs();
@@ -52,6 +55,14 @@ export function aiRoutes(app: FastifyInstance, gateway: AiGateway, scoring: Scor
     await auth.user(req, ["admin"]);
     const q = statsQuery.parse(req.query);
     return gateway.stats(q.from, q.to);
+  });
+  // 试跑 (part 7 §4): a sample work or daily task with a draft prompt and / or another model
+  app.post("/v1/admin/ai/try/:task", async (req) => {
+    await auth.user(req, ["admin"]);
+    const { task } = tryParam.parse(req.params);
+    const b = tryBody.parse(req.body);
+    const trial = { prompt: b.prompt, model: b.model };
+    return task === "work_score" ? scoring.tryAi(b.targetId, trial) : daily.tryAi(b.targetId, trial);
   });
   app.post("/v1/admin/works/:id/ai-rerun", async (req) => {
     await auth.user(req, ["admin"]);

@@ -68,6 +68,11 @@ export interface AiCallOptions {
   provider?: string;
   prompt?: { version: number; text: string };
   messages?: AiMessages;
+  /**
+   * Callers only: a trial run from the admin console (part 7 §4 试跑) with a
+   * draft prompt and / or another model; logged as role "trial", no fallback, no shadow.
+   */
+  trial?: { prompt?: string; model?: string };
 }
 
 export interface AiScorer {

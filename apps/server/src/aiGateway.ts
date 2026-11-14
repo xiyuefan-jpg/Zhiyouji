@@ -66,6 +66,8 @@ export interface CallExtras<T> {
   logOutput?: (out: T) => unknown;
   /** Tokens / audio seconds of the answer (default: `out.usage`). */
   usage?: (out: T) => AiUsage | undefined;
+  /** A trial run (admin console 试跑): this prompt text and / or model; no fallback, no shadow. */
+  trial?: { prompt?: string; model?: string };
 }
 
 export interface AiConfigInput {
@@ -193,7 +195,9 @@ export class AiGateway {
     extras: CallExtras<T> = {},
   ): Promise<T> {
     const c = await this.config(task);
-    const prompt = await this.promptFor(task, c.promptVersion);
+    const trial = extras.trial;
+    // a trial prompt is "version -1": not saved, so not a version
+    const prompt = trial?.prompt !== undefined ? { version: -1, text: trial.prompt } : await this.promptFor(task, c.promptVersion);
     const messages = extras.build?.(prompt.text);
     // "数据先存" (part 6 §0.3): what the model really got; the children's words in it are cleared after 90 days
     const input = messages ? { ...(meta as object), messages } : meta;
@@ -207,6 +211,17 @@ export class AiGateway {
       if (bad) throw new InvalidAiOutput(bad);
       return out;
     };
+    if (trial) {
+      const model = trial.model || c.model;
+      try {
+        const out = await run(model, c.provider);
+        await this.log(task, "trial", c.provider, model, prompt.version, input, t0, outLog(out), null, usageOf(out));
+        return out;
+      } catch (err) {
+        await this.log(task, "trial", c.provider, model, prompt.version, input, t0, null, err);
+        throw err;
+      }
+    }
     try {
       const out = await run(c.model, c.provider);
       await this.log(task, "primary", c.provider, c.model, prompt.version, input, t0, outLog(out), null, usageOf(out));
@@ -242,14 +257,14 @@ export class AiGateway {
   // found here, whatever the model does with them, and the result is flagged.
   wrapScorer(inner: AiScorer): AiScorer {
     return {
-      score: async (r) => {
+      score: async (r, o) => {
         const hits = scoreInstructions(r.text, r.aiNote, r.transcript);
         const out = await this.call(
           "work_score",
           { workId: r.workId, rubric: r.rubric.id, promptId: r.promptId, task: r.task?.title ?? null, mediaKind: r.mediaKind, ...(hits.length ? { scoreInstructions: hits } : {}) },
           (_m, opts) => inner.score(r, opts),
           (out) => checkWorkScore(out, r.rubric),
-          { build: (tpl) => workMessages(r, tpl) },
+          { build: (tpl) => workMessages(r, tpl), trial: o?.trial },
         );
         return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
       },
@@ -258,9 +273,9 @@ export class AiGateway {
 
   wrapDaily(inner: AiDailyReviewer): AiDailyReviewer {
     return {
-      reviewDaily: async (r) => {
+      reviewDaily: async (r, o) => {
         const hits = scoreInstructions(r.explainText, r.transcript, r.aiNote);
-        const out = await this.call("daily_review", { submissionId: r.submissionId, templateId: r.templateId, grade: r.grade, ...(hits.length ? { scoreInstructions: hits } : {}) }, (_m, opts) => inner.reviewDaily(r, opts), checkDailyReview, { build: (tpl) => dailyMessages(r, tpl) });
+        const out = await this.call("daily_review", { submissionId: r.submissionId, templateId: r.templateId, grade: r.grade, ...(hits.length ? { scoreInstructions: hits } : {}) }, (_m, opts) => inner.reviewDaily(r, opts), checkDailyReview, { build: (tpl) => dailyMessages(r, tpl), trial: o?.trial });
         return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
       },
     };

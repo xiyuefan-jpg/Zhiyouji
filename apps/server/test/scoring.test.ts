@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { aiScores, messages, reviewAssignments, viewLog, works } from "@zhiyouji/db";
+import { aiCalls, aiScores, messages, reviewAssignments, viewLog, works } from "@zhiyouji/db";
 import { PLAGIARISM_FLAG } from "../src/season/similarity.js";
 import type { FakeAiScorer } from "../src/index.js";
 import { bj } from "./helpers.js";
@@ -135,6 +135,22 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
     // the admin sees which work it is and which came first
     const admin = (await t.call("GET", `/v1/admin/works/${w1.id}`, undefined, await t.boss.relogin())).json();
     expect(admin.similar).toMatchObject({ workId: theirs!.id, earlier: true });
+    await t.close();
+  });
+
+  it("提示词试跑 (part 7 §4): a sample work scored with a draft prompt and another model; nothing is stored but the call log", async () => {
+    const t = await scoringSetup(0);
+    const w = (await t.a1api("POST", `/v1/season/works/contest:${t.contestId}`, { mediaKind: "text", text: "我们的讲解：火焰山为什么热", members: [t.a1] })).json().work;
+    const token = await t.boss.relogin();
+    const r = await t.call("POST", "/v1/admin/ai/try/work_score", { targetId: w.id, prompt: "试跑用的提示词：请特别看受众。", model: "qwen-vl-max-trial" }, token);
+    expect(r.json().result.total).toBeGreaterThan(0);
+    expect(await t.db.select().from(aiScores)).toHaveLength(0);
+    const [log] = await t.db.select().from(aiCalls);
+    expect(log).toMatchObject({ task: "work_score", role: "trial", model: "qwen-vl-max-trial", promptVersion: -1, status: "ok" });
+    expect(JSON.stringify(log!.input)).toContain("试跑用的提示词：请特别看受众。");
+    expect(JSON.stringify(log!.input)).toContain("我们的讲解：火焰山为什么热");
+    // reviewers cannot
+    expect((await t.call("POST", "/v1/admin/ai/try/work_score", { targetId: w.id }, await t.r1.relogin())).statusCode).toBe(403);
     await t.close();
   });
 

@@ -145,6 +145,7 @@ export const ADMIN_AUDIT: Record<string, AuditPolicy> = {
   "POST /v1/admin/ai/prompts/:task": route("ai_prompt_add", "ai:{task}"),
   "GET /v1/admin/ai/stats": READ,
   "GET /v1/admin/ai/prices": READ,
+  "POST /v1/admin/ai/try/:task": route("ai_trial", "ai:{task}"),
   "PUT /v1/admin/ai/prices/:model": route("ai_price_set", "ai_price:{model}"),
   "GET /v1/admin/tags/suggestions": none("按月汇总的标签名称"),
 

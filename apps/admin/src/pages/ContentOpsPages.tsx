@@ -460,7 +460,7 @@ const TASK: Record<string, string> = {
   doc_parse: "T3 文档解析",
 };
 const PROMPT_TASKS = ["daily_review", "work_score", "supply_score", "summary", "season_review"];
-const ROLE: Record<string, string> = { primary: "正式", fallback: "备用", shadow: "影子" };
+const ROLE: Record<string, string> = { primary: "正式", fallback: "备用", shadow: "影子", trial: "试跑" };
 const yuan = (n: number) => (n < 1 ? n.toFixed(4) : n.toFixed(2));
 
 interface AiCfg {
@@ -566,6 +566,20 @@ function AiPrompts() {
   const [note, setNote] = useState("");
   const [view, setView] = useState<{ version: number; content: string } | null>(null);
   const liveText = p.data ? (p.data.prompts.find((x) => x.version === p.data!.live)?.content ?? p.data.builtin ?? "") : "";
+  // 试跑 (part 7 §4): only the work score and the daily review take a sample
+  const canTry = task === "work_score" || task === "daily_review";
+  const [target, setTarget] = useState("");
+  const [trialModel, setTrialModel] = useState("");
+  const [trialOut, setTrialOut] = useState<string | null>(null);
+  const tryIt = async () => {
+    setTrialOut("试跑中……");
+    try {
+      const r = await request<{ result: unknown }>("POST", `/v1/admin/ai/try/${task}`, { targetId: target.trim(), prompt: draft, ...(trialModel.trim() ? { model: trialModel.trim() } : {}) });
+      setTrialOut(JSON.stringify(r.result, null, 2));
+    } catch (e) {
+      setTrialOut(`出错了：${errText(e)}`);
+    }
+  };
   const add = async (makeLive: boolean) => {
     await run(
       async () => {
@@ -631,6 +645,18 @@ function AiPrompts() {
       >
         <Input.TextArea aria-label="提示词全文" rows={14} value={draft ?? ""} onChange={(e) => setDraft(e.target.value)} />
         <Input style={{ marginTop: 8 }} placeholder="这一版改了什么（可不填）" value={note} onChange={(e) => setNote(e.target.value)} />
+        {canTry && (
+          <Card size="small" title="用一件样例试跑（不保存分数，只记进 AI 调用记录）" style={{ marginTop: 12 }}>
+            <Space wrap>
+              <Input aria-label="样例编号" style={{ width: 320 }} placeholder={task === "work_score" ? "作品编号（作品页网址最后一段）" : "每日任务编号"} value={target} onChange={(e) => setTarget(e.target.value)} />
+              <Input aria-label="试跑模型" style={{ width: 200 }} placeholder="模型（不填用正式的）" value={trialModel} onChange={(e) => setTrialModel(e.target.value)} />
+              <Button disabled={!target.trim() || !draft?.trim()} onClick={() => void tryIt()}>
+                用这一版试跑
+              </Button>
+            </Space>
+            {trialOut && <pre style={{ whiteSpace: "pre-wrap", maxHeight: 320, overflow: "auto", marginTop: 8 }}>{trialOut}</pre>}
+          </Card>
+        )}
       </Modal>
     </Space>
   );
