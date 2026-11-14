@@ -208,12 +208,16 @@ export function buildServices(d: AppDeps): Services {
   };
 }
 
-export function buildApp(d: AppDeps, services = buildServices(d)): { app: FastifyInstance; services: Services; adminRouteKeys: string[] } {
+export function buildApp(d: AppDeps, services = buildServices(d)): { app: FastifyInstance; services: Services; adminRouteKeys: string[]; routeKeys: string[] } {
   const app = Fastify({ logger: d.logger ?? false, trustProxy: d.trustProxy ?? false, bodyLimit: 256 * 1024 });
 
   rateLimit(app, d.clock, d.cfg.rateLimit.perMinute);
   // Every admin route must say how it is logged (PRD part 8 §3.1, §3.4).
   const adminRouteKeys: string[] = [];
+  const routeKeys: string[] = [];
+  app.addHook("onRoute", (r) => {
+    for (const m of Array.isArray(r.method) ? r.method : [r.method]) if (m !== "HEAD") routeKeys.push(`${m} ${r.url}`);
+  });
   adminAudit(app, d.db, d.clock, (k) => adminRouteKeys.push(k));
 
   app.setErrorHandler((err, req, reply) => {
@@ -275,5 +279,5 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   app.post("/v1/survey", async (req) => services.survey.submit((await services.familyAuth.child(req)).child, surveySubmit.parse(req.body)));
   dailyRoutes(app, services.daily, services.admin, services.familyAuth, services.adminAuth);
   devStorageRoutes(app, services.storage, d.clock, Math.max(...Object.values(d.cfg.uploads.maxBytes)));
-  return { app, services, adminRouteKeys };
+  return { app, services, adminRouteKeys, routeKeys };
 }

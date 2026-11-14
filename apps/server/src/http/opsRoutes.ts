@@ -21,7 +21,10 @@ export function opsRoutes(app: FastifyInstance, ops: Operations, play: SeasonPla
     await admin.user(req, ["admin"]);
     return ops.listAnnouncements();
   });
-  app.post("/v1/admin/announcements", async (req) => ops.createAnnouncement(announcementCreate.parse(req.body), await by(req)));
+  app.post("/v1/admin/announcements", async (req) => {
+    const who = await by(req);
+    return ops.createAnnouncement(announcementCreate.parse(req.body), who);
+  });
   app.post("/v1/admin/announcements/:id/withdraw", async (req) => {
     await by(req);
     return ops.withdraw(idParam.parse(req.params).id);
@@ -34,7 +37,10 @@ export function opsRoutes(app: FastifyInstance, ops: Operations, play: SeasonPla
     const b = qrTicketRequest.parse(req.body);
     return ops.qrTicket({ teamId: idParam.parse(req.params).id }, b.contentType, b.size);
   });
-  app.post("/v1/admin/teams/:id/qr", async (req) => ops.setTeamQr(idParam.parse(req.params).id, qrSetRequest.parse(req.body).key, await by(req)));
+  app.post("/v1/admin/teams/:id/qr", async (req) => {
+    const who = await by(req);
+    return ops.setTeamQr(idParam.parse(req.params).id, qrSetRequest.parse(req.body).key, who);
+  });
   app.post("/v1/admin/servers/:id/camps/:camp/qr/ticket", async (req) => {
     await by(req);
     const p = campParam.parse(req.params);

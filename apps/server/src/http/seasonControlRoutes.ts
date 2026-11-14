@@ -29,7 +29,8 @@ const sinceQuery = z.object({ since: z.coerce.date() });
 
 export function seasonControlRoutes(app: FastifyInstance, control: SeasonControl, auth: AdminAuth): void {
   const admin = async (req: Parameters<AdminAuth["user"]>[0]) => `admin:${(await auth.user(req, ["admin"])).user.id}`;
-  const anyone = (req: Parameters<AdminAuth["user"]>[0]) => auth.user(req);
+  // 赛季设置、参数、日历 and the planned events are admin-only (PRD part 7 §0).
+  const anyone = (req: Parameters<AdminAuth["user"]>[0]) => auth.user(req, ["admin"]);
 
   // live view and ledger (§7)
   app.get("/v1/admin/servers/:id", async (req) => {

@@ -38,7 +38,7 @@ export function bankRoutes(app: FastifyInstance, bank: QuestionBank, auth: Admin
     return bank.update(idParam.parse(req.params).id, promptUpdate.parse(req.body), by);
   });
   app.get("/v1/admin/prompts/low-stock", async (req) => {
-    await auth.user(req, ["admin"]);
+    await auth.user(req); // 题库 is read-only for reviewers (PRD part 7 §0)
     return bank.lowStockAll();
   });
 }

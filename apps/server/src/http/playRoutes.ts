@@ -50,8 +50,9 @@ export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Repo
   // roles (E3)
   app.post("/v1/season/roles/claim", async (req) => play.claimRole(await ctx(req), claimRoleRequest.parse(req.body).role));
   app.post("/v1/season/roles/offer", async (req) => {
+    const c = await ctx(req);
     const b = offerRoleRequest.parse(req.body);
-    return play.offerRole(await ctx(req), b.role, b.to);
+    return play.offerRole(c, b.role, b.to);
   });
   app.get("/v1/season/roles/transfers", async (req) => ({ transfers: await play.pendingTransfers(await ctx(req)) }));
   app.post("/v1/season/roles/transfers/:id", async (req) =>
@@ -71,8 +72,9 @@ export function playRoutes(app: FastifyInstance, play: SeasonPlay, reports: Repo
   app.get("/v1/season/shop", async (req) => play.shop(await ctx(req)));
   app.post("/v1/season/shop/buy", async (req) => play.buyShopItem(await ctx(req), itemRequest.parse(req.body).itemId));
   app.post("/v1/season/shop/bid", async (req) => {
+    const c = await ctx(req);
     const b = bidRequest.parse(req.body);
-    return play.bidEpic(await ctx(req), b.itemId, b.amount);
+    return play.bidEpic(c, b.itemId, b.amount);
   });
 
   // submission rounds (D4, E10)
