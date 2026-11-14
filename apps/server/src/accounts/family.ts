@@ -29,6 +29,7 @@ export function childView(c: ChildRow): ChildView {
     grade: c.grade,
     gradeLabel: GRADE_LABELS[c.grade] ?? String(c.grade),
     explainPref: c.explainPref as "voice" | "text",
+    guideSeen: !!c.guideSeenAt,
   };
 }
 
@@ -198,6 +199,14 @@ export class FamilyAccounts {
         await tx.insert(gradeChanges).values({ childId, fromGrade: cur.grade, toGrade: patch.grade, source: "parent", at: now });
       return c!;
     });
+  }
+
+  /** 新手引导 seen or skipped (part 5 A5): remembered on the account, first time only. */
+  async markGuideSeen(familyId: string, childId: string): Promise<ChildRow> {
+    const cur = await this.child(familyId, childId);
+    if (cur.guideSeenAt) return cur;
+    const [c] = await this.db.update(children).set({ guideSeenAt: this.clock.now() }).where(eq(children.id, childId)).returning();
+    return c!;
   }
 
   /** Remember when this child last used the site (leader take-over, part 3 §5). Written at most every 5 minutes. */

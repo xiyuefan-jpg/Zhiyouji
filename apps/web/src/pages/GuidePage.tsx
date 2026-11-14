@@ -4,15 +4,16 @@
  * points. Can be skipped, and replayed from 我 → 设置.
  *
  * The first-time cards on the home page: the guide (until seen or skipped,
- * remembered per child on this device) and 土地公问卷 (until done).
+ * remembered on the child's account, so a new phone does not show it again)
+ * and 土地公问卷 (until done).
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "antd-mobile";
 import { request } from "../api";
 import { PageHeader, ReadAloud, Seal } from "../components/ui";
-import { useChild } from "../session";
+import { useChild, useSession } from "../session";
 import { useLoad } from "./season/useSeason";
 
 const COMMON = [
@@ -29,23 +30,36 @@ export function guideKey(childId: string): string {
   return `zyj_guide_${childId}`;
 }
 
-function markSeen(childId: string) {
+/** Remember on the account (and on this device, for when the request fails or the server is older). */
+function markSeen(childId: string, refresh?: () => Promise<void>) {
   try {
     localStorage.setItem(guideKey(childId), "1");
   } catch {
-    /* storage blocked: the card shows again next time */
+    /* storage blocked: the account still remembers */
+  }
+  void request("POST", `/v1/children/${childId}/guide-seen`)
+    .then(() => refresh?.())
+    .catch(() => undefined);
+}
+
+function seenHere(childId: string): boolean {
+  try {
+    return localStorage.getItem(guideKey(childId)) === "1";
+  } catch {
+    return false;
   }
 }
 
 export function GuidePage() {
   const child = useChild();
+  const { refresh } = useSession();
   const nav = useNavigate();
   const me = useLoad(() => request<{ status: string }>("GET", "/v1/season/me"));
   const screens = [...COMMON, ...(me.data && me.data.status !== "none" ? SEASON : [])];
   const [i, setI] = useState(0);
   const s = screens[Math.min(i, screens.length - 1)]!;
   const done = () => {
-    markSeen(child.id);
+    markSeen(child.id, refresh);
     nav("/", { replace: true });
   };
   return (
@@ -77,13 +91,13 @@ export function GuidePage() {
 export function FirstSteps() {
   const child = useChild();
   const survey = useLoad(() => request<{ done: boolean }>("GET", "/v1/survey"), [child.id]);
-  const [seen, setSeen] = useState(() => {
-    try {
-      return localStorage.getItem(guideKey(child.id)) === "1";
-    } catch {
-      return true;
-    }
-  });
+  const { refresh } = useSession();
+  const [seenNow, setSeen] = useState(false);
+  const seen = seenNow || child.guideSeen || seenHere(child.id);
+  // Seen on this device before the account kept it: tell the account once.
+  useEffect(() => {
+    if (!child.guideSeen && seenHere(child.id)) markSeen(child.id);
+  }, [child.id, child.guideSeen]);
   const link = { textDecoration: "none", color: "inherit" } as const;
   return (
     <>
@@ -99,7 +113,7 @@ export function FirstSteps() {
             <Button
               size="small"
               onClick={() => {
-                markSeen(child.id);
+                markSeen(child.id, refresh);
                 setSeen(true);
               }}
             >

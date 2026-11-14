@@ -343,6 +343,8 @@ export const children = pgTable(
     createdAt: ts("created_at").notNull().defaultNow(),
     /** Last request made as this child (leader take-over after 3 days away, part 3 §5). */
     lastActiveAt: ts("last_active_at"),
+    /** 新手引导 seen or skipped (part 5 A5): kept on the account, so a new phone or browser does not show it again. */
+    guideSeenAt: ts("guide_seen_at"),
   },
   (t) => [index("children_family").on(t.familyId)],
 );

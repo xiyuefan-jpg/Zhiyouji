@@ -134,6 +134,13 @@
       "when": 1794606619560,
       "tag": "0018_work_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794623852643,
+      "tag": "0019_guide_seen",
+      "breakpoints": true
     }
   ]
 }

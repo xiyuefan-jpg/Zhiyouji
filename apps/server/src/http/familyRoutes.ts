@@ -102,6 +102,11 @@ export function familyRoutes(app: FastifyInstance, cfg: ServerConfig, accounts: 
     return { child: childView(await accounts.updateChild(family.id, req.params.id, childUpdate.parse(req.body))) };
   });
 
+  app.post<{ Params: { id: string } }>("/v1/children/:id/guide-seen", async (req) => {
+    const { family } = await auth.consented(req);
+    return { child: childView(await accounts.markGuideSeen(family.id, req.params.id)) };
+  });
+
   app.post("/v1/session/child", async (req) => {
     const { session } = await auth.consented(req);
     const b = chooseChild.parse(req.body);

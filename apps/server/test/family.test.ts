@@ -133,6 +133,11 @@ describe("student login (part 5 A2, part 8 §3.1)", () => {
     expect((await t.call("POST", "/v1/session/child", { childId: id }, b.token)).statusCode).toBe(404);
     expect((await t.call("PATCH", "/v1/children/not-a-uuid", { grade: 6 }, a.token)).statusCode).toBe(404);
     expect((await t.call("PATCH", `/v1/children/${id}`, {}, a.token)).statusCode).toBe(400);
+    // 新手引导 seen: kept on the account (any phone or browser), only by the child's own family
+    expect(up.json().child.guideSeen).toBe(false);
+    expect((await t.call("POST", `/v1/children/${id}/guide-seen`, undefined, b.token)).statusCode).toBe(404);
+    expect((await t.call("POST", `/v1/children/${id}/guide-seen`, undefined, a.token)).json().child.guideSeen).toBe(true);
+    expect((await t.call("GET", "/v1/children", undefined, a.token)).json().children.find((c: { id: string }) => c.id === id).guideSeen).toBe(true);
     for (let i = 0; i < 5; i++) await t.call("POST", "/v1/children", { nickname: `孩子${i}`, grade: 3 }, a.token);
     const seventh = await t.call("POST", "/v1/children", { nickname: "第七个", grade: 3 }, a.token);
     expect(seventh.json().error).toBe("too_many_children");

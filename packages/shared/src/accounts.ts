@@ -92,6 +92,8 @@ export interface ChildView {
   grade: number;
   gradeLabel: string;
   explainPref: "voice" | "text";
+  /** 新手引导 seen or skipped on any device (part 5 A5). */
+  guideSeen: boolean;
 }
 
 export interface FamilyMe {
