@@ -78,6 +78,7 @@ export function ContentPage() {
           { key: "templates", label: "地块模板", children: <Templates canEdit={me.role === "admin"} /> },
           ...(me.role === "admin" ? [{ key: "low", label: "题库不足", children: <LowStock /> }] : []),
           ...(me.role === "admin" ? [{ key: "tags", label: "新标签建议", children: <TagSuggestions /> }] : []),
+          { key: "todos", label: "待补清单", children: <ContentTodos canEdit={me.role === "admin"} /> },
           { key: "cards", label: "约束词条", children: <WarCards canEdit={me.role === "admin"} /> },
           { key: "daily", label: "每日任务模板", children: <DailyTemplates canEdit={me.role === "admin"} /> },
           { key: "rubrics", label: "评分族", children: <Rubrics canEdit={me.role === "admin"} /> },
@@ -85,6 +86,92 @@ export function ContentPage() {
           { key: "ai", label: "AI 配置", children: <AiConfig canEdit={me.role === "admin"} /> },
         ]}
       />
+    </Space>
+  );
+}
+
+interface TodoRow {
+  id: string;
+  title: string;
+  state: string | null;
+  action: string | null;
+  dueDay: number;
+  dueNote: string | null;
+  dueAt: string | null;
+  daysLeft: number | null;
+  done: boolean;
+}
+
+/** 待补清单 (part 7 §4; content library): sorted by deadline, reminders a week and a day before, ticked off when done. */
+function ContentTodos({ canEdit }: { canEdit: boolean }) {
+  const l = useLoad(() => request<{ season: { name: string; openingDate: string } | null; items: TodoRow[] }>("GET", "/v1/admin/content/todos"));
+  const [adding, setAdding] = useState(false);
+  const [form] = Form.useForm();
+  const tick = (r: TodoRow) => run(() => request("PATCH", `/v1/admin/content/todos/${r.id}`, { done: !r.done }), r.done ? "已改回没做完" : "已勾掉", l.reload);
+  const add = async () => {
+    const v = await form.validateFields();
+    await run(() => request("POST", "/v1/admin/content/todos", { ...v, dueDay: Number(v.dueDay) }), "已加入", () => {
+      setAdding(false);
+      form.resetFields();
+      l.reload();
+    });
+  };
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary">
+        {l.data?.season ? `截止日期按「${l.data.season.name}」（开营 ${l.data.season.openingDate}）算。` : "还没有赛季，先只显示是第几天。"}截止前 7 天和 1 天提醒管理员，过了截止还没勾掉也会提醒。
+      </Typography.Paragraph>
+      {canEdit && l.data?.items.length === 0 && (
+        <Button type="primary" onClick={() => void run(() => request("POST", "/v1/admin/content/todos/seed-defaults"), "已导入内容库的待补清单", l.reload)}>
+          导入内容库的待补清单
+        </Button>
+      )}
+      <Table<TodoRow>
+        rowKey="id"
+        size="small"
+        pagination={false}
+        dataSource={l.data?.items ?? []}
+        columns={[
+          { title: "待补内容", render: (_, r) => (r.done ? <Typography.Text delete>{r.title}</Typography.Text> : <b>{r.title}</b>) },
+          { title: "现状", render: (_, r) => r.state ?? "" },
+          { title: "要做什么", render: (_, r) => r.action ?? "" },
+          {
+            title: "最晚",
+            render: (_, r) => (
+              <span>
+                {r.dueNote ?? `D${r.dueDay} 之前`}
+                {r.dueAt && !r.done && (
+                  <Typography.Text type={r.daysLeft !== null && r.daysLeft <= 7 ? "danger" : "secondary"}>
+                    {" "}
+                    · {r.daysLeft !== null && r.daysLeft < 0 ? `已过 ${-r.daysLeft} 天` : `还有 ${r.daysLeft} 天`}
+                  </Typography.Text>
+                )}
+              </span>
+            ),
+          },
+          { title: "", render: (_, r) => canEdit && <Button size="small" onClick={() => void tick(r)}>{r.done ? "改回没做完" : "做完了"}</Button> },
+        ]}
+      />
+      {canEdit && <Button onClick={() => setAdding(true)}>加一项</Button>}
+      <Modal open={adding} title="加一项待补内容" okText="保存" cancelText="取消" onOk={() => void add()} onCancel={() => setAdding(false)}>
+        <Form form={form} layout="vertical">
+          <Form.Item name="title" label="待补内容" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="state" label="现状">
+            <Input />
+          </Form.Item>
+          <Form.Item name="action" label="要做什么">
+            <Input />
+          </Form.Item>
+          <Form.Item name="dueDay" label="最晚第几天（D几之前）" rules={[{ required: true }]}>
+            <InputNumber min={-60} max={40} />
+          </Form.Item>
+          <Form.Item name="dueNote" label="截止的说法（可不填）">
+            <Input placeholder="例如：D4（第一个周四晚间公布时刻）" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Space>
   );
 }

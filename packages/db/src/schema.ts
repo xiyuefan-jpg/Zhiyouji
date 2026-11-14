@@ -1221,6 +1221,28 @@ export const contentSettings = pgTable("content_settings", {
   updatedAt: ts("updated_at").notNull(),
 });
 
+/**
+ * 待补清单 (content library "待补清单"; PRD part 7 §1, §4): content still to be
+ * written before a season, each with its hard deadline as a season day
+ * ("D1 之前" = day 1). Reminders go to the admins a week and a day before.
+ */
+export const contentTodos = pgTable("content_todos", {
+  id: id(),
+  title: text("title").notNull(),
+  /** 现状 */
+  state: text("state"),
+  /** 回来时要做什么 */
+  action: text("action"),
+  /** Season day it must be ready by (start of that day, Beijing). */
+  dueDay: integer("due_day").notNull(),
+  /** How the deadline is said, e.g. "D4（第一个周四晚间公布时刻）". */
+  dueNote: text("due_note"),
+  doneAt: ts("done_at"),
+  doneBy: text("done_by"),
+  createdBy: text("created_by").notNull(),
+  createdAt: ts("created_at").notNull(),
+});
+
 /** Every AI call (append-only): input, output, model, version, time, cost. */
 export const aiCalls = pgTable(
   "ai_calls",

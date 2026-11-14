@@ -26,7 +26,7 @@ async function main() {
   const email = new FakeEmail(env.NODE_ENV === "production" ? undefined : (line) => console.log(line));
   const { app, services } = buildApp({ db, clock, cfg, sms, captcha: new FakeCaptcha(), email, storage, logger: true, trustProxy: env.TRUST_PROXY === "1" });
 
-  const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier, services.reports, services.reminders, services.scoring, services.dataRights, services.daily, services.supply, services.debates, services.ops, services.showcase, services.summaries, services.media, services.tagSuggestions, services.control, services.emailDispatcher);
+  const worker = new Worker(db, services.scheduler, services.smsDispatcher, services.notifier, services.reports, services.reminders, services.scoring, services.dataRights, services.daily, services.supply, services.debates, services.ops, services.showcase, services.summaries, services.media, services.tagSuggestions, services.control, services.emailDispatcher, services.todos);
   const tickMs = Number(env.TICK_MS ?? 30_000);
   const timer = setInterval(() => {
     worker.tick().then(

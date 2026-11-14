@@ -8,6 +8,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { seasons, servers, type Db } from "@zhiyouji/db";
 import type { EmailDispatcher, Notifier, SmsDispatcher } from "./notify/notifier.js";
+import type { ContentTodos } from "./content/todos.js";
 import type { Scheduler } from "./scheduler.js";
 import type { Reports } from "./season/reports.js";
 import type { Reminders } from "./notify/reminders.js";
@@ -65,6 +66,7 @@ export class Worker {
     private readonly tagSuggestions?: TagSuggestions,
     private readonly control?: SeasonControl,
     private readonly emails?: EmailDispatcher,
+    private readonly todos?: ContentTodos,
   ) {}
 
   /** One pass. Skips if the previous pass is still running. */
@@ -136,6 +138,7 @@ export class Worker {
         ["tag suggestions", () => this.tagSuggestions?.runDue()],
         ["QR reminders", () => this.ops?.qrReminders()],
         ["archiving", () => this.control?.archiveDue()],
+        ["content todos", () => this.todos?.remindDue()],
         ["emails", () => this.emails?.runDue()],
       ] as const) {
         try {
