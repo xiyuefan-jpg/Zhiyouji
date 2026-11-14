@@ -84,6 +84,15 @@ export function seasonAdminRoutes(app: FastifyInstance, seasons: SeasonAdmin, au
     return { children: found };
   });
 
+  // 孩子档案 (part 7 §3): grade, registration, survey, journal in numbers
+  app.get("/v1/admin/children/:id", async (req) => {
+    const { user } = await auth.user(req, ["admin"]);
+    const { id } = idParam.parse(req.params);
+    const p = await seasons.childProfile(id);
+    await auth.view(user.id, [id], { contentKind: "child_profile", objectId: id, action: "view" });
+    return p;
+  });
+
   app.post("/v1/admin/seasons/:id/players", async (req) => {
     const by = await admin(req);
     return seasons.enroll(idParam.parse(req.params).id, enrollRequest.parse(req.body).players, by);

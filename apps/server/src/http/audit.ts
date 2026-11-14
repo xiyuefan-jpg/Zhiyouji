@@ -65,6 +65,7 @@ export const ADMIN_AUDIT: Record<string, AuditPolicy> = {
   "POST /v1/admin/seasons/:id/open-enrollment": domain("season_status"),
   "POST /v1/admin/seasons/:id/reopen-enrollment": domain("season_status"),
   "GET /v1/admin/children": view("child_search"),
+  "GET /v1/admin/children/:id": view("child_profile"),
   "POST /v1/admin/seasons/:id/players": domain("season_enroll"),
   "POST /v1/admin/seasons/:id/players/match": view("child_search"),
   "GET /v1/admin/seasons/:id/players": view("roster"),

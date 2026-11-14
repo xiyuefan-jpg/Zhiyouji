@@ -17,7 +17,7 @@
 
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, DatePicker, Descriptions, Drawer, Form, Input, InputNumber, List, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Typography, message } from "antd";
 import dayjs from "dayjs";
 import { ApiError, request } from "../api";
 import { Time } from "../time";
@@ -413,10 +413,66 @@ export function PlayersPage() {
   );
 }
 
+interface ChildProfile {
+  child: { childId: string; nickname: string; gradeLabel: string; explainPref: string; createdAt: string; lastActiveAt: string | null; phoneMasked: string };
+  siblings: { childId: string; nickname: string; gradeLabel: string }[];
+  grades: { from: number | null; to: number; source: string; at: string }[];
+  seasons: { seasonId: string; name: string; status: string; paymentNote: string | null; server: string | null; team: string | null }[];
+  survey: { style: string; topCuriosity: { subject: string; score: number }[]; completedAt: string } | null;
+  journal: { daily: { total: number; passed: number; days: number }; cards: number; bySubject: { subject: string; cards: number }[]; latest: { title: string; tag: string | null; day: string }[] };
+}
+const STYLE_TEXT: Record<string, string> = { fighter: "冲在最前面打 BOSS 的", strategist: "研究地图和攻略的", healer: "给队友加血的", builder: "在自己的地盘慢慢建设的" };
+const GRADE_SOURCE: Record<string, string> = { created: "建档", parent: "家长改", auto: "每年自动升级", admin: "管理员改" };
+
+/** 孩子档案 (part 7 §3): grade, registration, survey, journal in numbers. Opening it is recorded in the view log. */
+export function ChildDrawer({ childId, onClose }: { childId: string | null; onClose: () => void }) {
+  const p = useLoad(() => (childId ? request<ChildProfile>("GET", `/v1/admin/children/${childId}`) : Promise.resolve(null)), [childId]);
+  const d = p.data;
+  return (
+    <Drawer open={!!childId} onClose={onClose} width={520} title={d ? `${d.child.nickname} · ${d.child.gradeLabel}` : "孩子档案"}>
+      {p.error && <Alert type="error" message={p.error} />}
+      {d && (
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <Descriptions size="small" column={1} bordered>
+            <Descriptions.Item label="家长手机号">{d.child.phoneMasked}</Descriptions.Item>
+            <Descriptions.Item label="注册">
+              <Time iso={d.child.createdAt} />
+            </Descriptions.Item>
+            <Descriptions.Item label="最近一次使用">{d.child.lastActiveAt ? <Time iso={d.child.lastActiveAt} /> : "—"}</Descriptions.Item>
+            <Descriptions.Item label="讲解方式">{d.child.explainPref === "text" ? "写字" : "语音"}</Descriptions.Item>
+            <Descriptions.Item label="兄弟姐妹">{d.siblings.length ? d.siblings.map((x) => `${x.nickname}（${x.gradeLabel}）`).join("、") : "—"}</Descriptions.Item>
+            <Descriptions.Item label="年级记录">{d.grades.map((g) => `${g.from ?? "—"} → ${g.to}（${GRADE_SOURCE[g.source] ?? g.source}）`).join("；") || "—"}</Descriptions.Item>
+          </Descriptions>
+          <Card size="small" title="赛季">
+            {d.seasons.length === 0 ? "还没有参加过赛季（免费用户）" : d.seasons.map((x) => <div key={x.seasonId}>{`${x.name}：${PLAYER_STATUS[x.status] ?? x.status}${x.server ? ` · ${x.server} · ${x.team}` : ""}${x.paymentNote ? ` · 备注 ${x.paymentNote}` : ""}`}</div>)}
+          </Card>
+          <Card size="small" title="土地公问卷">
+            {d.survey ? (
+              <>
+                风格：{STYLE_TEXT[d.survey.style] ?? d.survey.style}；最好奇：{d.survey.topCuriosity.map((c) => `${c.subject}（${c.score}）`).join("、")}
+              </>
+            ) : (
+              "还没做"
+            )}
+          </Card>
+          <Card size="small" title="修行日志">
+            <div>
+              每日任务 {d.journal.daily.total} 条，通过 {d.journal.daily.passed} 条，{d.journal.daily.days} 天；知识卡片 {d.journal.cards} 张
+            </div>
+            {d.journal.bySubject.length > 0 && <div>学科：{d.journal.bySubject.map((x) => `${x.subject} ${x.cards}`).join("、")}</div>}
+            <List size="small" dataSource={d.journal.latest} renderItem={(c) => <List.Item>{`${c.day} · ${c.title}${c.tag ? `（${c.tag}）` : ""}`}</List.Item>} />
+          </Card>
+        </Space>
+      )}
+    </Drawer>
+  );
+}
+
 function EnablePlayers({ season }: { season: Season }) {
   const [q, setQ] = useState("");
   const hits = useLoad(() => (q ? request<{ children: ChildHit[] }>("GET", `/v1/admin/children?q=${encodeURIComponent(q)}`) : Promise.resolve({ children: [] })), [q]);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [profile, setProfile] = useState<string | null>(null);
   // Who is already enabled, so the search shows it instead of a second 开通 button.
   const roster = useLoad(() => request<{ players: RosterRow[] }>("GET", `/v1/admin/seasons/${season.id}/players`), [season.id]);
   const enrolled = new Set((roster.data?.players ?? []).filter((p) => p.status === "enrolled").map((p) => p.childId));
@@ -432,6 +488,7 @@ function EnablePlayers({ season }: { season: Season }) {
   if (season.status !== "enrolling") return <Alert type="info" message={`现在是"${season.statusLabel}"，只有"报名中"可以开通资格。`} />;
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
+      <ChildDrawer childId={profile} onClose={() => setProfile(null)} />
       <Input.Search placeholder="家长手机号或孩子昵称" enterButton="找" onSearch={(v) => setQ(v.trim())} style={{ width: 360 }} />
       <Table<ChildHit>
         rowKey="childId"
@@ -440,7 +497,7 @@ function EnablePlayers({ season }: { season: Season }) {
         pagination={false}
         locale={{ emptyText: q ? "没有找到" : "先搜索" }}
         columns={[
-          { title: "昵称", dataIndex: "nickname" },
+          { title: "昵称", render: (_, c) => <a onClick={() => setProfile(c.childId)}>{c.nickname}</a> },
           { title: "年级", render: (_, c) => c.gradeLabel ?? c.grade },
           { title: "家长手机号", dataIndex: "phoneMasked" },
           { title: "缴费备注", render: (_, c) => <Input size="small" aria-label={`${c.nickname}缴费备注`} value={notes[c.childId] ?? ""} onChange={(e) => setNotes({ ...notes, [c.childId]: e.target.value })} /> },

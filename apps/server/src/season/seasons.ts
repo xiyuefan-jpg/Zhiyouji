@@ -10,7 +10,7 @@
 
 import { randomInt } from "node:crypto";
 import { and, asc, desc, eq, ilike, inArray, or } from "drizzle-orm";
-import { children, families, opLog, paramVersions, seasonPlayers, seasons, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
+import { children, dailySubmissions, families, gradeChanges, knowledgeCards, opLog, paramVersions, seasonPlayers, seasons, servers, surveyAnswers, teamMembers, teams, type Db } from "@zhiyouji/db";
 import { DEFAULT_PARAMS, createRng, dayOfWeek, groupPlayers, type Player, type SeasonParams } from "@zhiyouji/engine";
 import { GRADE_LABELS, SERVER_NAMES, TEAM_NAME_POOL, maskPhone, type SeasonCreate, type SeasonStatus } from "@zhiyouji/shared";
 import type { Clock } from "../clock.js";
@@ -165,6 +165,65 @@ export class SeasonAdmin {
       phoneMasked: maskPhone(r.phone),
       createdAt: r.child.createdAt.toISOString(),
     }));
+  }
+
+  /**
+   * 孩子档案 (part 7 §3 孩子查找 "查看年级、注册时间、问卷、修行日志概况"): one
+   * child for the admin — the family's other children, the grade history, the
+   * seasons, the latest survey, and the journal in numbers with the latest cards.
+   */
+  async childProfile(childId: string) {
+    const [row] = await this.db.select({ child: children, phone: families.phone }).from(children).innerJoin(families, eq(children.familyId, families.id)).where(eq(children.id, childId));
+    if (!row || row.child.status !== "active") fail(404, "child_not_found");
+    const c = row!.child;
+    const siblings = await this.db.select({ id: children.id, nickname: children.nickname, grade: children.grade }).from(children).where(and(eq(children.familyId, c.familyId), eq(children.status, "active")));
+    const grades = await this.db.select().from(gradeChanges).where(eq(gradeChanges.childId, childId)).orderBy(asc(gradeChanges.at));
+    const played = await this.db
+      .select({ seasonId: seasonPlayers.seasonId, name: seasons.name, status: seasonPlayers.status, paymentNote: seasonPlayers.paymentNote, enabledAt: seasonPlayers.enabledAt })
+      .from(seasonPlayers)
+      .innerJoin(seasons, eq(seasonPlayers.seasonId, seasons.id))
+      .where(eq(seasonPlayers.childId, childId))
+      .orderBy(asc(seasonPlayers.enabledAt));
+    const teamRows = await this.db
+      .select({ teamId: teams.id, team: teams.name, serverId: teams.serverId, server: servers.name, seasonId: servers.seasonId, active: teamMembers.active })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+      .innerJoin(servers, eq(teams.serverId, servers.id))
+      .where(eq(teamMembers.childId, childId));
+    const [survey] = await this.db.select().from(surveyAnswers).where(eq(surveyAnswers.childId, childId)).orderBy(desc(surveyAnswers.completedAt)).limit(1);
+    const daily = await this.db.select({ status: dailySubmissions.status, day: dailySubmissions.day }).from(dailySubmissions).where(eq(dailySubmissions.childId, childId));
+    const cards = await this.db.select().from(knowledgeCards).where(and(eq(knowledgeCards.childId, childId), eq(knowledgeCards.visible, true))).orderBy(desc(knowledgeCards.createdAt));
+    const bySubject = new Map<string, number>();
+    for (const k of cards) {
+      const subject = k.tag?.split("/")[0] ?? "未分类";
+      bySubject.set(subject, (bySubject.get(subject) ?? 0) + 1);
+    }
+    const curiosity = survey ? Object.entries(survey.curiosity as Record<string, number>).sort((a, b) => b[1] - a[1]) : [];
+    return {
+      child: {
+        childId: c.id,
+        nickname: c.nickname,
+        grade: c.grade,
+        gradeLabel: GRADE_LABELS[c.grade] ?? String(c.grade),
+        explainPref: c.explainPref,
+        createdAt: c.createdAt.toISOString(),
+        lastActiveAt: c.lastActiveAt?.toISOString() ?? null,
+        phoneMasked: maskPhone(row!.phone),
+      },
+      siblings: siblings.filter((x) => x.id !== c.id).map((x) => ({ childId: x.id, nickname: x.nickname, gradeLabel: GRADE_LABELS[x.grade] ?? String(x.grade) })),
+      grades: grades.map((g) => ({ from: g.fromGrade, to: g.toGrade, source: g.source, at: g.at.toISOString() })),
+      seasons: played.map((p) => {
+        const t = teamRows.find((x) => x.seasonId === p.seasonId);
+        return { ...p, enabledAt: p.enabledAt.toISOString(), server: t?.server ?? null, team: t?.team ?? null, teamId: t?.teamId ?? null };
+      }),
+      survey: survey ? { style: survey.style, topCuriosity: curiosity.slice(0, 3).map(([subject, score]) => ({ subject, score })), completedAt: survey.completedAt.toISOString() } : null,
+      journal: {
+        daily: { total: daily.length, passed: daily.filter((d) => d.status === "passed").length, days: new Set(daily.filter((d) => d.status === "passed").map((d) => String(d.day))).size },
+        cards: cards.length,
+        bySubject: [...bySubject.entries()].sort((a, b) => b[1] - a[1]).map(([subject, n]) => ({ subject, cards: n })),
+        latest: cards.slice(0, 5).map((k) => ({ title: k.title, tag: k.tag, day: String(k.day) })),
+      },
+    };
   }
 
   /**
