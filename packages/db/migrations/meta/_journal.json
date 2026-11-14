@@ -211,6 +211,13 @@
       "when": 1794664189176,
       "tag": "0029_prompt_extra",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794664439181,
+      "tag": "0030_content_settings",
+      "breakpoints": true
     }
   ]
 }

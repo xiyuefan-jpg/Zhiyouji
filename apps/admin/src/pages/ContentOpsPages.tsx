@@ -78,11 +78,111 @@ export function ContentPage() {
           { key: "templates", label: "地块模板", children: <Templates canEdit={me.role === "admin"} /> },
           ...(me.role === "admin" ? [{ key: "low", label: "题库不足", children: <LowStock /> }] : []),
           ...(me.role === "admin" ? [{ key: "tags", label: "新标签建议", children: <TagSuggestions /> }] : []),
+          { key: "cards", label: "约束词条", children: <WarCards canEdit={me.role === "admin"} /> },
+          { key: "daily", label: "每日任务模板", children: <DailyTemplates canEdit={me.role === "admin"} /> },
           { key: "rubrics", label: "评分族", children: <Rubrics canEdit={me.role === "admin"} /> },
           // part 7 §0: reviewers read the AI configuration and prompts, only admins change them
           { key: "ai", label: "AI 配置", children: <AiConfig canEdit={me.role === "admin"} /> },
         ]}
       />
+    </Space>
+  );
+}
+
+interface WarCardRow {
+  id: string;
+  kind: string;
+  text: string;
+  weeks: number[];
+}
+
+/** 约束词条 (part 7 §4; content library 5.4): the cards and the weeks each may be offered in (互赠周). */
+function WarCards({ canEdit }: { canEdit: boolean }) {
+  const l = useLoad(() => request<{ cards: WarCardRow[] }>("GET", "/v1/admin/content/war-cards"));
+  const [rows, setRows] = useState<WarCardRow[] | null>(null);
+  const list = rows ?? l.data?.cards ?? [];
+  const set = (i: number, patch: Partial<WarCardRow>) => setRows(list.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const save = () =>
+    run(() => request("PUT", "/v1/admin/content/war-cards", { cards: list }), "已保存，之后配对的周战争按新的词条", () => {
+      setRows(null);
+      l.reload();
+    });
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary">互赠周里，每组从这一周可用的词条里随机看到几张（参数 war.giftOffered），选一张送给对手。已经配对的周不受影响。</Typography.Paragraph>
+      <Table
+        rowKey={(_, i) => String(i)}
+        size="small"
+        pagination={false}
+        dataSource={list}
+        columns={[
+          { title: "编号", render: (_, r, i) => (canEdit ? <Input aria-label={`编号 ${i + 1}`} style={{ width: 60 }} value={r.id} onChange={(e) => set(i, { id: e.target.value.toUpperCase() })} /> : r.id) },
+          { title: "类别", render: (_, r, i) => (canEdit ? <Input aria-label={`类别 ${i + 1}`} style={{ width: 90 }} value={r.kind} onChange={(e) => set(i, { kind: e.target.value })} /> : r.kind) },
+          { title: "词条", render: (_, r, i) => (canEdit ? <Input aria-label={`词条 ${i + 1}`} value={r.text} onChange={(e) => set(i, { text: e.target.value })} /> : r.text) },
+          {
+            title: "可用的周",
+            render: (_, r, i) =>
+              canEdit ? (
+                <Select aria-label={`可用的周 ${i + 1}`} mode="multiple" style={{ width: 160 }} value={r.weeks} onChange={(v) => set(i, { weeks: v })} options={[1, 2, 3, 4].map((w) => ({ value: w, label: `第 ${w} 周` }))} />
+              ) : (
+                r.weeks.map((w) => `W${w}`).join("、")
+              ),
+          },
+          { title: "", render: (_, _r, i) => canEdit && <Button size="small" onClick={() => setRows(list.filter((_, j) => j !== i))}>删除</Button> },
+        ]}
+      />
+      {canEdit && (
+        <Space>
+          <Button onClick={() => setRows([...list, { id: "", kind: "", text: "", weeks: [2, 4] }])}>加一张</Button>
+          <Button type="primary" disabled={rows === null} onClick={() => void save()}>
+            保存
+          </Button>
+        </Space>
+      )}
+    </Space>
+  );
+}
+
+interface DailyTemplateRow {
+  id: number;
+  name: string;
+  prompt: string;
+  evidence: string;
+  noAiAllowed: boolean;
+}
+
+/** 每日任务模板 (part 7 §4; content library 8.1): the six templates' names, prompts and evidence. */
+function DailyTemplates({ canEdit }: { canEdit: boolean }) {
+  const l = useLoad(() => request<{ templates: DailyTemplateRow[] }>("GET", "/v1/admin/content/daily-templates"));
+  const [rows, setRows] = useState<DailyTemplateRow[] | null>(null);
+  const list = rows ?? l.data?.templates ?? [];
+  const set = (i: number, patch: Partial<DailyTemplateRow>) => setRows(list.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const save = () =>
+    run(() => request("PUT", "/v1/admin/content/daily-templates", { templates: list.map(({ id, name, prompt, evidence }) => ({ id, name, prompt, evidence })) }), "已保存，孩子和 AI 审核马上用新的说法", () => {
+      setRows(null);
+      l.reload();
+    });
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary">模板 3–6 可以选“没用 AI”，这是规则，不在这里改。</Typography.Paragraph>
+      <Table
+        rowKey="id"
+        size="small"
+        pagination={false}
+        dataSource={list}
+        columns={[
+          { title: "", dataIndex: "id" },
+          { title: "名称", render: (_, r, i) => (canEdit ? <Input aria-label={`模板名称 ${r.id}`} value={r.name} onChange={(e) => set(i, { name: e.target.value })} /> : r.name) },
+          { title: "问题", render: (_, r, i) => (canEdit ? <Input aria-label={`模板问题 ${r.id}`} value={r.prompt} onChange={(e) => set(i, { prompt: e.target.value })} /> : r.prompt) },
+          { title: "证据", render: (_, r, i) => (canEdit ? <Input aria-label={`模板证据 ${r.id}`} value={r.evidence} onChange={(e) => set(i, { evidence: e.target.value })} /> : r.evidence) },
+          { title: "可以没用 AI", render: (_, r) => (r.noAiAllowed ? "是" : "否") },
+        ]}
+      />
+      {canEdit && (
+        <Button type="primary" disabled={rows === null} onClick={() => void save()}>
+          保存
+        </Button>
+      )}
     </Space>
   );
 }

@@ -21,7 +21,6 @@ import { dailyReviews, dailySubmissions, files, knowledgeCards, safetyQueue, typ
 import type { ContentSafety } from "../providers.js";
 import { beijingDate, seasonDayOf, seasonWeekOf } from "@zhiyouji/engine";
 import {
-  DAILY_TEMPLATES,
   DAILY_TEXT_MAX,
   DAILY_TEXT_MIN,
   TAXONOMY,
@@ -35,6 +34,7 @@ import type { ChildRow } from "../accounts/family.js";
 import type { Clock } from "../clock.js";
 import type { ServerConfig } from "../config.js";
 import { fail } from "../http/errors.js";
+import { contentSettings } from "../content/contentSettings.js";
 import type { Notifier } from "../notify/notifier.js";
 import type { SeasonPlay } from "../season/play.js";
 import type { SeasonStore } from "../seasonStore.js";
@@ -118,7 +118,7 @@ export class DailyTasks {
       const [same] = await this.db.select({ id: dailySubmissions.id }).from(dailySubmissions).where(and(eq(dailySubmissions.childId, child.id), eq(dailySubmissions.clientKey, b.clientKey)));
       if (same) return this.view(child.id, same.id);
     }
-    const tpl = DAILY_TEMPLATES.find((t) => t.id === b.templateId)!;
+    const tpl = await contentSettings(this.db).dailyTemplate(b.templateId);
     const noAi = !!b.noAi;
     if (noAi && !tpl.noAiAllowed) fail(400, "no_ai_not_allowed");
     if (!noAi && !b.aiNote?.trim()) fail(400, "ai_note_required");
@@ -206,7 +206,7 @@ export class DailyTasks {
 
   /** What T4 gets: the explanation (transcribed first), the evidence pictures and the template (part 6 §1 T4). */
   private async reviewRequest(s: SubRow): Promise<DailyReviewRequest> {
-    const tpl = DAILY_TEMPLATES.find((t) => t.id === s.templateId)!;
+    const tpl = await contentSettings(this.db).dailyTemplate(s.templateId);
     const evidence = s.evidenceFileIds as string[];
     let transcript: string | null = null;
     // the voice explanation is transcribed first ("材料齐了", part 6 §2)
@@ -474,7 +474,7 @@ export class DailyTasks {
       passedToday: subs.filter((s) => s.status === "passed").length,
       retriesLeft: Math.max(0, DAILY_RETRIES_PER_DAY + 1 - failed),
       season: null as null | { countedToday: number; capPerDay: number; countedThisWeek: number; capPerWeek: number },
-      templates: DAILY_TEMPLATES,
+      templates: await contentSettings(this.db).dailyTemplates(),
     };
     const l = await this.play.lookup(child.id);
     if (l.kind === "playing") {

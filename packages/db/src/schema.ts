@@ -1208,6 +1208,19 @@ export const rubricVersions = pgTable(
   (t) => [uniqueIndex("rubric_versions_family_version").on(t.family, t.version)],
 );
 
+/**
+ * Content the admins edit as one list (PRD part 7 §4): `war_cards` (the 24
+ * constraint cards and the weeks each is allowed in) and `daily_templates`
+ * (the six templates' names, prompts and evidence). Missing → the content
+ * library drafts in `@zhiyouji/shared`.
+ */
+export const contentSettings = pgTable("content_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: ts("updated_at").notNull(),
+});
+
 /** Every AI call (append-only): input, output, model, version, time, cost. */
 export const aiCalls = pgTable(
   "ai_calls",

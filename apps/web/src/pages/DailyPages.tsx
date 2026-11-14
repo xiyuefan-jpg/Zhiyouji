@@ -19,9 +19,19 @@ import { useChild } from "../session";
 import { useLoad } from "./season/useSeason";
 import { RETRY_WAITS_MS, clearDraft, isTransient, loadDraftBlobs, loadDraftText, newClientKey, saveDraftBlobs, saveDraftText } from "../platform/drafts";
 
+interface Template {
+  id: number;
+  name: string;
+  prompt: string;
+  evidence: string;
+  noAiAllowed: boolean;
+}
+
 interface Today {
   passedToday: number;
   retriesLeft: number;
+  /** The six templates as the admins worded them (part 7 §4); the built-in copy until it loads. */
+  templates?: Template[];
   season: { countedToday: number; capPerDay: number; countedThisWeek: number; capPerWeek: number } | null;
 }
 
@@ -58,7 +68,7 @@ export function DailyHome() {
       {today.data && today.data.retriesLeft < 3 && (
         <p className="hint">{today.data.retriesLeft > 0 ? `今天没通过的还可以再交 ${today.data.retriesLeft} 次。` : "今天没通过的次数用完了，明天再来。"}</p>
       )}
-      {DAILY_TEMPLATES.map((t) => (
+      {(today.data?.templates ?? DAILY_TEMPLATES).map((t) => (
         <Link key={t.id} to={`/daily/new/${t.id}`} className="panel row" style={{ textDecoration: "none", color: "inherit" }}>
           <Seal text={String(t.id)} size={36} tilt={0} outline />
           <div className="grow">
@@ -74,7 +84,9 @@ export function DailyHome() {
 /** C2: hand in. */
 export function DailyNew() {
   const { templateId = "1" } = useParams();
-  const tpl = DAILY_TEMPLATES.find((t) => String(t.id) === templateId) ?? DAILY_TEMPLATES[0];
+  const today = useLoad(() => request<Today>("GET", "/v1/daily/today"));
+  const list: readonly Template[] = today.data?.templates ?? DAILY_TEMPLATES;
+  const tpl = list.find((t) => String(t.id) === templateId) ?? list[0]!;
   const nav = useNavigate();
   const [files, setFiles] = useState<File[]>([]);
   const child = useChild();

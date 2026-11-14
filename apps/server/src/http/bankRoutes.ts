@@ -7,9 +7,16 @@ import type { QuestionBank } from "../content/questionBank.js";
 import type { AdminAuth } from "./adminRoutes.js";
 import type { Db } from "@zhiyouji/db";
 import { RUBRIC_IDS, rubricBook, type RubricId } from "../season/rubrics.js";
+import { contentSettings } from "../content/contentSettings.js";
 
 const idParam = z.object({ id: z.uuid() });
 const familyParam = z.object({ id: z.enum(RUBRIC_IDS as [RubricId, ...RubricId[]]) });
+const cardsBody = z.object({
+  cards: z.array(z.object({ id: z.string().trim().regex(/^[A-Z]\d$/), kind: z.string().trim().min(1).max(10), text: z.string().trim().min(1).max(200), weeks: z.array(z.number().int().min(1).max(8)).max(8) })).max(60),
+});
+const templatesBody = z.object({
+  templates: z.array(z.object({ id: z.number().int().min(1).max(6), name: z.string().trim().min(1).max(30), prompt: z.string().trim().min(1).max(200), evidence: z.string().trim().min(1).max(100) })).length(6),
+});
 const rubricBody = z.object({
   name: z.string().trim().min(1).max(20),
   dims: z.array(z.object({ key: z.string().trim().min(1).max(20), name: z.string().trim().min(1).max(20), max: z.number().int().min(1).max(100), hint: z.string().trim().max(200).optional() })).min(2).max(8),
@@ -20,6 +27,24 @@ const rubricBody = z.object({
 
 export function bankRoutes(app: FastifyInstance, bank: QuestionBank, auth: AdminAuth, db: Db, now: () => Date): void {
   const admin = async (req: Parameters<AdminAuth["user"]>[0]) => `admin:${(await auth.user(req, ["admin"])).user.id}`;
+
+  // 约束词条 and 每日任务模板 (part 7 §4): admins edit the whole list; reviewers read
+  app.get("/v1/admin/content/war-cards", async (req) => {
+    await auth.user(req);
+    return { cards: await contentSettings(db).warCards() };
+  });
+  app.put("/v1/admin/content/war-cards", async (req) => {
+    const by = await admin(req);
+    return contentSettings(db).setWarCards(cardsBody.parse(req.body).cards, by, now());
+  });
+  app.get("/v1/admin/content/daily-templates", async (req) => {
+    await auth.user(req);
+    return { templates: await contentSettings(db).dailyTemplates() };
+  });
+  app.put("/v1/admin/content/daily-templates", async (req) => {
+    const by = await admin(req);
+    return contentSettings(db).setDailyTemplates(templatesBody.parse(req.body).templates, by, now());
+  });
 
   // 评分族 (part 7 §4; part 6 §4.2): every save is a new version, the latest is live; reviewers read
   app.get("/v1/admin/rubrics", async (req) => {
