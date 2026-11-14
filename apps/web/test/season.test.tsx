@@ -60,6 +60,22 @@ describe("student website: the season (part 5 D, E, F)", () => {
     await be.stop();
   });
 
+  it("free user while a season runs: 地图 is the watched server's read-only map, 战报 its broadcasts and ranking (part 5 §1)", async () => {
+    const be = await seasonPlayer();
+    // the player's younger sibling, not in the season, picks "我是谁"
+    const session = (await be.db.query.sessions.findFirst())!;
+    const c = await be.services.family.createChild(session.familyId, { nickname: "小观", grade: 3, avatar: "a1", explainPref: "voice" });
+    await be.services.sessions.setChild(session.id, c.id);
+    const { unmount } = renderApp("/map");
+    expect(await screen.findByText((_, el) => el?.tagName === "P" && /观战：.*（只读）/.test(el.textContent ?? ""))).toBeTruthy();
+    expect((await screen.findAllByText(/（边缘地）/)).length).toBe(8);
+    unmount();
+    renderApp("/report");
+    expect(await screen.findByText("全服广播", { selector: ".adm-tabs-tab" })).toBeTruthy();
+    expect(screen.queryByText("战报", { selector: ".adm-tabs-tab" })).toBeNull();
+    await be.stop();
+  });
+
   it("作品工坊: a contest work slot, the material box, the leader submits a version", async () => {
     const be = await seasonPlayer();
     const ctx = await be.services.play.ctx(be.childId);

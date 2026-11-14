@@ -11,7 +11,9 @@ import { greeting } from "../format";
 import { useChild } from "../session";
 import { MessageList } from "./Messages";
 import { BroadcastList, RankingList, ReportsList } from "./season/SeasonPages";
+import { FeaturedWatch, WatchBroadcasts, WatchRanking } from "./WatchPages";
 import { HomeBody } from "./season/HomePage";
+import { useSeasonMe } from "./season/useSeason";
 import { FirstSteps } from "./GuidePage";
 import type { ShellContext } from "./Shell";
 
@@ -71,23 +73,49 @@ const REPORT_TABS = [
   { key: "messages", title: "我的消息" },
 ];
 
+/** Free users (part 5 §1): the watched server's broadcasts, ranking and published works, and their messages. */
+const WATCH_TABS = [
+  { key: "broadcast", title: "全服广播" },
+  { key: "ranking", title: "排行榜" },
+  { key: "showcase", title: "作品展" },
+  { key: "messages", title: "我的消息" },
+];
+
 export function ReportTab() {
   const [params, setParams] = useSearchParams();
   const { reloadUnread } = useOutletContext<ShellContext>();
-  const tab = REPORT_TABS.some((t) => t.key === params.get("tab")) ? params.get("tab")! : "reports";
+  const me = useSeasonMe();
+  const watching = !!me.data && me.data.status !== "playing";
+  const tabs = watching ? WATCH_TABS : REPORT_TABS;
+  const tab = tabs.some((t) => t.key === params.get("tab")) ? params.get("tab")! : tabs[0]!.key;
   return (
     <>
       <h1 className="title">战报</h1>
       <Tabs activeKey={tab} onChange={(k) => setParams({ tab: k }, { replace: true })} style={{ "--title-font-size": "16px", "--active-line-color": "var(--ochre)", "--active-title-color": "var(--ink)" } as React.CSSProperties}>
-        {REPORT_TABS.map((t) => (
+        {tabs.map((t) => (
           <Tabs.Tab key={t.key} title={t.title} />
         ))}
       </Tabs>
       <div style={{ marginTop: 16 }}>
-        {tab === "reports" && <ReportsList />}
-        {tab === "broadcast" && <BroadcastList />}
-        {tab === "ranking" && <RankingList />}
         {tab === "messages" && <MessageList onChange={reloadUnread} />}
+        {!watching && tab === "reports" && <ReportsList />}
+        {!watching && tab === "broadcast" && <BroadcastList />}
+        {!watching && tab === "ranking" && <RankingList />}
+        {watching && tab !== "messages" && (
+          <FeaturedWatch>
+            {(s) =>
+              tab === "broadcast" ? (
+                <WatchBroadcasts serverId={s.id} />
+              ) : tab === "ranking" ? (
+                <WatchRanking serverId={s.id} />
+              ) : (
+                <Link to={`/watch/${s.id}/showcase`} className="panel row" style={{ textDecoration: "none", color: "inherit" }}>
+                  <span className="grow">看这个服结算后公开的作品</span>
+                </Link>
+              )
+            }
+          </FeaturedWatch>
+        )}
       </div>
     </>
   );

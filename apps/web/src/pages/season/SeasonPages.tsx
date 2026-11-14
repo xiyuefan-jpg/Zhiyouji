@@ -16,6 +16,7 @@ import { countdown, shortTime } from "../../format";
 import { Avatar, Empty, PageHeader, Seal } from "../../components/ui";
 import { points, seasonApi, type FeedLine, type LandView, type Quote, type SeasonMe } from "../../seasonApi";
 import { useLoad, useSeasonMe } from "./useSeason";
+import { FeaturedWatch, WatchMap } from "../WatchPages";
 import { RolesPanel } from "./TeamPages";
 import { TeamRanking } from "../WatchPages";
 
@@ -49,7 +50,16 @@ export function SeasonGate({ me, title, children }: { me: SeasonMe | null; title
 
 export function SeasonMap() {
   const me = useSeasonMe();
-  const map = useLoad(() => seasonApi.map());
+  const map = useLoad(() => (me.data?.status === "playing" ? seasonApi.map() : Promise.resolve(null)), [me.data?.status]);
+  // free users (and children waiting for the grouping): the read-only watch map (part 5 §1)
+  if (me.data && me.data.status !== "playing")
+    return (
+      <>
+        <h1 className="title">地图</h1>
+        {me.data.status === "waiting" && <p className="hint">「{me.data.season.name}」开营日晚上公布分组，之后这里是你们服的地图。</p>}
+        <FeaturedWatch>{(s) => <WatchMap serverId={s.id} />}</FeaturedWatch>
+      </>
+    );
   return (
     <SeasonGate me={me.data} title="地图">
       {(m) => (

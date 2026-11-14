@@ -60,50 +60,89 @@ export function WatchServers() {
   );
 }
 
+/** The read-only map of a server (free users' 地图 tab, part 5 §1). */
+export function WatchMap({ serverId }: { serverId: string }) {
+  const map = useLoad(() => request<{ lands: LandView[] }>("GET", `/v1/watch/${serverId}/map`), [serverId]);
+  if (map.error) return <div role="alert">{map.error}</div>;
+  return (
+    <div className="panel">
+      {map.data?.lands.map((l) => (
+        <div key={l.id} className="row" style={{ padding: "4px 0" }}>
+          <span className="grow">
+            {l.name}
+            <span className="hint">（{l.kind === "center" ? "中心地" : "边缘地"}）</span>
+          </span>
+          <span className="hint">{l.owner?.name ?? "无主"}</span>
+          {l.contest && <span style={{ color: "var(--vermilion)", marginLeft: 6 }}>争夺中</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function WatchBroadcasts({ serverId }: { serverId: string }) {
+  const feed = useLoad(() => request<{ lines: FeedLine[] }>("GET", `/v1/watch/${serverId}/broadcasts`), [serverId]);
+  return (
+    <div className="panel">
+      {feed.data?.lines.length === 0 && <div className="hint">还没有广播。</div>}
+      {feed.data?.lines.map((l, i) => (
+        <div key={i} style={{ padding: "4px 0" }}>
+          {l.text}
+          <div className="hint" style={{ fontSize: 12 }}>
+            {shortTime(new Date(l.at).toISOString())}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function WatchRanking({ serverId }: { serverId: string }) {
+  const rank = useLoad(() => request<{ ranking: { rank: number; teamId: string; name: string; points: number; lands: number }[] }>("GET", `/v1/watch/${serverId}/ranking`), [serverId]);
+  return <TeamRanking serverId={serverId} rows={rank.data?.ranking ?? null} />;
+}
+
+/**
+ * The server a free user watches by default (the same as the home page's
+ * 战况精选): the first running server by name, else the last that ended.
+ */
+export function useFeaturedServer() {
+  const data = useLoad(() => request<{ servers: { id: string; name: string; season: string; status: string }[] }>("GET", "/v1/watch/servers"));
+  const all = data.data?.servers ?? null;
+  const pick = all ? ([...all].filter((s) => s.status !== "ended").sort((a, b) => a.name.localeCompare(b.name))[0] ?? all.filter((s) => s.status === "ended").at(-1) ?? null) : undefined;
+  return { loading: !data.data && !data.error, server: pick ?? null };
+}
+
+/** Free users' 地图 / 战报 tabs: the featured server, read only, with a way to the others. */
+export function FeaturedWatch({ children }: { children: (s: { id: string; name: string; season: string }) => React.ReactNode }) {
+  const f = useFeaturedServer();
+  if (f.loading) return <div className="hint">正在加载……</div>;
+  if (!f.server) return <Empty title="现在没有可以观战的赛季">赛季开始后，这里能看到各组的地盘、排名和公开的作品。</Empty>;
+  return (
+    <>
+      <p className="subtitle">
+        观战：{f.server.season} · {f.server.name}（只读）　<Link to="/watch">看别的服</Link>
+      </p>
+      {children(f.server)}
+    </>
+  );
+}
+
 export function WatchServer() {
   const { serverId = "" } = useParams();
   const [tab, setTab] = useState("ranking");
-  const map = useLoad(() => request<{ lands: LandView[] }>("GET", `/v1/watch/${serverId}/map`), [serverId]);
-  const rank = useLoad(() => request<{ ranking: { rank: number; teamId: string; name: string; points: number; lands: number }[] }>("GET", `/v1/watch/${serverId}/ranking`), [serverId]);
-  const feed = useLoad(() => request<{ lines: FeedLine[] }>("GET", `/v1/watch/${serverId}/broadcasts`), [serverId]);
   return (
     <div className="page">
       <PageHeader title="观战" right={<Link to={`/watch/${serverId}/showcase`}>作品展</Link>} />
-      {map.error && <div role="alert">{map.error}</div>}
       <Tabs activeKey={tab} onChange={setTab}>
         <Tabs.Tab key="ranking" title="排行榜" />
         <Tabs.Tab key="map" title="地图" />
         <Tabs.Tab key="broadcast" title="广播" />
       </Tabs>
       <div style={{ marginTop: 12 }}>
-        {tab === "ranking" && <TeamRanking serverId={serverId} rows={rank.data?.ranking ?? null} />}
-        {tab === "map" && (
-          <div className="panel">
-            {map.data?.lands.map((l) => (
-              <div key={l.id} className="row" style={{ padding: "4px 0" }}>
-                <span className="grow">
-                  {l.name}
-                  <span className="hint">（{l.kind === "center" ? "中心地" : "边缘地"}）</span>
-                </span>
-                <span className="hint">{l.owner?.name ?? "无主"}</span>
-                {l.contest && <span style={{ color: "var(--vermilion)", marginLeft: 6 }}>争夺中</span>}
-              </div>
-            ))}
-          </div>
-        )}
-        {tab === "broadcast" && (
-          <div className="panel">
-            {feed.data?.lines.length === 0 && <div className="hint">还没有广播。</div>}
-            {feed.data?.lines.map((l, i) => (
-              <div key={i} style={{ padding: "4px 0" }}>
-                {l.text}
-                <div className="hint" style={{ fontSize: 12 }}>
-                  {shortTime(new Date(l.at).toISOString())}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {tab === "ranking" && <WatchRanking serverId={serverId} />}
+        {tab === "map" && <WatchMap serverId={serverId} />}
+        {tab === "broadcast" && <WatchBroadcasts serverId={serverId} />}
       </div>
     </div>
   );
