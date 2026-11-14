@@ -17,6 +17,7 @@
 
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { files, type Db } from "@zhiyouji/db";
+import type { AiUsage } from "./ai.js";
 import type { Clock } from "./clock.js";
 import type { ServerConfig } from "./config.js";
 import type { Notifier } from "./notify/notifier.js";
@@ -31,13 +32,19 @@ export interface MediaInput {
   url: string;
 }
 
+/** Which service the gateway picked (primary or the backup one; part 6 §5 "换备用的语音识别服务"). */
+export interface MediaCallOptions {
+  provider?: string;
+  model?: string;
+}
+
 export interface MediaProcessor {
   /** Speech-to-text (audio, or a video's sound track). */
-  transcribe(i: MediaInput): Promise<{ text: string; durationSec: number | null }>;
+  transcribe(i: MediaInput, opts?: MediaCallOptions): Promise<{ text: string; durationSec: number | null; usage?: AiUsage }>;
   /** Key frames of a video: every `everySec` seconds, at most `max`. */
-  keyFrames(i: MediaInput, opts: { everySec: number; max: number }): Promise<{ bytes: Buffer; contentType: string }[]>;
+  keyFrames(i: MediaInput, opts: { everySec: number; max: number } & MediaCallOptions): Promise<{ bytes: Buffer; contentType: string }[]>;
   /** The text of a document. */
-  parseDocument(i: MediaInput): Promise<{ text: string }>;
+  parseDocument(i: MediaInput, opts?: MediaCallOptions): Promise<{ text: string; usage?: AiUsage }>;
 }
 
 /** Deterministic stand-in: tests can set a transcript per file id or name, or make a file fail. */

@@ -170,7 +170,7 @@ export function buildServices(d: AppDeps): Services {
   const reports = new Reports(d.db, d.clock, store, notifier);
   const works = new Works(d.db, d.clock, d.cfg, store, storage, debates, ops);
   const mediaProcessor = d.media ?? new FakeMediaProcessor();
-  const media = new MediaPipeline(d.db, d.clock, storage, mediaProcessor, notifier, d.cfg.uploads);
+  const media = new MediaPipeline(d.db, d.clock, storage, gateway.wrapMedia(mediaProcessor), notifier, d.cfg.uploads);
   const aiSupply = d.aiSupply ?? new FakeAiSupply();
   const safety = d.safety ?? new FakeContentSafety();
   const aiSummary = d.aiSummary ?? new FakeAiSummarizer();

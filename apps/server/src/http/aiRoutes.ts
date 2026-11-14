@@ -16,6 +16,8 @@ const configBody = z.object({
   shadowModel: z.string().trim().max(80).nullable().optional(),
 });
 const promptBody = z.object({ content: z.string().min(1).max(50_000), note: z.string().max(200).nullable().optional() });
+const priceParam = z.object({ model: z.string().trim().min(1).max(80) });
+const priceBody = z.object({ inPerMillion: z.number().int().min(0).max(100_000_000), outPerMillion: z.number().int().min(0).max(100_000_000), perAudioHour: z.number().int().min(0).max(100_000_000) });
 const statsQuery = z.object({ from: z.coerce.date(), to: z.coerce.date() });
 const idParam = z.object({ id: z.uuid() });
 
@@ -36,6 +38,15 @@ export function aiRoutes(app: FastifyInstance, gateway: AiGateway, scoring: Scor
     const { user } = await auth.user(req, ["admin"]);
     const b = promptBody.parse(req.body);
     return gateway.addPrompt(taskParam.parse(req.params).task, b.content, b.note ?? null, `admin:${user.id}`);
+  });
+  // price list per model, in 0.0001 yuan (part 6 §6.2)
+  app.get("/v1/admin/ai/prices", async (req) => {
+    await auth.user(req, ["admin"]);
+    return gateway.prices();
+  });
+  app.put("/v1/admin/ai/prices/:model", async (req) => {
+    const { user } = await auth.user(req, ["admin"]);
+    return gateway.setPrice(priceParam.parse(req.params).model, priceBody.parse(req.body), `admin:${user.id}`);
   });
   app.get("/v1/admin/ai/stats", async (req) => {
     await auth.user(req, ["admin"]);

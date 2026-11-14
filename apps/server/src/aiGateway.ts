@@ -8,16 +8,33 @@
  * The model clients themselves are the provider interfaces (fake until the
  * accounts exist); `wrap…` turns them into the same interfaces with logging and
  * fallback, so the rest of the server does not change.
+ *
+ * Each call also gets the live prompt version (admin console; version 0 = the
+ * built-in first draft) built into messages with the children's words wrapped
+ * as material (`aiPrompts.ts`), and its tokens and cost go into the log for the
+ * cost board (part 6 §6.2: by task, by model, by day). Speech-to-text, key
+ * frames and document parsing (T1–T3) go through here too, so they get a backup
+ * service and a log like the models do.
  */
 
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { beijingDate } from "@zhiyouji/engine";
 import { checkDailyReview, checkSummary, checkSupplyScore, checkWorkScore, InvalidAiOutput } from "./aiValidate.js";
 import { scoreInstructions, withFlag } from "./aiGuard.js";
-import { aiCalls, aiConfigs, aiScores, humanScores, promptTemplates, type Db } from "@zhiyouji/db";
-import type { AiDailyReviewer, AiScorer, AiSummarizer, AiSupplyScorer } from "./ai.js";
+import { aiCalls, aiConfigs, aiPrices, aiScores, humanScores, promptTemplates, type Db } from "@zhiyouji/db";
+import type { AiCallOptions, AiDailyReviewer, AiScorer, AiSummarizer, AiSupplyScorer, AiUsage } from "./ai.js";
+import { BUILTIN_PROMPTS, dailyMessages, summaryMessages, supplyMessages, workMessages, type AiMessages, type PromptTask } from "./aiPrompts.js";
 import type { Clock } from "./clock.js";
+import type { MediaProcessor } from "./media.js";
+import { fail } from "./http/errors.js";
 
-export const AI_TASKS = ["daily_review", "work_score", "supply_score", "summary"] as const;
+/**
+ * Every AI task of part 6 §1 that calls an outside service: T1 transcribe, T2
+ * key_frames, T3 doc_parse, T4 daily_review, T5 + T7 work_score (one call), T6
+ * supply_score, T8 summary, T9 season_review. (T10 groups the "其他" tags by
+ * name, no model.)
+ */
+export const AI_TASKS = ["daily_review", "work_score", "supply_score", "summary", "season_review", "transcribe", "key_frames", "doc_parse"] as const;
 export type AiTask = (typeof AI_TASKS)[number];
 
 const DEFAULTS: Record<AiTask, { provider: string; model: string }> = {
@@ -25,7 +42,31 @@ const DEFAULTS: Record<AiTask, { provider: string; model: string }> = {
   work_score: { provider: "fake", model: "fake-scorer" },
   supply_score: { provider: "fake", model: "fake-supply" },
   summary: { provider: "fake", model: "fake-summary" },
+  season_review: { provider: "fake", model: "fake-summary" },
+  transcribe: { provider: "fake", model: "fake-asr" },
+  key_frames: { provider: "fake", model: "fake-frames" },
+  doc_parse: { provider: "fake", model: "fake-doc" },
 };
+
+/** Tasks with a prompt (the media tasks have none). */
+export const PROMPT_TASKS: readonly PromptTask[] = ["daily_review", "work_score", "supply_score", "summary", "season_review"];
+const hasPrompt = (t: AiTask): t is PromptTask => (PROMPT_TASKS as readonly string[]).includes(t);
+
+export interface AiPriceInput {
+  inPerMillion: number;
+  outPerMillion: number;
+  perAudioHour: number;
+}
+
+/** Extra handling of one call (beyond the format check). */
+export interface CallExtras<T> {
+  /** Build the messages from the live prompt text. */
+  build?: (template: string) => AiMessages;
+  /** What goes into the log as the output (e.g. a count instead of picture bytes). */
+  logOutput?: (out: T) => unknown;
+  /** Tokens / audio seconds of the answer (default: `out.usage`). */
+  usage?: (out: T) => AiUsage | undefined;
+}
 
 export interface AiConfigInput {
   provider: string;
@@ -44,7 +85,7 @@ export class AiGateway {
 
   async config(task: AiTask) {
     const [row] = await this.db.select().from(aiConfigs).where(eq(aiConfigs.task, task));
-    return row ?? { task, ...DEFAULTS[task], promptVersion: 1, fallbackProvider: null, fallbackModel: null, shadowModel: null, updatedBy: "default", updatedAt: new Date(0) };
+    return row ?? { task, ...DEFAULTS[task], promptVersion: 0, fallbackProvider: null, fallbackModel: null, shadowModel: null, updatedBy: "default", updatedAt: new Date(0) };
   }
 
   async configs() {
@@ -52,7 +93,14 @@ export class AiGateway {
   }
 
   async setConfig(task: AiTask, i: AiConfigInput, by: string) {
-    const v = { provider: i.provider, model: i.model, promptVersion: i.promptVersion ?? 1, fallbackProvider: i.fallbackProvider ?? null, fallbackModel: i.fallbackModel ?? null, shadowModel: i.shadowModel ?? null, updatedBy: by, updatedAt: this.clock.now() };
+    // the version has to exist (0 = built-in); not given: keep the current one
+    const promptVersion = i.promptVersion ?? (await this.config(task)).promptVersion;
+    if (promptVersion > 0) {
+      if (!hasPrompt(task)) fail(400, "bad_request", { message: "这个任务没有提示词" });
+      const [p] = await this.db.select({ v: promptTemplates.version }).from(promptTemplates).where(and(eq(promptTemplates.task, task), eq(promptTemplates.version, promptVersion)));
+      if (!p) fail(400, "bad_request", { message: `没有第 ${promptVersion} 版提示词` });
+    }
+    const v = { provider: i.provider, model: i.model, promptVersion, fallbackProvider: i.fallbackProvider ?? null, fallbackModel: i.fallbackModel ?? null, shadowModel: i.shadowModel ?? null, updatedBy: by, updatedAt: this.clock.now() };
     await this.db.insert(aiConfigs).values({ task, ...v }).onConflictDoUpdate({ target: aiConfigs.task, set: v });
     return this.config(task);
   }
@@ -61,11 +109,22 @@ export class AiGateway {
 
   async prompts(task: AiTask) {
     const rows = await this.db.select().from(promptTemplates).where(eq(promptTemplates.task, task)).orderBy(desc(promptTemplates.version));
-    return { prompts: rows };
+    return { prompts: rows, builtin: hasPrompt(task) ? BUILTIN_PROMPTS[task] : null, live: (await this.config(task)).promptVersion };
+  }
+
+  /** The text of a prompt version; a version that is not there (or 0) is the built-in draft. */
+  async promptFor(task: AiTask, version: number): Promise<{ version: number; text: string }> {
+    if (!hasPrompt(task)) return { version: 0, text: "" };
+    if (version > 0) {
+      const [p] = await this.db.select().from(promptTemplates).where(and(eq(promptTemplates.task, task), eq(promptTemplates.version, version)));
+      if (p) return { version, text: p.content };
+    }
+    return { version: 0, text: BUILTIN_PROMPTS[task] };
   }
 
   /** Save a new version (never overwrites); the config chooses which version is live. */
   async addPrompt(task: AiTask, content: string, note: string | null, by: string) {
+    if (!hasPrompt(task)) fail(400, "bad_request", { message: "这个任务没有提示词" });
     const [last] = await this.db.select().from(promptTemplates).where(eq(promptTemplates.task, task)).orderBy(desc(promptTemplates.version)).limit(1);
     const [row] = await this.db
       .insert(promptTemplates)
@@ -74,9 +133,29 @@ export class AiGateway {
     return { prompt: row! };
   }
 
+  // ---- prices (part 6 §6.2) ---------------------------------------------------------------------------
+
+  async prices() {
+    return { prices: await this.db.select().from(aiPrices).orderBy(asc(aiPrices.model)) };
+  }
+
+  async setPrice(model: string, p: AiPriceInput, by: string) {
+    const v = { inPerMillion: p.inPerMillion, outPerMillion: p.outPerMillion, perAudioHour: p.perAudioHour, updatedBy: by, updatedAt: this.clock.now() };
+    await this.db.insert(aiPrices).values({ model, ...v }).onConflictDoUpdate({ target: aiPrices.model, set: v });
+    return this.prices();
+  }
+
+  /** Cost of a call in 0.0001 yuan (null: the client did not say what it used). */
+  private async costOf(model: string, u: AiUsage | undefined): Promise<number | null> {
+    if (!u) return null;
+    const [p] = await this.db.select().from(aiPrices).where(eq(aiPrices.model, model));
+    if (!p) return 0;
+    return Math.round(((u.tokensIn ?? 0) * p.inPerMillion + (u.tokensOut ?? 0) * p.outPerMillion) / 1_000_000 + ((u.audioSec ?? 0) * p.perAudioHour) / 3600);
+  }
+
   // ---- calling --------------------------------------------------------------------------------------
 
-  private async log(task: AiTask, role: string, provider: string, model: string, promptVersion: number, input: unknown, started: number, output: unknown, error: unknown) {
+  private async log(task: AiTask, role: string, provider: string, model: string, promptVersion: number, input: unknown, started: number, output: unknown, error: unknown, usage?: AiUsage) {
     await this.db.insert(aiCalls).values({
       task,
       provider,
@@ -85,6 +164,9 @@ export class AiGateway {
       role,
       input: input as object,
       output: (output ?? null) as object | null,
+      tokensIn: usage?.tokensIn ?? null,
+      tokensOut: usage?.tokensOut ?? null,
+      cost: await this.costOf(model, usage),
       latencyMs: Math.max(0, Date.now() - started),
       status: error ? "error" : "ok",
       error: error ? String((error as Error).message ?? error) : null,
@@ -103,41 +185,54 @@ export class AiGateway {
     while (this.background.size) await Promise.allSettled([...this.background]);
   }
 
-  async call<T>(task: AiTask, input: unknown, fn: (model: string) => Promise<T>, check: (out: T) => string | null = () => null): Promise<T> {
+  async call<T>(
+    task: AiTask,
+    meta: unknown,
+    fn: (model: string, opts: AiCallOptions) => Promise<T>,
+    check: (out: T) => string | null = () => null,
+    extras: CallExtras<T> = {},
+  ): Promise<T> {
     const c = await this.config(task);
+    const prompt = await this.promptFor(task, c.promptVersion);
+    const messages = extras.build?.(prompt.text);
+    // "数据先存" (part 6 §0.3): what the model really got; the children's words in it are cleared after 90 days
+    const input = messages ? { ...(meta as object), messages } : meta;
+    const outLog = (out: T) => (extras.logOutput ? extras.logOutput(out) : out);
+    const usageOf = (out: T) => (extras.usage ? extras.usage(out) : ((out as { usage?: AiUsage } | null)?.usage ?? undefined));
     const t0 = Date.now();
     // An answer in the wrong format counts as a failure (part 6 §3 "格式不对就自动重试").
-    const run = async (model: string) => {
-      const out = await fn(model);
+    const run = async (model: string, provider: string) => {
+      const out = await fn(model, { model, provider, prompt, ...(messages ? { messages } : {}) });
       const bad = check(out);
       if (bad) throw new InvalidAiOutput(bad);
       return out;
     };
     try {
-      const out = await run(c.model);
-      await this.log(task, "primary", c.provider, c.model, c.promptVersion, input, t0, out, null);
+      const out = await run(c.model, c.provider);
+      await this.log(task, "primary", c.provider, c.model, prompt.version, input, t0, outLog(out), null, usageOf(out));
       if (c.shadowModel) {
         // in the background: the caller (e.g. a child waiting for the daily review) does not wait for it
         const shadowModel = c.shadowModel;
         const t1 = Date.now();
-        const job = run(shadowModel).then(
-          (shadow) => this.log(task, "shadow", c.provider, shadowModel, c.promptVersion, input, t1, shadow, null),
-          (err) => this.log(task, "shadow", c.provider, shadowModel, c.promptVersion, input, t1, null, err),
+        const job = run(shadowModel, c.provider).then(
+          (shadow) => this.log(task, "shadow", c.provider, shadowModel, prompt.version, input, t1, outLog(shadow), null, usageOf(shadow)),
+          (err) => this.log(task, "shadow", c.provider, shadowModel, prompt.version, input, t1, null, err),
         );
         this.background.add(job);
         void job.catch((err) => console.error("shadow log failed", err)).finally(() => this.background.delete(job));
       }
       return out;
     } catch (err) {
-      await this.log(task, "primary", c.provider, c.model, c.promptVersion, input, t0, null, err);
+      await this.log(task, "primary", c.provider, c.model, prompt.version, input, t0, null, err);
       if (!c.fallbackModel) throw err;
       const t2 = Date.now();
+      const fbProvider = c.fallbackProvider ?? c.provider;
       try {
-        const out = await run(c.fallbackModel);
-        await this.log(task, "fallback", c.fallbackProvider ?? c.provider, c.fallbackModel, c.promptVersion, input, t2, out, null);
+        const out = await run(c.fallbackModel, fbProvider);
+        await this.log(task, "fallback", fbProvider, c.fallbackModel, prompt.version, input, t2, outLog(out), null, usageOf(out));
         return out;
       } catch (err2) {
-        await this.log(task, "fallback", c.fallbackProvider ?? c.provider, c.fallbackModel, c.promptVersion, input, t2, null, err2);
+        await this.log(task, "fallback", fbProvider, c.fallbackModel, prompt.version, input, t2, null, err2);
         throw err2;
       }
     }
@@ -152,8 +247,9 @@ export class AiGateway {
         const out = await this.call(
           "work_score",
           { workId: r.workId, rubric: r.rubric.id, promptId: r.promptId, task: r.task?.title ?? null, mediaKind: r.mediaKind, ...(hits.length ? { scoreInstructions: hits } : {}) },
-          (model) => inner.score(r, { model }),
+          (_m, opts) => inner.score(r, opts),
           (out) => checkWorkScore(out, r.rubric),
+          { build: (tpl) => workMessages(r, tpl) },
         );
         return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
       },
@@ -164,7 +260,7 @@ export class AiGateway {
     return {
       reviewDaily: async (r) => {
         const hits = scoreInstructions(r.explainText, r.transcript, r.aiNote);
-        const out = await this.call("daily_review", { submissionId: r.submissionId, templateId: r.templateId, grade: r.grade, ...(hits.length ? { scoreInstructions: hits } : {}) }, (model) => inner.reviewDaily(r, { model }), checkDailyReview);
+        const out = await this.call("daily_review", { submissionId: r.submissionId, templateId: r.templateId, grade: r.grade, ...(hits.length ? { scoreInstructions: hits } : {}) }, (_m, opts) => inner.reviewDaily(r, opts), checkDailyReview, { build: (tpl) => dailyMessages(r, tpl) });
         return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
       },
     };
@@ -174,14 +270,36 @@ export class AiGateway {
     return {
       scoreSupply: async (r) => {
         const hits = scoreInstructions(...r.entries, r.summary);
-        const out = await this.call("supply_score", { task: r.task.title, entries: r.entries.length, summary: !!r.summary, ...(hits.length ? { scoreInstructions: hits } : {}) }, (model) => inner.scoreSupply(r, { model }), (out) => checkSupplyScore(out, !!r.summary));
+        const out = await this.call("supply_score", { task: r.task.title, entries: r.entries.length, summary: !!r.summary, ...(hits.length ? { scoreInstructions: hits } : {}) }, (_m, opts) => inner.scoreSupply(r, opts), (out) => checkSupplyScore(out, !!r.summary), { build: (tpl) => supplyMessages(r, tpl) });
         return hits.length ? { ...out, flags: withFlag(out.flags) } : out;
       },
     };
   }
 
+  /** T8 (week, month) and T9 (season review) have their own configuration. */
   wrapSummary(inner: AiSummarizer): AiSummarizer {
-    return { summarize: (r) => this.call("summary", { kind: r.kind, cards: r.cards.length }, (model) => inner.summarize(r, { model }), checkSummary) };
+    return {
+      summarize: (r) =>
+        this.call(r.kind === "season" ? "season_review" : "summary", { kind: r.kind, cards: r.cards.length, works: r.works?.length ?? 0 }, (_m, opts) => inner.summarize(r, opts), checkSummary, { build: (tpl) => summaryMessages(r, tpl) }),
+    };
+  }
+
+  /** T1–T3: logged, with a backup service (part 6 §5 "换备用的语音识别服务重试"). */
+  wrapMedia(inner: MediaProcessor): MediaProcessor {
+    const meta = (i: { fileId: string; kind: string; contentType: string }) => ({ fileId: i.fileId, kind: i.kind, contentType: i.contentType });
+    const textOk = (o: { text?: unknown }) => (typeof o?.text === "string" ? null : "text");
+    return {
+      transcribe: (i) =>
+        this.call("transcribe", meta(i), (_m, o) => inner.transcribe(i, { model: o.model, provider: o.provider }), textOk, {
+          usage: (out) => out.usage ?? (out.durationSec != null ? { audioSec: out.durationSec } : undefined),
+        }),
+      keyFrames: (i, opts) =>
+        this.call("key_frames", meta(i), (_m, o) => inner.keyFrames(i, { ...opts, model: o.model, provider: o.provider }), (out) => (Array.isArray(out) ? null : "frames"), {
+          logOutput: (out) => ({ frames: out.length }),
+          usage: () => undefined,
+        }),
+      parseDocument: (i) => this.call("doc_parse", meta(i), (_m, o) => inner.parseDocument(i, { model: o.model, provider: o.provider }), textOk),
+    };
   }
 
   // ---- the AI board (part 6 §9) ----------------------------------------------------------------------
@@ -208,7 +326,23 @@ export class AiGateway {
       const fam = a.rubric.split("@")[0]!;
       gaps.set(fam, [...(gaps.get(fam) ?? []), h.total - a.total]);
     }
+    // by Beijing day and task (part 6 §6.2 "按任务、按模型、按天")
+    const days = new Map<string, { date: string; task: string; calls: number; errors: number; tokensIn: number; tokensOut: number; cost: number }>();
+    for (const r of rows) {
+      const date = beijingDate(+r.createdAt);
+      const k = `${date}|${r.task}`;
+      const x = days.get(k) ?? { date, task: r.task, calls: 0, errors: 0, tokensIn: 0, tokensOut: 0, cost: 0 };
+      x.calls++;
+      if (r.status === "error") x.errors++;
+      x.tokensIn += r.tokensIn ?? 0;
+      x.tokensOut += r.tokensOut ?? 0;
+      x.cost += r.cost ?? 0;
+      days.set(k, x);
+    }
+    const totalCost = rows.reduce((s, r) => s + (r.cost ?? 0), 0);
     return {
+      totals: { calls: rows.length, errors: rows.filter((r) => r.status === "error").length, costYuan: totalCost / 10000 },
+      byDay: [...days.values()].map(({ cost, ...x }) => ({ ...x, errorRate: x.calls ? x.errors / x.calls : 0, costYuan: cost / 10000 })),
       byTaskAndModel: [...by.values()].map((x) => ({ ...x, errorRate: x.calls ? x.errors / x.calls : 0, avgLatencyMs: x.calls ? Math.round(x.latency / x.calls) : 0, costYuan: x.cost / 10000 })),
       humanMinusAiByRubric: Object.fromEntries([...gaps.entries()].map(([k, v]) => [k, { works: v.length, average: Math.round((v.reduce((s, d) => s + d, 0) / v.length) * 10) / 10 }])),
     };

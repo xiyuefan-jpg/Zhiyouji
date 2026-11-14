@@ -5,6 +5,7 @@
  */
 
 import { TAXONOMY } from "@zhiyouji/shared";
+import type { AiMessages } from "./aiPrompts.js";
 import { createHash } from "node:crypto";
 import type { Rubric } from "./season/rubrics.js";
 import type { TaskInfo } from "./season/taskInfo.js";
@@ -46,11 +47,27 @@ export interface ScoreResult {
   dims: { key: string; name: string; max: number; score: number; reason: string }[];
   comment: string;
   flags: string[];
+  usage?: AiUsage;
 }
 
-/** Which model the gateway picked for this call (primary, fallback or shadow; part 6 §0.1). */
+/** What a call used, for the cost board (part 6 §0.3, §6.2); the real clients fill it in. */
+export interface AiUsage {
+  tokensIn?: number;
+  tokensOut?: number;
+  /** Seconds of audio (speech-to-text is priced by length). */
+  audioSec?: number;
+}
+
+/**
+ * What the gateway hands the model client (part 6 §0.1): which provider and
+ * model (primary, fallback or shadow), the live prompt version, and the
+ * messages built from it (`aiPrompts.ts`), which the real clients send as they are.
+ */
 export interface AiCallOptions {
   model?: string;
+  provider?: string;
+  prompt?: { version: number; text: string };
+  messages?: AiMessages;
 }
 
 export interface AiScorer {
@@ -152,6 +169,7 @@ export interface DailyReviewResult {
   card: { title: string; summary: string };
   /** e.g. "疑似打分指令" (the child's text asked for a pass or a score; reviewed as usual). */
   flags?: string[];
+  usage?: AiUsage;
 }
 
 export interface AiDailyReviewer {
@@ -211,6 +229,7 @@ export interface SupplyScoreResult {
   comment: string;
   /** e.g. "疑似打分指令". */
   flags?: string[];
+  usage?: AiUsage;
 }
 
 export interface AiSupplyScorer {
@@ -239,7 +258,7 @@ export interface SummaryRequest {
 
 export interface AiSummarizer {
   /** A few warm, specific sentences for the child about what they learned (only what they said). */
-  summarize(r: SummaryRequest, opts?: AiCallOptions): Promise<{ model: string; text: string }>;
+  summarize(r: SummaryRequest, opts?: AiCallOptions): Promise<{ model: string; text: string; usage?: AiUsage }>;
 }
 
 export class FakeAiSummarizer implements AiSummarizer {

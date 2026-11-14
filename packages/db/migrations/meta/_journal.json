@@ -162,6 +162,13 @@
       "when": 1794650143612,
       "tag": "0022_consent_phone_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794659288466,
+      "tag": "0023_ai_prices",
+      "breakpoints": true
     }
   ]
 }

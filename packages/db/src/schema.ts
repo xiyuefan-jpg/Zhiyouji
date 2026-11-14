@@ -1087,7 +1087,8 @@ export const aiConfigs = pgTable("ai_configs", {
   task: text("task").primaryKey(),
   provider: text("provider").notNull(),
   model: text("model").notNull(),
-  promptVersion: integer("prompt_version").notNull().default(1),
+  /** 0 = the built-in first draft (`BUILTIN_PROMPTS`), otherwise a saved version. */
+  promptVersion: integer("prompt_version").notNull().default(0),
   fallbackProvider: text("fallback_provider"),
   fallbackModel: text("fallback_model"),
   /** Shadow mode: also run this model, log it, never use it. */
@@ -1109,6 +1110,20 @@ export const promptTemplates = pgTable(
   },
   (t) => [uniqueIndex("prompt_templates_task_version").on(t.task, t.version)],
 );
+
+/**
+ * Price list per model (PRD part 6 §6.2; part 7 §4 cost board), in 0.0001 yuan:
+ * per million input / output tokens, and per hour of audio for speech-to-text.
+ * The admin console keeps it current; the gateway works out each call's cost.
+ */
+export const aiPrices = pgTable("ai_prices", {
+  model: text("model").primaryKey(),
+  inPerMillion: integer("in_per_million").notNull().default(0),
+  outPerMillion: integer("out_per_million").notNull().default(0),
+  perAudioHour: integer("per_audio_hour").notNull().default(0),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: ts("updated_at").notNull(),
+});
 
 /** Every AI call (append-only): input, output, model, version, time, cost. */
 export const aiCalls = pgTable(
