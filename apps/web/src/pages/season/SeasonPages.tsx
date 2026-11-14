@@ -250,11 +250,25 @@ export function SeasonTeam() {
               我是{ROLE_TEXT[m.role]}
               {!m.active ? "（已退赛，只能查看）" : ""}
             </p>
+            {(m.season.status === "ended" || m.season.status === "archived") && (
+              <Link to="/season-review" className="panel row" style={{ textDecoration: "none", color: "inherit", marginBottom: 12, borderColor: "var(--vermilion)" }}>
+                <span className="grow">
+                  <b>赛季结束了{team.data?.rank ? `：本组最终第 ${team.data.rank} 名` : ""}</b>
+                  <br />
+                  <span className="hint">剩下的粮草已经折成团队分。看看这一季你带走了什么。</span>
+                </span>
+                <RightOutline />
+              </Link>
+            )}
             {team.data && (
               <div className="panel row" style={{ justifyContent: "space-around", textAlign: "center" }}>
                 <Stat label="名次" value={team.data.rank ? `第 ${team.data.rank}` : "—"} />
                 <Stat label="团队分" value={points(team.data.points)} />
-                <Stat label="粮草" value={String(team.data.spendableGrain)} sub={team.data.frozenGrain ? `冻结 ${team.data.frozenGrain}` : undefined} />
+                <Stat
+                  label="粮草"
+                  value={String(team.data.spendableGrain)}
+                  sub={m.season.status === "ended" || m.season.status === "archived" ? "已折成分" : team.data.frozenGrain ? `冻结 ${team.data.frozenGrain}` : undefined}
+                />
                 <Stat label="地" value={`${team.data.lands.length} 块`} />
               </div>
             )}

@@ -7,10 +7,25 @@
 
 import type { RubricGuide, TaskInfo } from "../seasonApi";
 
-export function TaskGuide({ task, rubric, requirements, compact = false }: { task?: TaskInfo; rubric?: RubricGuide; requirements?: string; compact?: boolean }) {
+export function TaskGuide({
+  task,
+  rubric,
+  requirements,
+  compact = false,
+  showPrompt = false,
+}: {
+  task?: TaskInfo;
+  rubric?: RubricGuide;
+  requirements?: string;
+  compact?: boolean;
+  /** Also show the task's title and text (pages that don't show them elsewhere). */
+  showPrompt?: boolean;
+}) {
   if (!task && !rubric) return null;
   return (
     <div className="panel" style={{ marginTop: 12 }}>
+      {showPrompt && task?.title && <div style={{ fontWeight: 700, fontSize: 16 }}>{task.title}</div>}
+      {showPrompt && task?.body && <p style={{ margin: "4px 0 8px", whiteSpace: "pre-wrap" }}>{task.body}</p>}
       {task && (task.subject || task.questionType) && (
         <div style={{ marginBottom: 6 }}>
           <b>{[task.subject, task.questionType].filter(Boolean).join(" · ")}</b>

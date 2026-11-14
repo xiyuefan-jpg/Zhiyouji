@@ -58,6 +58,7 @@ export function ItemsPage() {
           <>
             {team.error && <div role="alert">{team.error}</div>}
             <h2 className="section-title">本组的法宝</h2>
+            <p className="hint" style={{ marginTop: -4 }}>点一下看效果{m.canAct ? "和使用" : "；使用要组长或副组长来"}。别的组看不到你们有什么法宝，用了才会广播。</p>
             {team.data && team.data.items.length === 0 && <Empty title="还没有法宝">开营法宝、周战争的败者宝箱、商店和竞价都能得到法宝。</Empty>}
             {team.data?.items.map((i) => (
               <button

@@ -1,3 +1,5 @@
+import type { RubricGuide } from "../../seasonApi";
+import { TaskGuide } from "../../components/TaskGuide";
 import { serverNow } from "../../api";
 /**
  * The weekly and seasonal fights (PRD part 5):
@@ -55,6 +57,10 @@ interface WarView {
   chosen: Card | null;
   received: Card | null;
   settled: boolean;
+  stakes?: string;
+  deadline?: number;
+  rubric?: RubricGuide;
+  requirements?: string;
 }
 
 const OUTCOME_TEXT = { win: "赢了", lose: "输了", tie: "平局", bye: "轮空" } as const;
@@ -141,9 +147,17 @@ export function WarWeekPage() {
                       <ReadAloud text={`${v.theme.title}。${v.theme.task}`} />
                     </div>
                     <p>{v.theme.task}</p>
+                    {v.deadline && !v.settled && <div style={{ color: "var(--vermilion)" }}>作品截止：{countdown(v.deadline)}</div>}
                   </div>
                 </>
               )}
+              {v.stakes && (
+                <>
+                  <h2 className="section-title">输赢怎么算</h2>
+                  <div className="panel">{v.stakes}</div>
+                </>
+              )}
+              <TaskGuide rubric={v.rubric} requirements={v.requirements} compact />
               <h2 className="section-title">词条</h2>
               <div className="panel">
                 {v.received ? <div>本组要遵守的词条：{v.received.text}</div> : <div className="hint">{v.gift ? "周五早上公布对手送给你们的词条。" : "这一周的固定词条稍后公布。"}</div>}
@@ -317,6 +331,7 @@ export function ShopPage() {
   const [busy, setBusy] = useState(false);
   const s = shop.data;
   const effect = (id: string) => cat.data?.items.find((i) => i.id === id)?.effect ?? "";
+  const tierOf = (id: string) => cat.data?.items.find((i) => i.id === id)?.tier;
 
   const buy = async (g: ShopView["goods"][number]) => {
     if (!s) return;
@@ -376,11 +391,24 @@ export function ShopPage() {
                           <span className="hint">已买</span>
                         ) : (
                           m.canAct &&
-                          s.open && (
-                            <Button size="small" disabled={busy || (g.stock !== null && (g.stock <= 0 || !s.rareRoundDone))} onClick={() => void buy(g)}>
-                              买
-                            </Button>
-                          )
+                          s.open &&
+                          (() => {
+                            const why =
+                              g.stock !== null && !s.rareRoundDone
+                                ? "分配后再买"
+                                : g.stock === 0
+                                  ? "卖完了"
+                                  : s.bought.length >= s.maxItems
+                                    ? `已买满 ${s.maxItems} 件`
+                                    : g.price > s.spendableGrain
+                                      ? "粮草不够"
+                                      : null;
+                            return (
+                              <Button size="small" disabled={busy || why !== null} onClick={() => void buy(g)}>
+                                {why ?? "买"}
+                              </Button>
+                            );
+                          })()
                         )}
                       </div>
                     ))}
@@ -391,7 +419,12 @@ export function ShopPage() {
               {s.auctions.length === 0 ? (
                 <div className="hint">仙品竞价 {shortTime(new Date(s.epicStartAt).toISOString())} 开始，每件 24 小时。</div>
               ) : (
-                s.auctions.map((a) => <Auction key={a.itemId} a={a} s={s} canAct={m.canAct} effect={effect(a.itemId)} onDone={shop.reload} />)
+                <>
+                  <p className="hint" style={{ marginTop: -4 }}>每组最多拍得 {s.maxEpic} 件仙品，所以同一时间只能在一件上领先；被别人超过后，冻结的粮草自动回来，可以去拍别的。</p>
+                  {s.auctions.map((a) => (
+                    <Auction key={a.itemId} a={a} s={s} canAct={m.canAct} effect={effect(a.itemId)} hasEpic={s.bought.some((id) => tierOf(id) === "epic")} onDone={shop.reload} />
+                  ))}
+                </>
               )}
             </>
           )
@@ -401,14 +434,18 @@ export function ShopPage() {
   );
 }
 
-function Auction({ a, s, canAct, effect, onDone }: { a: ShopView["auctions"][number]; s: ShopView; canAct: boolean; effect: string; onDone: () => void }) {
+function Auction({ a, s, canAct, effect, hasEpic, onDone }: { a: ShopView["auctions"][number]; s: ShopView; canAct: boolean; effect: string; hasEpic: boolean; onDone: () => void }) {
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const now = serverNow();
   const live = !a.closed && now >= a.startAt && now < a.endAt;
   const bid = async (n: number) => {
-    if (!Number.isInteger(n) || n < a.minBid) {
-      Toast.show({ content: `最少出 ${a.minBid}` });
+    if (!Number.isInteger(n) || n < next) {
+      Toast.show({ content: `最少出 ${next}` });
+      return;
+    }
+    if (n > s.spendableGrain) {
+      Toast.show({ content: `本组能用的粮草只有 ${s.spendableGrain}` });
       return;
     }
     const ok = await Dialog.confirm({ content: `出价 ${n} 粮草竞拍${a.name}？出价后这部分粮草会被冻结，被别人超过时自动解冻。` });
@@ -426,6 +463,15 @@ function Auction({ a, s, canAct, effect, onDone }: { a: ShopView["auctions"][num
     }
   };
   const base = a.leader ? a.leader.amount : a.minBid - 10;
+  const next = Math.max(a.minBid, base + 10);
+  const leadingOther = s.auctions.find((x) => x.itemId !== a.itemId && !x.closed && x.leader?.mine);
+  const blocked = hasEpic
+    ? "本组已经有一件仙品了，不能再拍。"
+    : leadingOther
+      ? `本组正在${leadingOther.name}上领先，同一时间只能在一件仙品上领先。`
+      : next > s.spendableGrain
+        ? `本组能用的粮草 ${s.spendableGrain}，不够出 ${next}。`
+        : null;
   return (
     <div className="panel" aria-label={`竞价 ${a.name}`}>
       <div style={{ fontWeight: 700 }}>{a.name}</div>
@@ -439,18 +485,21 @@ function Auction({ a, s, canAct, effect, onDone }: { a: ShopView["auctions"][num
           </div>
           <div style={{ color: "var(--vermilion)" }}>{now < a.startAt ? `${shortTime(new Date(a.startAt).toISOString())} 开始` : countdown(a.endAt, now)}</div>
           <div className="hint">最后 {s.antiSnipeMinutes} 分钟有人出价，会自动延长 {s.antiSnipeMinutes} 分钟。</div>
-          {live && canAct && !a.leader?.mine && (
+          {live && canAct && !a.leader?.mine && blocked && <div className="hint" style={{ marginTop: 8 }}>{blocked}</div>}
+          {live && canAct && !a.leader?.mine && !blocked && (
             <>
               <div className="row" style={{ marginTop: 8, flexWrap: "wrap", gap: 8 }}>
-                <Button size="small" disabled={busy} onClick={() => void bid(Math.max(a.minBid, base + 10))}>
-                  出 {Math.max(a.minBid, base + 10)}
+                <Button size="small" disabled={busy} onClick={() => void bid(next)}>
+                  出 {next}
                 </Button>
-                <Button size="small" disabled={busy} onClick={() => void bid(Math.max(a.minBid, base + 20))}>
-                  出 {Math.max(a.minBid, base + 20)}
-                </Button>
+                {next + 10 <= s.spendableGrain && (
+                  <Button size="small" disabled={busy} onClick={() => void bid(next + 10)}>
+                    出 {next + 10}
+                  </Button>
+                )}
               </div>
               <div className="row" style={{ marginTop: 8 }}>
-                <Input className="text-input" type="number" aria-label={`${a.name}出价`} placeholder={`至少 ${a.minBid}`} value={amount} onChange={setAmount} />
+                <Input className="text-input" type="number" aria-label={`${a.name}出价`} placeholder={`${next} 到 ${s.spendableGrain}`} value={amount} onChange={setAmount} />
                 <Button size="small" disabled={busy || !amount} onClick={() => void bid(Number(amount))}>
                   出价
                 </Button>
@@ -490,9 +539,18 @@ type BigBattle =
       final: Record<"a" | "b", string[]> | null;
       flags: { beishui?: boolean; jiancheng?: boolean; qiankun?: boolean };
       settled: boolean;
+      lineTasks?: ({ title: string; body: string } | null)[];
+      mainTask?: { title: string; body: string } | null;
+      stakes?: string;
+      mainWin?: number;
+      result?: {
+        lines: { line: number; value: number; sides: { teamId: string; name: string; outcome: "win" | "lose" | "tie" | "none"; points: number; mine: boolean }[] }[];
+        main: "a" | "b" | "tie";
+      } | null;
     };
 
 const CAMP_TEXT = { a: "甲阵营", b: "乙阵营" } as const;
+const LINE_OUTCOME = { win: "赢", lose: "输", tie: "同分", none: "都没交" } as const;
 
 export function BigBattlePage() {
   const me = useSeasonMe();
@@ -561,13 +619,50 @@ export function BigBattlePage() {
                 )}
               </div>
 
+              {b.result && (
+                <>
+                  <h2 className="section-title">结果</h2>
+                  <div className="panel">
+                    {b.result.lines.map((l) => (
+                      <div key={l.line} style={{ padding: "4px 0" }}>
+                        <div className="hint">
+                          第 {l.line + 1} 条线 · {l.value} 分
+                        </div>
+                        {l.sides.map((x) => (
+                          <div key={x.teamId} className="row" style={{ fontWeight: x.mine ? 700 : 400 }}>
+                            <span className="grow">{x.name}</span>
+                            <span>
+                              {LINE_OUTCOME[x.outcome]} {x.points > 0 ? "+" : ""}
+                              {points(x.points)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    <div style={{ marginTop: 6, fontWeight: 600 }}>
+                      主战场：{b.result.main === "tie" ? "同分，双方都不加分" : `${CAMP_TEXT[b.result.main]}赢了${b.result.main === camp ? "（本阵营）" : ""}，每组 +${b.mainWin ?? 12}`}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {b.stakes && !b.result && (
+                <>
+                  <h2 className="section-title">怎么比</h2>
+                  <div className="panel hint">{b.stakes}</div>
+                </>
+              )}
+
               <h2 className="section-title">战线</h2>
               {!b.final ? (
                 <div className="hint">
                   {now < b.linesDeadline ? `战线分配：${countdown(b.linesDeadline, now)}；没分配的系统随机分配。` : `已截止，${shortTime(new Date(b.publishAt).toISOString())} 双方同时公布。`}
                 </div>
               ) : (
-                <div className="hint">战线已公布。作品 {countdown(b.battleDeadline, now)}</div>
+                <div className="hint">
+                  战线已公布。
+                  {now < b.battleDeadline ? `作品 ${countdown(b.battleDeadline, now)}` : b.settled ? "" : "作品已截止，评分和复核完成后公布结果。"}
+                </div>
               )}
               {b.myLines && !b.final && (
                 <div className="hint">
@@ -580,6 +675,11 @@ export function BigBattlePage() {
                     <div style={{ fontWeight: 600 }}>
                       第 {i + 1} 条线 · {v} 分
                     </div>
+                    {b.lineTasks?.[i] && (
+                      <div className="hint">
+                        <b>{b.lineTasks[i]!.title}</b>：{b.lineTasks[i]!.body}
+                      </div>
+                    )}
                     {b.final ? (
                       <div>
                         {name(b.final.a[i] ?? "")} 对 {name(b.final.b[i] ?? "")}
@@ -612,6 +712,11 @@ export function BigBattlePage() {
               {camp && !m.canAct && !b.final && <p className="hint">阵营里任何一位组长或副组长都可以分配战线。</p>}
 
               <h2 className="section-title">使者团（主战场）</h2>
+              {b.mainTask && (
+                <p className="hint" style={{ marginTop: -4 }}>
+                  <b>{b.mainTask.title}</b>：{b.mainTask.body}
+                </p>
+              )}
               <div className="panel">
                 {envoys.data?.envoys.length === 0 && <div className="hint">还没有使者。各组派代表，一起完成主战场作品。</div>}
                 {envoys.data?.envoys.map((e) => (
@@ -620,7 +725,7 @@ export function BigBattlePage() {
                   </div>
                 ))}
               </div>
-              {m.canAct && camp && !b.settled && (
+              {m.canAct && camp && !b.settled && now < b.battleDeadline && (
                 <>
                   <Selector columns={3} options={m.members.filter((x) => x.active).map((x) => ({ label: x.nickname, value: x.childId }))} value={envoy ? [envoy] : []} onChange={(v) => setEnvoy(v[0] ?? null)} />
                   <Button size="small" style={{ marginTop: 6 }} disabled={!envoy} onClick={() => void addEnvoy()}>

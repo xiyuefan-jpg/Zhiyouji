@@ -345,9 +345,10 @@ interface Review {
     text: string;
     team: string;
     rank: number | null;
+    highlights?: string[];
     map: Record<string, number>;
     hardest: { title: string; tag: string | null; crossing: number | null } | null;
-    works: { kind: string; slot: string }[];
+    works: { kind: string; slot: string; title?: string | null; land?: string | null; subject?: string | null; result?: string | null }[];
     numbers: { dailyTasks: number; cards: number; works: number; aboveGrade: number };
   };
 }
@@ -389,11 +390,24 @@ export function SeasonReviewPage() {
             <div className="panel">
               {r.content.team}
               {r.content.rank ? `，最终第 ${r.content.rank} 名` : ""}
+              {r.content.highlights?.length ? <div className="hint">高光时刻：{r.content.highlights.join("、")}</div> : null}
             </div>
             {r.content.works.length > 0 && (
               <>
                 <div className="field-label">我参与的作品</div>
-                <div className="panel">{r.content.works.map((w, i) => <div key={i}>{WORK_KIND[w.kind] ?? w.kind}</div>)}</div>
+                <div className="panel">
+                  {r.content.works.map((w, i) => (
+                    <div key={i} style={{ padding: "4px 0" }}>
+                      <div>
+                        {WORK_KIND[w.kind] ?? w.kind}
+                        {w.land ? ` · ${w.land}` : ""}
+                        {w.subject ? `（${w.subject}）` : ""}
+                        {w.result ? <b> · {w.result}</b> : null}
+                      </div>
+                      {w.title && <div className="hint">{w.title}</div>}
+                    </div>
+                  ))}
+                </div>
               </>
             )}
             <div className="field-label">数字</div>

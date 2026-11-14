@@ -16,7 +16,13 @@ import { ApiError, request } from "../../api";
 import { shortTime } from "../../format";
 import { Empty, PageHeader } from "../../components/ui";
 import { ticketUploader } from "../../platform/upload";
-import { seasonApi } from "../../seasonApi";
+import { seasonApi, type RubricGuide, type TaskInfo } from "../../seasonApi";
+
+interface TaskView {
+  task: TaskInfo | null;
+  rubric: RubricGuide;
+  requirements: string;
+}
 import { useLoad } from "./useSeason";
 
 interface Slot {
@@ -100,6 +106,8 @@ export function WorkSlot() {
   const versions = useLoad(() => request<{ works: Version[] }>("GET", `/v1/season/works/${encodeURIComponent(slot)}/versions`), [slot]);
   const contestId = slot.startsWith("contest:") ? slot.split(":")[1]! : null;
   const contest = useLoad(() => (contestId ? seasonApi.contest(contestId) : Promise.resolve(null)), [contestId]);
+  // Weekly wars and the big battle: the task, how it is judged and what to hand in (contests show theirs via the contest).
+  const task = useLoad(() => (contestId ? Promise.resolve(null) : request<TaskView>("GET", `/v1/season/works/${encodeURIComponent(slot)}/task`)), [slot]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [mediaKind, setMediaKind] = useState<"text" | "images" | "video" | "audio">("video");
@@ -170,6 +178,7 @@ export function WorkSlot() {
       )}
 
       {contest.data && <TaskGuide task={contest.data.task} rubric={contest.data.rubric} requirements={contest.data.requirements} compact />}
+      {task.data && <TaskGuide task={task.data.task ?? undefined} rubric={task.data.rubric} requirements={task.data.requirements} compact showPrompt />}
 
       {result.data?.settled && (
         <>
