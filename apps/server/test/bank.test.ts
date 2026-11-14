@@ -77,6 +77,10 @@ describe("题库 (part 7 §4; content library §12)", () => {
     st = await t.services.store.state(serverId);
     expect(st.prompts.E3).not.toContain(p5.id);
     expect(st.usedPrompts.E3).toHaveLength(2);
+    // 每条题本季在哪个服用过 (part 7 §4): both drawn prompts show the server, the others nothing
+    const listed = (await call("GET", `/v1/admin/prompts?landTemplateId=${fire.id}`)).json().prompts as { id: string; usedIn: { serverId: string; times: number }[] }[];
+    const drawn = new Set([st.contests.K1!.promptId, st.contests.K2!.promptId]);
+    for (const p of listed) expect(p.usedIn).toEqual(drawn.has(p.id) ? [expect.objectContaining({ serverId, times: 1 })] : []);
 
     // the child sees the drawn prompt's text on the contest page
     const k2 = st.contests.K2!;

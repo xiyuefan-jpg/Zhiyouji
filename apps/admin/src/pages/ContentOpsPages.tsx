@@ -57,6 +57,8 @@ interface Prompt {
   rubric: string | null;
   status: "draft" | "enabled" | "disabled";
   todo: boolean;
+  /** 本季在哪个服用过 (part 7 §4). */
+  usedIn?: { serverId: string; server: string; times: number }[];
 }
 
 const CATEGORY: Record<string, string> = { land: "地块题目", war_theme: "周战争主题", supply: "军需任务", battle_line: "大团战战线", battle_main: "大团战主战场" };
@@ -183,6 +185,7 @@ function Prompts({ canEdit }: { canEdit: boolean }) {
           { title: "地块", render: (_, r) => tName(r.landTemplateId) },
           { title: "评分族", dataIndex: "rubric" },
           { title: "状态", render: (_, r) => <Tag color={PSTATUS[r.status]?.color}>{PSTATUS[r.status]?.text}</Tag> },
+          { title: "本季用过", render: (_, r) => (r.usedIn?.length ? r.usedIn.map((u) => `${u.server}${u.times > 1 ? ` ×${u.times}` : ""}`).join("、") : "—") },
           {
             title: "",
             render: (_, r) =>

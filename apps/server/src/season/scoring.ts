@@ -65,6 +65,12 @@ function slotsOf(key: string): string[] {
 }
 
 const baseSlot = (slot: string) => slot.replace(/:open$/, "");
+/** The Monday of a Beijing date's week ("YYYY-MM-DD"). */
+const mondayOf = (d: string) => {
+  const t = Date.parse(`${d}T00:00:00Z`);
+  const dow = (new Date(t).getUTCDay() + 6) % 7;
+  return new Date(t - dow * 86_400_000).toISOString().slice(0, 10);
+};
 
 const FLAG_TEXT: Record<string, string> = { plagiarism: "疑似抄袭", inappropriate: "内容不当", needs_admin: "需要管理员看" };
 
@@ -899,9 +905,26 @@ export class Scoring {
           averageGapWithAi: avg(aiGaps),
         };
       });
+    // 按周的趋势 (part 7 §6): weeks from Monday (Beijing), by the first settlement of each work
+    const firstSettled = new Map<string, (typeof ss)[number]>();
+    for (const x of [...ss].sort((a, b) => +a.decidedAt - +b.decidedAt)) if (!firstSettled.has(x.workId)) firstSettled.set(x.workId, x);
+    const weeks = new Map<string, { week: string; settled: number; timedOutToAi: number }>();
+    for (const x of firstSettled.values()) {
+      const week = mondayOf(beijingDate(+x.decidedAt));
+      const w = weeks.get(week) ?? { week, settled: 0, timedOutToAi: 0 };
+      w.settled++;
+      if (x.basis === "ai_timeout") w.timedOutToAi++;
+      weeks.set(week, w);
+    }
     return {
       reviewers,
-      total: { settled: ss.length, timedOutToAi: timeoutWorks.length, works: timeoutWorks.map((s) => ({ workId: s.workId, score: s.score, at: s.decidedAt.toISOString() })) },
+      total: {
+        settled: ss.length,
+        timedOutToAi: timeoutWorks.length,
+        timedOutRatio: firstSettled.size ? Math.round(([...firstSettled.values()].filter((x) => x.basis === "ai_timeout").length / firstSettled.size) * 100) / 100 : 0,
+        works: timeoutWorks.map((s) => ({ workId: s.workId, score: s.score, at: s.decidedAt.toISOString() })),
+      },
+      byWeek: [...weeks.values()].sort((a, b) => a.week.localeCompare(b.week)).map((w) => ({ ...w, timedOutRatio: Math.round((w.timedOutToAi / w.settled) * 100) / 100 })),
     };
   }
 }

@@ -99,6 +99,9 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
     const bossToken = await t.boss.relogin();
     const dash = (await t.call("GET", "/v1/admin/reviewers/dashboard", undefined, bossToken)).json();
     expect(dash.total.timedOutToAi).toBe(1);
+    // the trend by week (Monday, Beijing): both works settled in the week of 2027-02-08, one of them by timeout
+    expect(dash.total.timedOutRatio).toBe(0.5);
+    expect(dash.byWeek).toEqual([{ week: "2027-02-08", settled: 2, timedOutToAi: 1, timedOutRatio: 0.5 }]);
     expect(dash.reviewers.find((r: { reviewerId: string }) => r.reviewerId === other.reviewerId)).toMatchObject({ assigned: 1, timedOutToAi: 1, timedOutWorks: [w2.id] });
     expect(dash.reviewers.find((r: { reviewerId: string }) => r.reviewerId === mine.reviewerId)).toMatchObject({ doneOnTime: 1, averageGapWithAi: 4 });
     await t.close();

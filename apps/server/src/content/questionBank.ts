@@ -10,7 +10,7 @@
  */
 
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { landTemplates, lands, opLog, prompts, seasons, servers, type Db } from "@zhiyouji/db";
+import { landTemplates, lands, opLog, prompts, seasons, servers, works, type Db } from "@zhiyouji/db";
 import type { SeasonState } from "@zhiyouji/engine";
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
@@ -122,7 +122,40 @@ export class QuestionBank {
     if (f.landTemplateId) conds.push(eq(prompts.landTemplateId, f.landTemplateId));
     if (f.status) conds.push(eq(prompts.status, f.status));
     const rows = await this.db.select().from(prompts).where(conds.length ? and(...conds) : undefined).orderBy(asc(prompts.createdAt));
-    return { prompts: rows.map((r) => this.view(r)) };
+    const usage = await this.usage();
+    return { prompts: rows.map((r) => ({ ...this.view(r), usedIn: usage.get(r.id) ?? [] })) };
+  }
+
+  /**
+   * 每条题本季在哪个服用过 (part 7 §4): on the servers of live seasons, prompts
+   * drawn for a contest (engine state) and prompts a work answered (weekly war
+   * themes, the big battle), counted per server.
+   */
+  async usage(): Promise<Map<string, { serverId: string; server: string; times: number }[]>> {
+    const live = await this.db
+      .select({ id: servers.id, name: servers.name })
+      .from(servers)
+      .innerJoin(seasons, eq(servers.seasonId, seasons.id))
+      .where(inArray(seasons.status, LIVE_SEASON_STATES));
+    const out = new Map<string, { serverId: string; server: string; times: number }[]>();
+    const add = (promptId: string, s: { id: string; name: string }) => {
+      const list = out.get(promptId) ?? [];
+      const x = list.find((y) => y.serverId === s.id);
+      if (x) x.times++;
+      else list.push({ serverId: s.id, server: s.name, times: 1 });
+      out.set(promptId, list);
+    };
+    for (const s of live) {
+      const st = await this.store.state(s.id);
+      for (const c of Object.values(st.contests)) if (c.promptId) add(c.promptId, s);
+      // other categories: once per server and slot a work answered it
+      const answered = await this.db
+        .selectDistinct({ promptId: works.promptId, slot: works.slot })
+        .from(works)
+        .where(and(eq(works.serverId, s.id), inArray(works.kind, ["war", "line", "main"])));
+      for (const a of answered) if (a.promptId) add(a.promptId, s);
+    }
+    return out;
   }
 
   view(r: PromptRow) {

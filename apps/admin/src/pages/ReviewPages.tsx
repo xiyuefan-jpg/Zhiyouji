@@ -487,7 +487,13 @@ interface ReviewerRow {
 
 export function ReviewersPage() {
   const me = useAdmin();
-  const d = useLoad(() => request<{ reviewers: ReviewerRow[]; total: { settled: number; timedOutToAi: number; works?: { workId: string; score: number; at: string }[] } }>("GET", "/v1/admin/reviewers/dashboard"));
+  const d = useLoad(() =>
+    request<{
+      reviewers: ReviewerRow[];
+      total: { settled: number; timedOutToAi: number; timedOutRatio?: number; works?: { workId: string; score: number; at: string }[] };
+      byWeek?: { week: string; settled: number; timedOutToAi: number; timedOutRatio: number }[];
+    }>("GET", "/v1/admin/reviewers/dashboard"),
+  );
   if (me.role !== "admin") return null;
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
@@ -497,7 +503,24 @@ export function ReviewersPage() {
       {d.data && (
         <Typography.Text>
           已结算 {d.data.total.settled} 件，其中超时按 AI 分结算 {d.data.total.timedOutToAi} 件
+          {d.data.total.timedOutRatio !== undefined ? `（${Math.round(d.data.total.timedOutRatio * 100)}%）` : ""}
         </Typography.Text>
+      )}
+      {!!d.data?.byWeek?.length && (
+        <Card size="small" title="按周的趋势">
+          <Table
+            rowKey="week"
+            size="small"
+            pagination={false}
+            dataSource={d.data.byWeek}
+            columns={[
+              { title: "周（从周一起）", dataIndex: "week" },
+              { title: "结算", dataIndex: "settled" },
+              { title: "超时按 AI 结算", dataIndex: "timedOutToAi" },
+              { title: "比例", render: (_, w) => <Typography.Text type={w.timedOutRatio > 0.1 ? "danger" : undefined}>{Math.round(w.timedOutRatio * 100)}%</Typography.Text> },
+            ]}
+          />
+        </Card>
       )}
       {!!d.data?.total.works?.length && (
         <Card size="small" title="超时按 AI 分结算的作品（可以点开裁定或改判）">
