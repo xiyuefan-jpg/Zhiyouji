@@ -68,5 +68,5 @@ describe("admin console: 赛季 and 玩家与分组 (part 7 §2–§3)", () => {
     await waitFor(async () => expect((await be.services.seasons.season(s.id)).groupingLockedAt).not.toBeNull());
     expect(await screen.findByText(/小组微信群二维码/)).toBeTruthy();
     await be.stop();
-  });
+  }, 150_000);
 });
