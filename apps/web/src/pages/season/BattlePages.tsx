@@ -335,6 +335,7 @@ interface ShopView {
     name: string;
     startAt: number;
     endAt: number;
+    extendedMinutes?: number;
     closed: boolean;
     minBid: number;
     leader: { teamId: string; name: string; amount: number; mine: boolean } | null;
@@ -503,6 +504,7 @@ function Auction({ a, s, canAct, effect, hasEpic, onDone }: { a: ShopView["aucti
             {a.leader ? `最高价 ${a.leader.amount}（${a.leader.mine ? "本组" : a.leader.name}）` : `起拍价 ${a.minBid}`}
           </div>
           <div style={{ color: "var(--vermilion)" }}>{now < a.startAt ? `${shortTime(new Date(a.startAt).toISOString())} 开始` : countdown(a.endAt, now)}</div>
+          {!!a.extendedMinutes && <div style={{ color: "var(--vermilion)" }}>有人在最后时刻出价，已经延长了 {a.extendedMinutes} 分钟</div>}
           <div className="hint">最后 {s.antiSnipeMinutes} 分钟有人出价，会自动延长 {s.antiSnipeMinutes} 分钟。</div>
           {live && canAct && !a.leader?.mine && blocked && <div className="hint" style={{ marginTop: 8 }}>{blocked}</div>}
           {live && canAct && !a.leader?.mine && !blocked && (

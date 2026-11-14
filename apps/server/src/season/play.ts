@@ -21,6 +21,7 @@ import {
   REGULAR_COMMON_ITEMS,
   openingStockPerKind,
   activeContestOnLand,
+  afterPauses as afterPausesOf,
   centerLandPrice,
   activeAttackCount,
   contestTimes,
@@ -685,6 +686,8 @@ export class SeasonPlay {
           name: itemDef(a.itemId).name,
           startAt: a.startAt,
           endAt: a.endAt,
+          /** Anti-sniping moved the end (part 5 E11 "倒计时（顺延时有提示）"): minutes added so far. */
+          extendedMinutes: Math.max(0, Math.round((a.endAt - afterPausesOf(s, a.startAt + p.items.epicAuctionHours * 3_600_000)) / 60_000)),
           closed: a.closed,
           minBid: minimumBid(a, p),
           leader: lead ? { teamId: lead.teamId, name: name(lead.teamId), amount: lead.amount, mine: lead.teamId === ctx.teamId } : null,

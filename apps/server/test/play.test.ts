@@ -180,7 +180,7 @@ describe("season play on the student website (part 5 D–E)", () => {
     const later = (await a1("GET", "/v1/season/shop")).json();
     expect(later.rareRoundDone).toBe(true);
     expect(later.auctions.length).toBeGreaterThan(0);
-    expect(later.auctions[0]).toMatchObject({ closed: false, minBid: 150, leader: null });
+    expect(later.auctions[0]).toMatchObject({ closed: false, minBid: 150, leader: null, extendedMinutes: 0 });
     await t.close();
   });
 });
