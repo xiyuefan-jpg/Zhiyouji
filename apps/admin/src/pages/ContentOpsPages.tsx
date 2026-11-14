@@ -807,6 +807,7 @@ export function OpsPage() {
           { key: "safety", label: "内容安全", children: <SafetyQueue isAdmin={me.role === "admin"} /> },
           ...(me.role === "admin" ? [{ key: "push", label: "手动推送", children: <ManualPush /> }] : []),
           ...(me.role === "admin" ? [{ key: "about", label: "关于与 AI 公示", children: <AboutAi /> }] : []),
+          ...(me.role === "admin" ? [{ key: "art", label: "美术资源", children: <ArtAssets /> }] : []),
         ]}
       />
     </Space>
@@ -880,6 +881,94 @@ function ManualPush() {
         </Button>
       </Form>
       {last && <Alert type="success" message={`上一次：发给 ${last.sent} 个孩子${last.skipped ? `，${last.skipped} 个今天已经收到 2 条，跳过了` : ""}`} />}
+    </Space>
+  );
+}
+
+interface ArtSlot {
+  slot: string;
+  name: string;
+  group: string;
+  uploads: { id: string; author: string; note: string | null; live: boolean; uploadedAt: string; url: string }[];
+}
+
+/** 美术资源 (part 7 §8; part 5 §7): each slot's live image; upload a new one with its author, enable it. */
+function ArtAssets() {
+  const l = useLoad(() => request<{ slots: ArtSlot[] }>("GET", "/v1/admin/art"));
+  const [group, setGroup] = useState("地块");
+  const [author, setAuthor] = useState("");
+  const groups = [...new Set((l.data?.slots ?? []).map((s) => s.group))];
+  const upload = async (slot: string, file: File | undefined) => {
+    if (!file) return;
+    if (!author.trim()) return void message.warning("先填作者（例如：AI 初稿、三组 小林）");
+    try {
+      const t = await request<{ key: string; upload: { url: string; headers: Record<string, string> } }>("POST", "/v1/admin/art/ticket", { slot, contentType: file.type, size: file.size });
+      const res = await fetch(t.upload.url, { method: "PUT", headers: t.upload.headers, body: file });
+      if (!res.ok) throw new Error("上传没有成功");
+      await request("POST", "/v1/admin/art", { slot, key: t.key, contentType: file.type, author: author.trim(), live: true });
+      message.success("已上传并启用");
+      l.reload();
+    } catch (e) {
+      message.error(errText(e));
+    }
+  };
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary">v1 的插画先用 AI 初稿，挑好的启用；以后换成孩子们的作品。作者会列在网站“关于与 AI 公示”里。图片 8 MB 以内（PNG、JPG、WebP、SVG）。</Typography.Paragraph>
+      <Space wrap>
+        <Select aria-label="资源分组" value={group} onChange={setGroup} style={{ width: 120 }} options={groups.map((g) => ({ value: g, label: g }))} />
+        <Input aria-label="作者" style={{ width: 220 }} placeholder="作者（上传前填）" value={author} onChange={(e) => setAuthor(e.target.value)} />
+      </Space>
+      <Table<ArtSlot>
+        rowKey="slot"
+        size="small"
+        pagination={false}
+        dataSource={(l.data?.slots ?? []).filter((s) => s.group === group)}
+        columns={[
+          { title: "资源位", dataIndex: "name" },
+          {
+            title: "正在用",
+            render: (_, s) => {
+              const cur = s.uploads.find((u) => u.live);
+              return cur ? (
+                <Space>
+                  <img src={cur.url} alt={s.name} style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6 }} />
+                  {cur.author}
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">没有（用网站自带的样子）</Typography.Text>
+              );
+            },
+          },
+          {
+            title: "以前传的",
+            render: (_, s) => (
+              <Space wrap>
+                {s.uploads
+                  .filter((u) => !u.live)
+                  .map((u) => (
+                    <a key={u.id} onClick={() => void run(() => request("POST", `/v1/admin/art/${u.id}/enable`), "已启用", l.reload)} title={`启用 ${u.author} 的这张`}>
+                      <img src={u.url} alt={u.author} style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, opacity: 0.7 }} />
+                    </a>
+                  ))}
+              </Space>
+            ),
+          },
+          {
+            title: "",
+            render: (_, s) => (
+              <Space>
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-label={`上传 ${s.name}`} onChange={(e) => void upload(s.slot, e.target.files?.[0])} />
+                {s.uploads.some((u) => u.live) && (
+                  <Button size="small" onClick={() => void run(() => request("POST", "/v1/admin/art/disable", { slot: s.slot }), "已停用", l.reload)}>
+                    停用
+                  </Button>
+                )}
+              </Space>
+            ),
+          },
+        ]}
+      />
     </Space>
   );
 }

@@ -167,6 +167,27 @@ export function PrivacyPage() {
   );
 }
 
+/** Who drew the pictures in use (part 5 §7; part 7 §8 美术资源). */
+function ArtAuthors() {
+  const d = useLoad(() => request<{ authors: { author: string; works: string[] }[] }>("GET", "/v1/art"));
+  return (
+    <div className="panel">
+      {!d.data?.authors.length ? (
+        <p style={{ margin: 0 }}>插画上线后，每幅画的作者会列在这里。</p>
+      ) : (
+        d.data.authors.map((a) => (
+          <div key={a.author} className="row" style={{ alignItems: "flex-start" }}>
+            <span className="grow">{a.author}</span>
+            <span className="hint" style={{ textAlign: "right" }}>
+              {a.works.join("、")}
+            </span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 /** Which model does what, with its filing number (part 5 §8); kept in the admin console. */
 function AiList() {
   const d = useLoad(() => request<{ ai: { purpose: string; model: string; provider: string; filingNo: string | null }[] }>("GET", "/v1/about"));
@@ -210,9 +231,7 @@ export function AboutPage() {
       <div className="field-label">使用的 AI 模型</div>
       <AiList />
       <div className="field-label">插画作者</div>
-      <div className="panel">
-        <p style={{ margin: 0 }}>插画上线后，每幅画的作者会列在这里。</p>
-      </div>
+      <ArtAuthors />
     </>
   );
 }

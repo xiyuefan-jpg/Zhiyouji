@@ -1282,6 +1282,27 @@ export const calibScores = pgTable(
   (t) => [uniqueIndex("calib_scores_one").on(t.sampleId, t.kind, t.scorer)],
 );
 
+/**
+ * 美术资源 (PRD part 5 §7; part 7 §8): an image per slot ("map", "land:火焰山",
+ * "item:zijin", "badge:1", "avatar:a1", "tudigong", "splash"), with its author
+ * (credited on the 关于 page). Every upload is kept; one per slot is live.
+ */
+export const artAssets = pgTable(
+  "art_assets",
+  {
+    id: id(),
+    slot: text("slot").notNull(),
+    storageKey: text("storage_key").notNull(),
+    contentType: text("content_type").notNull(),
+    author: text("author").notNull(),
+    note: text("note"),
+    live: boolean("live").notNull().default(false),
+    uploadedBy: text("uploaded_by").notNull(),
+    uploadedAt: ts("uploaded_at").notNull(),
+  },
+  (t) => [index("art_assets_slot").on(t.slot, t.live)],
+);
+
 /** Every AI call (append-only): input, output, model, version, time, cost. */
 export const aiCalls = pgTable(
   "ai_calls",

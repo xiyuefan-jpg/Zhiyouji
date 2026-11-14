@@ -64,7 +64,7 @@ describe("student website: the season (part 5 D, E, F)", () => {
     const be = await seasonPlayer();
     // the player's younger sibling, not in the season, picks "我是谁"
     const session = (await be.db.query.sessions.findFirst())!;
-    const c = await be.services.family.createChild(session.familyId, { nickname: "小观", grade: 3, avatar: "a1", explainPref: "voice" });
+    const c = await be.services.family.createChild(session.familyId!, { nickname: "小观", grade: 3, avatar: "a1", explainPref: "voice" });
     await be.services.sessions.setChild(session.id, c.id);
     const { unmount } = renderApp("/map");
     expect(await screen.findByText((_, el) => el?.tagName === "P" && /观战：.*（只读）/.test(el.textContent ?? ""))).toBeTruthy();

@@ -195,6 +195,7 @@ export function LandPage() {
         <div className="hint">正在加载……</div>
       ) : (
         <>
+          <LandPicture name={land.name} />
           <div className="panel">
             {(land.subject || land.questionType) && (
               <div style={{ fontWeight: 600, marginBottom: 4 }}>{[land.subject, land.questionType].filter(Boolean).join(" · ")}</div>
@@ -246,6 +247,14 @@ export function LandPage() {
       )}
     </div>
   );
+}
+
+/** The land's illustration when the admins have enabled one (美术资源, part 5 §7). */
+function LandPicture({ name }: { name: string }) {
+  const art = useLoad(() => request<{ images: Record<string, string> }>("GET", "/v1/art"));
+  const url = art.data?.images[`land:${name}`];
+  if (!url) return null;
+  return <img src={url} alt={name} style={{ width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 12, display: "block", marginBottom: 10 }} />;
 }
 
 const HOW: Record<string, string> = { auction: "盲拍拿到", center_round: "中心地购买", bought: "买下", captured: "进攻夺下", rejudged: "改判后归还", admin: "老师调整" };

@@ -40,6 +40,8 @@ import { supplyAdminRoutes } from "./supplyAdminRoutes.js";
 import { todoRoutes } from "./todoRoutes.js";
 import { calibrationRoutes } from "./calibrationRoutes.js";
 import { Calibration } from "../content/calibration.js";
+import { Art } from "../content/art.js";
+import { artRoutes } from "./artRoutes.js";
 import { ContentTodos } from "../content/todos.js";
 import { WarWords } from "../season/warWords.js";
 import { Home } from "../season/todo.js";
@@ -106,6 +108,7 @@ export interface Services {
   emailDispatcher: EmailDispatcher;
   todos: ContentTodos;
   calibration: Calibration;
+  art: Art;
   /** The email provider in use (tests read the fake's outbox). */
   email: EmailProvider;
   familyAuth: FamilyAuth;
@@ -229,6 +232,7 @@ export function buildServices(d: AppDeps): Services {
     emailDispatcher: new EmailDispatcher(d.db, d.clock, email),
     todos: new ContentTodos(d.db, d.clock, notifier),
     calibration: new Calibration(d.db, d.clock, gateway.wrapScorer(ai)),
+    art: new Art(d.db, d.clock, storage),
     email,
     familyAuth: new FamilyAuth(d.cfg, sessions, family),
     adminAuth: new AdminAuth(d.cfg, sessions, admin),
@@ -281,6 +285,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   supplyAdminRoutes(app, services.supply, services.adminAuth);
   todoRoutes(app, services.todos, services.adminAuth);
   calibrationRoutes(app, services.calibration, services.adminAuth);
+  artRoutes(app, services.art, services.adminAuth, services.familyAuth);
   exportRoutes(app, d.db, services.admin, services.adminAuth);
   app.get("/v1/journal/summaries", async (req) => services.summaries.list((await services.familyAuth.child(req)).child.id));
   app.get("/v1/season-reviews", async (req) => services.summaries.seasonReviewsOf((await services.familyAuth.child(req)).child.id));

@@ -232,6 +232,13 @@
       "when": 1794665110527,
       "tag": "0032_calibration",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794665339787,
+      "tag": "0033_art_assets",
+      "breakpoints": true
     }
   ]
 }
