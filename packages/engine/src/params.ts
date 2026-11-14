@@ -15,6 +15,7 @@ export interface SeasonParams {
     publishRestDay: [number, number, number];
     /** D0 .. D33. */
     seasonDays: number;
+    /** Must equal seasonDays − bigBattleStartDay + 1 (checked by `paramsProblems`); the engine uses the start day. */
     bigBattleDays: number;
     /** Big battle starts on this day (D29). */
     bigBattleStartDay: number;
@@ -88,6 +89,8 @@ export interface SeasonParams {
     tie: number;
     /** Weeks with gift cards (互赠周). */
     giftWeeks: number[];
+    /** Cards each team is shown in a gift week, choosing one for the opponent (§11: 3). */
+    giftOffered: number;
   };
   supply: {
     /** Score boundaries for the grain tiers: <50, 50–65, ≥65. */
@@ -190,7 +193,7 @@ export const DEFAULT_PARAMS: SeasonParams = {
     debateOpeningDay: 2,
   },
   review: { timeoutHours: 24, remindBeforeHours: 6, doubleReviewRatio: 0.1, diffAlert: 10, w4DeadlineSlot: "noon" },
-  war: { win: 15, lose: -5, bye: 5, tie: 5, giftWeeks: [2, 4] },
+  war: { win: 15, lose: -5, bye: 5, tie: 5, giftWeeks: [2, 4], giftOffered: 3 },
   supply: {
     tierBounds: [50, 65],
     tierGrain: [10, 20, 30],
@@ -308,4 +311,21 @@ function splitEvenly(total: number, parts: number): number[] {
   const base = Math.floor(total / parts);
   const extra = total % parts;
   return Array.from({ length: parts }, (_, i) => base + (i < extra ? 1 : 0));
+}
+
+/**
+ * Parameters that contradict each other (admin console: refused on save).
+ * Empty when all is well.
+ */
+export function paramsProblems(p: SeasonParams): string[] {
+  const out: string[] = [];
+  const t = p.time;
+  if (t.seasonDays - t.bigBattleStartDay + 1 !== t.bigBattleDays)
+    out.push(`大团战天数（${t.bigBattleDays}）要等于 赛季天数（${t.seasonDays}）− 大团战开始日（D${t.bigBattleStartDay}）+ 1 = ${t.seasonDays - t.bigBattleStartDay + 1}`);
+  if (t.shopOpenDay > t.shopCloseDay) out.push(`商店开放日（D${t.shopOpenDay}）不能晚于关闭日（D${t.shopCloseDay}）`);
+  if (t.shopCloseDay >= t.bigBattleStartDay) out.push(`商店要在大团战（D${t.bigBattleStartDay}）之前关闭`);
+  const [low, high] = p.supply.tierBounds;
+  if (!(low < high)) out.push(`军需档位分界要从小到大（现在是 ${low}、${high}）`);
+  if (p.war.giftOffered !== undefined && (!Number.isInteger(p.war.giftOffered) || p.war.giftOffered < 1)) out.push("互赠周每组看到的词条数至少是 1");
+  return out;
 }

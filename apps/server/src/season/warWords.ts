@@ -19,7 +19,6 @@ import type { Notifier } from "../notify/notifier.js";
 import type { SeasonStore } from "../seasonStore.js";
 import { refuse, type PlayCtx } from "./play.js";
 
-const OFFERED = 3;
 
 const cardText = (id: string | null) => {
   if (!id) return null;
@@ -56,7 +55,7 @@ export class WarWords {
     const gift = this.isGift(st, week);
     const whitelist = WAR_CARDS.filter((c) => c.weeks.includes(week)).map((c) => c.id);
     for (const teamId of w.pairs.flat()) {
-      const offered = gift ? this.rng(st, week, teamId).shuffle(whitelist).slice(0, OFFERED) : [];
+      const offered = gift ? this.rng(st, week, teamId).shuffle(whitelist).slice(0, st.params.war.giftOffered ?? 3) : [];
       const fixed = !gift && WAR_THEMES[week]?.fixedCard ? `fixed:${week}` : null;
       await this.db
         .insert(warCards)

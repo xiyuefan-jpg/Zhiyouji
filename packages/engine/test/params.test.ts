@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PARAMS, battleLineValues, landCounts, openingStockPerKind, planServers, withParams } from "../src/index.js";
+import { DEFAULT_PARAMS, battleLineValues, landCounts, openingStockPerKind, paramsProblems, planServers, withParams } from "../src/index.js";
 
 describe("params", () => {
   it("land counts per server (§4, §20.1)", () => {
@@ -40,5 +40,15 @@ describe("params", () => {
     expect(two.playersPerServer).toEqual([60, 60]);
     expect(two.teamSizes[0]).toEqual([8, 8, 8, 8, 7, 7, 7, 7]);
     expect(() => planServers(5, DEFAULT_PARAMS)).toThrow();
+  });
+});
+
+describe("parameters that contradict each other", () => {
+  it("the defaults are consistent; a big battle length that does not fit the season is reported", () => {
+    expect(paramsProblems(DEFAULT_PARAMS)).toEqual([]);
+    expect(paramsProblems(withParams({ time: { bigBattleDays: 6 } }))).toEqual(["大团战天数（6）要等于 赛季天数（33）− 大团战开始日（D29）+ 1 = 5"]);
+    expect(paramsProblems(withParams({ time: { bigBattleStartDay: 28, bigBattleDays: 6 } }))).toEqual([]);
+    expect(paramsProblems(withParams({ supply: { tierBounds: [65, 50] }, war: { giftOffered: 0 } }))).toHaveLength(2);
+    expect(paramsProblems(withParams({ time: { shopCloseDay: 30 } }))).toEqual(["商店要在大团战（D29）之前关闭"]);
   });
 });

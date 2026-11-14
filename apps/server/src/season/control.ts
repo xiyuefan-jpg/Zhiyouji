@@ -22,6 +22,7 @@ import {
   pointsOf,
   rankingAt,
   seasonDayOf,
+  paramsProblems,
   withParams,
   type DeepPartial,
   type Role,
@@ -187,6 +188,8 @@ export class SeasonControl {
     if (["ended", "archived"].includes(season.status)) fail(409, "wrong_season_status", { status: season.status });
     const cur = await this.seasons.params(seasonId);
     const next = withParams(patch, cur.params);
+    const problems = paramsProblems(next);
+    if (problems.length) fail(400, "bad_params", { problems, message: problems.join("；") });
     const changes = paramsDiff(cur.params, next);
     if (Object.keys(changes).length === 0) return { version: cur.version, changes };
     const version = cur.version + 1;

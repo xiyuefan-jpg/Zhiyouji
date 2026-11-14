@@ -86,6 +86,10 @@ describe("running a season from the admin console (part 7 §2, §7, §9)", () =>
     expect((await t.services.store.state(t.serverId)).params.dailyTask.grainPerTask).toBe(5);
     // an unchanged patch makes no new version
     expect((await t.call("POST", `/v1/admin/seasons/${t.seasonId}/params`, { patch: { dailyTask: { grainPerTask: 5 } }, note: "x" })).json().version).toBe(2);
+    // parameters that contradict each other are refused, saying why
+    const bad = await t.call("POST", `/v1/admin/seasons/${t.seasonId}/params`, { patch: { time: { bigBattleDays: 6 } }, note: "x" });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json()).toMatchObject({ error: "bad_params", problems: [expect.stringContaining("大团战天数（6）")] });
     await t.call("POST", `/v1/admin/servers/${t.serverId}/interventions`, { action: "adjust_ledger", teamId: t.teamIds[0], currency: "grain", amount: 1, reason: "x" });
     const rows = await t.db.select().from(grainLedger).where(eq(grainLedger.serverId, t.serverId));
     expect(rows.find((r) => r.source === "opening")!.paramVersion).toBe(1);
