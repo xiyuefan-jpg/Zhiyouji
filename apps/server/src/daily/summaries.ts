@@ -10,7 +10,8 @@
  */
 
 import { and, eq, gte, inArray, lt } from "drizzle-orm";
-import { children, childSummaries, dailyReviews, dailySubmissions, knowledgeCards, seasonReviews, seasons, servers, teamMembers, teams, works, type Db } from "@zhiyouji/db";
+import { children, childSummaries, dailyReviews, dailySubmissions, knowledgeCards, safetyQueue, seasonReviews, seasons, servers, teamMembers, teams, works, type Db } from "@zhiyouji/db";
+import type { ContentSafety } from "../providers.js";
 import { addDays, beijingDate, dateOfSeasonDay, dayOfWeek } from "@zhiyouji/engine";
 import type { AiSummarizer } from "../ai.js";
 import type { Clock } from "../clock.js";
@@ -43,6 +44,7 @@ export class Summaries {
     private readonly ai: AiSummarizer,
     private readonly notifier: Notifier,
     private readonly store: SeasonStore,
+    private readonly safety?: ContentSafety,
   ) {}
 
   private async crossingOf(cards: Card[]): Promise<Map<string, number>> {
@@ -105,18 +107,27 @@ export class Summaries {
         failed.push(String((err as Error).message ?? err));
         continue;
       }
+      // part 6 §7: the AI's text passes the content check before the child reads it; if not, the
+      // numbers alone go out and the text waits for an admin in the safety queue
+      const stats = this.stats(list, crossing);
+      const check = this.safety ? await this.safety.check({ texts: [ai.text], files: [] }) : { pass: true, labels: [] };
+      const text = check.pass ? ai.text : `${kind === "week" ? "这周" : "这个月"}你记下了 ${stats.cards} 张知识卡片。`;
       const [row] = await this.db
         .insert(childSummaries)
-        .values({ childId, kind, period, content: { text: ai.text, model: ai.model, from, to, ...this.stats(list, crossing) }, createdAt: this.clock.now() })
+        .values({ childId, kind, period, content: { text, model: ai.model, from, to, ...stats, ...(check.pass ? {} : { heldText: ai.text }) }, createdAt: this.clock.now() })
         .onConflictDoNothing()
         .returning();
       if (!row) continue;
+      if (!check.pass) {
+        await this.db.insert(safetyQueue).values({ objectKind: "summary", objectId: row.id, labels: check.labels, createdAt: this.clock.now() }).onConflictDoNothing();
+        await this.notifier.notifyAdmins({ kind: "safety_block", title: "内容安全不通过", body: "一份 AI 写的周小结或月报告没有通过内容安全检查，孩子先只看到数字，请在内容安全队列里处理。", link: "/safety", dedupeKey: `safety:${row.id}`, roles: ["admin"] });
+      }
       n++;
       await this.notifier.notify({
         kind: "system",
         childIds: [childId],
         title: kind === "week" ? "你的周小结来了" : "你的月报告来了",
-        body: ai.text,
+        body: text,
         link: `/journal/summaries/${row.id}`,
         dedupeKey: `summary:${kind}:${period}`,
       });
@@ -136,7 +147,12 @@ export class Summaries {
 
   async list(childId: string) {
     const rows = await this.db.select().from(childSummaries).where(eq(childSummaries.childId, childId));
-    return { summaries: rows.sort((a, b) => +b.createdAt - +a.createdAt).map((r) => ({ id: r.id, kind: r.kind, period: r.period, content: r.content, createdAt: r.createdAt.toISOString() })) };
+    // the text held back by the content check never reaches the child
+    const shown = (c: unknown) => {
+      const { heldText: _held, ...rest } = (c ?? {}) as { heldText?: string };
+      return rest;
+    };
+    return { summaries: rows.sort((a, b) => +b.createdAt - +a.createdAt).map((r) => ({ id: r.id, kind: r.kind, period: r.period, content: shown(r.content), createdAt: r.createdAt.toISOString() })) };
   }
 
   // ---- 赛季回顾 ----------------------------------------------------------------------------------------

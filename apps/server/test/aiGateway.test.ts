@@ -21,6 +21,7 @@ describe("AI gateway (part 2 §4.6; part 6 §5, §9)", () => {
     expect(calls).toEqual(["qwen-vl-max", "doubao-vision"]);
     // a good primary call also runs the shadow model, whose answer is only logged
     expect(await g.call("daily_review", { x: 2 }, async (model) => (model === "qwen-vl-plus" ? { shadow: true } : { main: true }))).toEqual({ main: true });
+    await g.idle(); // the shadow call runs in the background
     const log = await t.db.select().from(aiCalls);
     expect(log.map((r) => [r.role, r.model, r.status])).toEqual([
       ["primary", "qwen-vl-max", "error"],

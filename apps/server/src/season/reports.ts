@@ -10,7 +10,7 @@
  * puts a message in every player's message center.
  */
 
-import { and, asc, desc, eq, gt, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte } from "drizzle-orm";
 import { children, feed, lands, reports, type Db } from "@zhiyouji/db";
 import { campOf, nextPublicationAfter, publicationTime, dateOfSeasonDay, rankingAt, type SeasonState } from "@zhiyouji/engine";
 import { formatBeijing } from "@zhiyouji/shared";
@@ -22,6 +22,26 @@ import { describe, viewFor, type FeedLine, type FeedNames } from "./feedView.js"
 import type { PlayCtx } from "./play.js";
 
 type FeedRow = typeof feed.$inferSelect;
+
+const REPORT_SECTIONS = [
+  { id: "contest", title: "争夺结果" },
+  { id: "war", title: "周战争" },
+  { id: "supply", title: "军需与每日任务" },
+  { id: "item", title: "法宝使用" },
+  { id: "shop", title: "地块和商店" },
+  { id: "battle", title: "大团战" },
+  { id: "other", title: "其他" },
+] as const;
+
+export function sectionOf(kind: string): (typeof REPORT_SECTIONS)[number]["id"] {
+  if (kind.startsWith("contest_")) return "contest";
+  if (kind.startsWith("war_")) return "war";
+  if (kind === "supply_result" || kind === "participation_award" || kind === "daily_task_counted") return "supply";
+  if (kind.startsWith("item_")) return "item";
+  if (["auction_result", "starter_items", "center_round", "center_bought", "shop_bought", "rare_round", "epic_auctions_open", "epic_bid", "epic_auction_closed"].includes(kind)) return "shop";
+  if (kind.startsWith("big_battle") || kind.startsWith("lines_") || kind === "season_final") return "battle";
+  return "other";
+}
 
 export class Reports {
   constructor(
@@ -126,12 +146,29 @@ export class Reports {
     const st = await this.store.state(ctx.serverId);
     const names = await this.names(ctx.serverId, st);
     const rows = await this.rows(ctx.serverId, +r!.fromAt, +r!.publishAt);
-    const ranking = (r!.ranking as { teamId: string; rank: number; points: number }[]).map((x) => ({ ...x, name: st.teams[x.teamId]?.name ?? "", mine: x.teamId === ctx.teamId }));
+    // F1 "排名变化": against the report before this one
+    const [prev] = await this.db
+      .select()
+      .from(reports)
+      .where(and(eq(reports.serverId, ctx.serverId), lt(reports.publishAt, r!.publishAt)))
+      .orderBy(desc(reports.publishAt))
+      .limit(1);
+    const before = new Map(((prev?.ranking ?? []) as { teamId: string; rank: number }[]).map((x) => [x.teamId, x.rank]));
+    const ranking = (r!.ranking as { teamId: string; rank: number; points: number }[]).map((x) => ({
+      ...x,
+      name: st.teams[x.teamId]?.name ?? "",
+      mine: x.teamId === ctx.teamId,
+      /** Places moved up (+) or down (−) since the last report; null for the first one. */
+      change: before.has(x.teamId) ? before.get(x.teamId)! - x.rank : null,
+    }));
+    const lines = this.lines(rows, st, ctx.teamId, names);
     return {
       id: r!.id,
       publishAt: r!.publishAt.toISOString(),
       title: `战报 · ${formatBeijing(+r!.publishAt)}`,
-      lines: this.lines(rows, st, ctx.teamId, names),
+      lines,
+      // F1 "每份分成：争夺结果、周战争、军需、法宝使用、排名变化"
+      sections: REPORT_SECTIONS.map((sec) => ({ title: sec.title, lines: lines.filter((l) => sectionOf(l.kind) === sec.id) })).filter((x) => x.lines.length > 0),
       ranking,
     };
   }

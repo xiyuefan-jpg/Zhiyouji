@@ -10,7 +10,7 @@
  */
 
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { files, knowledgeCards, lands, safetyQueue, scoringRounds, seasons, servers, settledScores, works, type Db } from "@zhiyouji/db";
+import { childSummaries, files, knowledgeCards, lands, safetyQueue, scoringRounds, seasons, servers, settledScores, works, type Db } from "@zhiyouji/db";
 import { GRADE_LABELS } from "@zhiyouji/shared";
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
@@ -206,7 +206,13 @@ export class Showcase {
     // what was held back, so the admin can decide without opening anything else (part 7 §8)
     const cardIds = rows.filter((r) => r.objectKind === "card").map((r) => r.objectId);
     const cards = cardIds.length ? await this.db.select().from(knowledgeCards).where(inArray(knowledgeCards.id, cardIds)) : [];
+    const summaryIds = rows.filter((r) => r.objectKind === "summary").map((r) => r.objectId);
+    const summaries = summaryIds.length ? await this.db.select().from(childSummaries).where(inArray(childSummaries.id, summaryIds)) : [];
     const preview = (r: (typeof rows)[number]): string | null => {
+      if (r.objectKind === "summary") {
+        const c = summaries.find((x) => x.id === r.objectId)?.content as { heldText?: string } | undefined;
+        return c?.heldText ? `周小结 / 月报告：${c.heldText}` : null;
+      }
       if (r.objectKind === "card") {
         const c = cards.find((x) => x.id === r.objectId);
         return c ? `知识卡片「${c.title}」：${c.summary}` : null;
@@ -231,6 +237,12 @@ export class Showcase {
     if (q!.objectKind === "work") await this.db.update(works).set({ safety: decision === "pass" ? "pass" : "block" }).where(eq(works.id, q!.objectId));
     // a knowledge card held back by the check appears in the journal once passed (part 6 §7)
     if (q!.objectKind === "card") await this.db.update(knowledgeCards).set({ visible: decision === "pass" }).where(eq(knowledgeCards.id, q!.objectId));
+    // a summary whose AI text was held back: passing it puts the text in (the numbers stay either way)
+    if (q!.objectKind === "summary" && decision === "pass") {
+      const [row] = await this.db.select().from(childSummaries).where(eq(childSummaries.id, q!.objectId));
+      const c = row?.content as { text: string; heldText?: string } | undefined;
+      if (row && c?.heldText) await this.db.update(childSummaries).set({ content: { ...c, text: c.heldText, heldText: undefined } }).where(eq(childSummaries.id, row.id));
+    }
     return { ok: true };
   }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SeasonState } from "@zhiyouji/engine";
 import { ledgerDetail } from "../src/season/play.js";
+import { sectionOf } from "../src/season/reports.js";
 
 const s = { lands: { E1: { id: "E1" }, C1: { id: "C1" } }, contests: { K1: { landId: "E1" } } } as unknown as SeasonState;
 const names = new Map([["E1", "火焰山"], ["C1", "谛听台"]]);
@@ -19,5 +20,11 @@ describe("ledger lines say what they were for (part 5 E6)", () => {
     expect(ledgerDetail(s, { source: "admin", refId: "admin:x", note: "补发军需" }, names)).toBe("老师：补发军需");
     expect(ledgerDetail(s, { source: "attack", refId: "K1", reverses: "L9" }, names)).toBe("冲正 · 火焰山的争夺");
     expect(ledgerDetail(s, { source: "opening" }, names)).toBeNull();
+  });
+});
+
+describe("report sections (part 5 F1)", () => {
+  it("each feed kind has a section", () => {
+    expect(["contest_captured", "war_result", "supply_result", "item_used", "center_bought", "big_battle_result", "season_paused"].map(sectionOf)).toEqual(["contest", "war", "supply", "item", "shop", "battle", "other"]);
   });
 });

@@ -18,7 +18,7 @@
  *   once keeps the account; otherwise the family is deleted the same way.
  */
 
-import { and, eq, inArray, isNotNull, isNull, lte, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lte, lt, ne, or, sql } from "drizzle-orm";
 import {
   aiCalls,
   childSummaries,
@@ -68,9 +68,11 @@ export interface RetentionConfig {
   opLogDays: number;
   /** What was sent to the AI and what came back (children's words): cleared after this long; the call itself (model, cost, time) stays for the AI board. */
   aiContentDays: number;
+  /** A family that pressed 不同意 and did not agree since: its phone number and children are deleted after this many days. */
+  refusedKeepDays: number;
 }
 
-export const DEFAULT_RETENTION: RetentionConfig = { deleteWaitDays: 7, inactiveDays: 730, inactiveNoticeDays: 30, loginLogDays: 183, opLogDays: 400, aiContentDays: 90 };
+export const DEFAULT_RETENTION: RetentionConfig = { deleteWaitDays: 7, inactiveDays: 730, inactiveNoticeDays: 30, loginLogDays: 183, opLogDays: 400, aiContentDays: 90, refusedKeepDays: 30 };
 
 export class DataRights {
   constructor(
@@ -217,6 +219,7 @@ export class DataRights {
       deleted++;
     }
     const r = await this.inactive(now);
+    deleted += await this.refused(now);
     if (now - this.lastPurge >= 3_600_000) {
       this.lastPurge = now;
       await this.purgeLogs();
@@ -258,6 +261,25 @@ export class DataRights {
           .returning({ id: aiCalls.id }),
       ),
     };
+  }
+
+  /**
+   * Part 8 §4 "不超过必要的时间": a family that pressed 不同意 has no use for its account; after
+   * `refusedKeepDays` without agreeing it is deleted like any other (the consent records stay,
+   * with the phone only as a keyed hash).
+   */
+  private async refused(now: number): Promise<number> {
+    const rows = await this.db.select().from(families).where(eq(families.status, "refused"));
+    let n = 0;
+    for (const f of rows) {
+      const [last] = await this.db.select().from(consentRecords).where(eq(consentRecords.familyId, f.id)).orderBy(desc(consentRecords.at)).limit(1);
+      const since = +(last?.at ?? f.createdAt);
+      if (last && last.choice !== "disagree") continue;
+      if (now - since < this.cfg.refusedKeepDays * DAY) continue;
+      await this.deleteFamily(f.id);
+      n++;
+    }
+    return n;
   }
 
   private async inactive(now: number): Promise<{ deleted: number; noticed: number }> {

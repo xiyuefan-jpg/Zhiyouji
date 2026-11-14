@@ -181,7 +181,7 @@ export function buildServices(d: AppDeps): Services {
     mediaProcessor,
     tagSuggestions: new TagSuggestions(d.db, d.clock, notifier),
     gateway,
-    summaries: new Summaries(d.db, d.clock, gateway.wrapSummary(aiSummary), notifier, store),
+    summaries: new Summaries(d.db, d.clock, gateway.wrapSummary(aiSummary), notifier, store, safety),
     aiSummary,
     showcase: new Showcase(d.db, d.clock, store, safety, notifier, storage, play, reports),
     supply,

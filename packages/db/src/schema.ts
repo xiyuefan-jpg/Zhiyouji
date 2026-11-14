@@ -320,6 +320,12 @@ export const consentRecords = pgTable(
     /** agree | disagree */
     choice: text("choice").notNull(),
     policyVersion: text("policy_version").notNull(),
+    /**
+     * Keyed hash (HMAC-SHA256 with the server secret) of the parent phone that agreed (part 8 §2.1
+     * "记录同意的手机号、时间、文件版本"): still proves who agreed after the account is deleted,
+     * without keeping the number itself.
+     */
+    phoneHash: text("phone_hash"),
     at: ts("at").notNull(),
   },
   (t) => [index("consent_records_family").on(t.familyId)],

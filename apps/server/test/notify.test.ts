@@ -40,8 +40,27 @@ describe("notifications (part 8 §1, round 30)", () => {
     const sent = await t.services.smsDispatcher.runDue();
     expect(sent.sent).toBe(2);
     expect(t.sms.sent.filter((s) => s.kind === "attack").map((s) => s.phone).sort()).toEqual(["13800000001", "13800000002"]);
-    // after it went out, a new attack is a new SMS
-    expect((await t.services.notifier.notify({ kind: "attacked", childIds: b.childIds, title: "x", body: "y", dedupeKey: "attacked:K2" })).smsQueued).toBe(1);
+    // within 30 minutes after it went out, another attack is folded into it (part 8 §1.3); later it is a new SMS
+    expect((await t.services.notifier.notify({ kind: "attacked", childIds: b.childIds, title: "x", body: "y", dedupeKey: "attacked:K2" })).smsQueued).toBe(0);
+    t.clock.advance(31 * 60_000);
+    expect((await t.services.notifier.notify({ kind: "attacked", childIds: b.childIds, title: "x", body: "y", dedupeKey: "attacked:K3" })).smsQueued).toBe(1);
+    await t.close();
+  });
+
+  it("joins of the same contest: one unread message that says how many (part 8 §1.3)", async () => {
+    const t = await setup();
+    const a = await t.family("13800000001", [{ nickname: "哥哥", grade: 6 }]);
+    await t.call("POST", "/v1/session/child", { childId: a.childIds[0] }, a.token);
+    const n = (body: string, key: string) => t.services.notifier.notify({ kind: "joined_attack", childIds: a.childIds, title: "又有组加入了进攻", body, link: "/season/contests/K1", dedupeKey: key, supersedeUnread: true });
+    await n("五组加入了对你们火焰山的进攻。", "joined:K1:T5");
+    await n("有 2 个组加入了对你们火焰山的进攻：五组、六组。", "joined:K1:T6");
+    let list = (await t.call("GET", "/v1/messages", undefined, a.token)).json().messages.filter((m: { type: string }) => m.type === "joined_attack");
+    expect(list.map((m: { body: string }) => m.body)).toEqual(["有 2 个组加入了对你们火焰山的进攻：五组、六组。"]);
+    // once read, the next join is a new message
+    await t.call("POST", `/v1/messages/${list[0].id}/read`, undefined, a.token);
+    await n("有 3 个组加入了对你们火焰山的进攻：五组、六组、七组。", "joined:K1:T7");
+    list = (await t.call("GET", "/v1/messages", undefined, a.token)).json().messages.filter((m: { type: string }) => m.type === "joined_attack");
+    expect(list).toHaveLength(2);
     await t.close();
   });
 

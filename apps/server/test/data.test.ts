@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { children, families, files, smsOutbox, works } from "@zhiyouji/db";
+import { children, consentRecords, families, files, smsOutbox, works } from "@zhiyouji/db";
 import { bj, setup } from "./helpers.js";
 import { contestSetup } from "./seasonHelpers.js";
 
@@ -84,6 +84,25 @@ describe("parents' data rights (part 5 G4; part 8 §4)", () => {
     expect((await t.db.select().from(children).where(eq(children.familyId, old!.id)))[0]!.nickname).toBe("已注销");
     const [stay] = await t.db.select().from(families).where(eq(families.id, kept!.id));
     expect(stay).toMatchObject({ status: "active", inactiveNoticeAt: null });
+    await t.close();
+  });
+
+  it("不同意: the consent record keeps only a keyed hash of the phone; after 30 days without agreeing the family is deleted (part 8 §2.1, §4)", async () => {
+    const t = await setup(bj("2027-03-01", 10));
+    const f = await t.family("13600000009", [], false);
+    await t.call("POST", "/v1/family/consent", { choice: "disagree", version: t.cfg.policyVersion }, f.token);
+    const [rec] = await t.db.select().from(consentRecords);
+    expect(rec!.choice).toBe("disagree");
+    expect(rec!.phoneHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(rec!.phoneHash).not.toContain("13600000009");
+    t.clock.advance(29 * DAY);
+    expect((await t.services.dataRights.runDue()).deleted).toBe(0);
+    t.clock.advance(2 * DAY);
+    expect((await t.services.dataRights.runDue()).deleted).toBe(1);
+    const [gone] = await t.db.select().from(families).where(eq(families.id, f.familyId));
+    expect(gone).toMatchObject({ status: "deleted" });
+    // the record that they said no is kept
+    expect(await t.db.select().from(consentRecords)).toHaveLength(1);
     await t.close();
   });
 });

@@ -230,7 +230,14 @@ export const seasonApi = {
   join: (contestId: string) => request<{ contest: { id: string; deadline: number; paid: number } }>("POST", `/v1/season/contests/${contestId}/join`),
   buyCenter: (landId: string) => request<TeamView>("POST", "/v1/season/center-lands/buy", { landId }),
   reports: () => request<{ reports: { id: string; publishAt: string; title: string }[] }>("GET", "/v1/season/reports"),
-  report: (id: string) => request<{ id: string; title: string; lines: FeedLine[]; ranking: { rank: number; name: string; points: number; mine: boolean }[] }>("GET", `/v1/season/reports/${id}`),
+  report: (id: string) =>
+    request<{
+      id: string;
+      title: string;
+      lines: FeedLine[];
+      sections?: { title: string; lines: FeedLine[] }[];
+      ranking: { rank: number; name: string; points: number; mine: boolean; change?: number | null }[];
+    }>("GET", `/v1/season/reports/${id}`),
   broadcasts: () => request<{ lines: FeedLine[] }>("GET", "/v1/season/broadcasts"),
   teamFeed: () => request<{ lines: FeedLine[] }>("GET", "/v1/season/team-feed"),
   teamFull: () => request<TeamFull>("GET", "/v1/season/team"),

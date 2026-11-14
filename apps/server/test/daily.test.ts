@@ -228,6 +228,29 @@ describe("每日任务 and 修行日志 (part 5 C1–C7; part 6 T4)", () => {
     await t.close();
   });
 
+  it("a summary whose AI text the content check blocks goes out with the numbers only; an admin's pass puts the text in", async () => {
+    const t = await setup(bj("2027-03-10", 16));
+    const k = await kid(t);
+    const boss = await t.adminUser();
+    const pic = await picture(t, k.call);
+    await k.call("POST", "/v1/daily/submissions", { templateId: 1, evidenceFileIds: [pic], explain: { kind: "text", text: TEXT }, aiNote: "问了 AI" });
+    (t.services.aiSummary as FakeAiSummarizer).suffix = "违规";
+    t.clock.set(bj("2027-03-15", 8));
+    expect(await t.services.summaries.runDue()).toBe(1);
+    let list = (await k.call("GET", "/v1/journal/summaries")).json().summaries;
+    expect(list[0].content.text).toBe("这周你记下了 1 张知识卡片。");
+    expect(JSON.stringify(list)).not.toContain("违规");
+    const token = await boss.relogin();
+    const q = (await t.call("GET", "/v1/admin/safety", undefined, token)).json().items;
+    expect(q[0]).toMatchObject({ objectKind: "summary" });
+    expect(q[0].preview).toContain("违规");
+    await t.call("POST", `/v1/admin/safety/${q[0].id}/pass`, undefined, token);
+    list = (await k.call("GET", "/v1/journal/summaries")).json().summaries;
+    expect(list[0].content.text).toContain("走进了");
+    expect(list[0].content.heldText).toBeUndefined();
+    await t.close();
+  });
+
   it("admins export the daily tasks as CSV (in the view log)", async () => {
     const t = await setup(bj("2027-03-10", 16));
     const k = await kid(t);

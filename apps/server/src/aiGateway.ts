@@ -96,6 +96,13 @@ export class AiGateway {
    * Run `fn` for a task with logging; on failure once more as the fallback;
    * the shadow model runs after the primary and only goes to the log.
    */
+  private background = new Set<Promise<unknown>>();
+
+  /** Wait for shadow calls still running (tests, shutdown). */
+  async idle(): Promise<void> {
+    while (this.background.size) await Promise.allSettled([...this.background]);
+  }
+
   async call<T>(task: AiTask, input: unknown, fn: (model: string) => Promise<T>, check: (out: T) => string | null = () => null): Promise<T> {
     const c = await this.config(task);
     const t0 = Date.now();
@@ -110,13 +117,15 @@ export class AiGateway {
       const out = await run(c.model);
       await this.log(task, "primary", c.provider, c.model, c.promptVersion, input, t0, out, null);
       if (c.shadowModel) {
+        // in the background: the caller (e.g. a child waiting for the daily review) does not wait for it
+        const shadowModel = c.shadowModel;
         const t1 = Date.now();
-        try {
-          const shadow = await run(c.shadowModel);
-          await this.log(task, "shadow", c.provider, c.shadowModel, c.promptVersion, input, t1, shadow, null);
-        } catch (err) {
-          await this.log(task, "shadow", c.provider, c.shadowModel, c.promptVersion, input, t1, null, err);
-        }
+        const job = run(shadowModel).then(
+          (shadow) => this.log(task, "shadow", c.provider, shadowModel, c.promptVersion, input, t1, shadow, null),
+          (err) => this.log(task, "shadow", c.provider, shadowModel, c.promptVersion, input, t1, null, err),
+        );
+        this.background.add(job);
+        void job.catch((err) => console.error("shadow log failed", err)).finally(() => this.background.delete(job));
       }
       return out;
     } catch (err) {

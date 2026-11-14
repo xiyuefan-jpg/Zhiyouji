@@ -466,6 +466,14 @@ export function LedgerPage() {
 
 // ---- 战报、全服广播、排行榜 (F1–F3) -------------------------------------------------------------------------
 
+/** "↑2" / "↓1" / "—" (F1, F3 "名次变化"). */
+export function rankChange(change: number | null | undefined): string {
+  if (change === null || change === undefined) return "";
+  if (change > 0) return `↑${change}`;
+  if (change < 0) return `↓${-change}`;
+  return "—";
+}
+
 export function ReportsList() {
   const me = useSeasonMe();
   const list = useLoad(() => seasonApi.reports());
@@ -483,7 +491,31 @@ export function ReportsList() {
           </button>
           {open === r.id && detail.data && (
             <div style={{ marginTop: 8 }}>
-              {detail.data.lines.length === 0 ? <div className="hint">这一期没有新消息。</div> : detail.data.lines.map((l, i) => <div key={i}>· {l.text}</div>)}
+              {detail.data.lines.length === 0 ? (
+                <div className="hint">这一期没有新消息。</div>
+              ) : (
+                (detail.data.sections ?? [{ title: "", lines: detail.data.lines }]).map((sec) => (
+                  <div key={sec.title} style={{ marginBottom: 8 }}>
+                    {sec.title && <div style={{ fontWeight: 600, color: "var(--ochre)" }}>{sec.title}</div>}
+                    {sec.lines.map((l, i) => (
+                      <div key={i}>· {l.text}</div>
+                    ))}
+                  </div>
+                ))
+              )}
+              {detail.data.ranking.length > 0 && (
+                <div style={{ marginTop: 8 }} aria-label="排名变化">
+                  <div style={{ fontWeight: 600, color: "var(--ochre)" }}>排名变化</div>
+                  {detail.data.ranking.map((x) => (
+                    <div key={x.name} className="row" style={{ fontWeight: x.mine ? 700 : 400 }}>
+                      <span style={{ width: 32 }}>{x.rank}</span>
+                      <span className="grow">{x.name}</span>
+                      <span>{points(x.points)}</span>
+                      <span style={{ width: 44, textAlign: "right" }}>{rankChange(x.change)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

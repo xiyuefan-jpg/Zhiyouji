@@ -63,14 +63,17 @@ export class SeasonNotices {
         }
         case "contest_joined": {
           const land = await this.landName(serverId, s(d.landId));
+          // one message per contest that says how many have joined so far (part 8 §1.3)
+          const joiners = (st.contests[s(d.contestId)]?.attackers ?? []).slice(1).map((a) => this.teamName(st, a.teamId));
           await this.notifier.notify({
             kind: "joined_attack",
             childIds: this.members(st, s(d.defender)),
             serverId,
             title: "又有组加入了进攻",
-            body: `${this.teamName(st, d.attacker)}加入了对你们${land}的进攻。`,
+            body: joiners.length > 1 ? `有 ${joiners.length} 个组加入了对你们${land}的进攻：${joiners.join("、")}。` : `${this.teamName(st, d.attacker)}加入了对你们${land}的进攻。`,
             link: `/season/contests/${s(d.contestId)}`,
             dedupeKey: `joined:${serverId}:${s(d.contestId)}:${s(d.attacker)}`,
+            supersedeUnread: true,
           });
           break;
         }

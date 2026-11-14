@@ -199,6 +199,10 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
     expect(after.length).toBeGreaterThan(0);
     const reader = await ctxOf(kids[0]!);
     expect((await s.reports.get(reader, after[0]!.id)).lines.some((l: { text: string }) => /^终局结算公布了：第 1 名.+（奖学金 \d+ 元）/.test(l.text))).toBe(true);
+    // F1: sections, and each team's rank change against the report before
+    const rep = await s.reports.get(reader, after[0]!.id);
+    expect(rep.sections.map((x) => x.title)).toContain("大团战");
+    expect(rep.ranking.every((x) => typeof x.change === "number")).toBe(true);
     // the children see the final ranking with every team's scholarship (round 35)
     const rk = await s.play.ranking(reader);
     expect(rk.final).toEqual({ poolYuan: 10000 });

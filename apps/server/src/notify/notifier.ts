@@ -31,6 +31,11 @@ export interface NotifyInput {
   serverId?: string | null;
   /** The same event is never notified twice (e.g. "attacked:K12"). */
   dedupeKey: string;
+  /**
+   * Part 8 §1.3 "同一个组短时间内的多条同类通知合并成一条": unread messages of this type with
+   * the same link are replaced by this one (its body says how many).
+   */
+  supersedeUnread?: boolean;
 }
 
 export interface Recipient {
@@ -45,6 +50,10 @@ export interface NotifyResult {
 }
 
 const RETRY_MS = 2 * 60_000;
+/** A reminder of the same kind to the same phone within this time is merged into the first (part 8 §1.3). */
+const SMS_MERGE_WINDOW_MS = 30 * 60_000;
+/** The attack reminder ("有新的进攻情况") is merged this way; the others go out one by one (daily cap applies). */
+const MERGE_AFTER_SENT = new Set<SmsTemplate>(["attack"]);
 const MAX_SMS_ATTEMPTS = 3;
 
 export class Notifier {
@@ -57,6 +66,10 @@ export class Notifier {
   async notify(i: NotifyInput): Promise<NotifyResult> {
     if (i.childIds.length === 0) return { messages: 0, smsQueued: 0 };
     const now = this.clock.now();
+    if (i.supersedeUnread && i.link)
+      await this.db
+        .delete(messages)
+        .where(and(eq(messages.recipientKind, "child"), inArray(messages.recipientId, [...new Set(i.childIds)]), eq(messages.type, i.kind), eq(messages.link, i.link), isNull(messages.readAt)));
     const inserted = await this.db
       .insert(messages)
       .values(
@@ -119,12 +132,24 @@ export class Notifier {
     return this.queueSms(phone, template, dedupeKey, +this.clock.now());
   }
 
-  /** Queue one reminder unless one of the same template is already waiting for this phone. */
+  /**
+   * Queue one reminder unless one of the same template is already waiting for this phone, or (the
+   * attack reminder) was sent in the last 30 minutes (part 8 §1.3: several attacks and joins in a
+   * short time are one reminder; the message center has the details).
+   */
   private async queueSms(phone: string, template: SmsTemplate, dedupeKey: string, now: number): Promise<boolean> {
     const [waiting] = await this.db
       .select({ id: smsOutbox.id })
       .from(smsOutbox)
-      .where(and(eq(smsOutbox.phone, phone), eq(smsOutbox.kind, template), eq(smsOutbox.status, "pending")))
+      .where(
+        and(
+          eq(smsOutbox.phone, phone),
+          eq(smsOutbox.kind, template),
+          MERGE_AFTER_SENT.has(template)
+            ? or(eq(smsOutbox.status, "pending"), and(eq(smsOutbox.status, "sent"), sql`${smsOutbox.sentAt} >= ${new Date(now - SMS_MERGE_WINDOW_MS)}`))
+            : eq(smsOutbox.status, "pending"),
+        ),
+      )
       .limit(1);
     if (waiting) return false;
     const rows = await this.db

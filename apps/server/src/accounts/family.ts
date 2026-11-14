@@ -4,6 +4,7 @@
  * (同意 / 不同意) → child profiles ("我是谁").
  */
 
+import { createHmac } from "node:crypto";
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { children, consentRecords, families, gradeChanges, loginCodes, type Db } from "@zhiyouji/db";
 import { beijingDate, beijingInstant } from "@zhiyouji/engine";
@@ -31,6 +32,11 @@ export function childView(c: ChildRow): ChildView {
     explainPref: c.explainPref as "voice" | "text",
     guideSeen: !!c.guideSeenAt,
   };
+}
+
+/** HMAC-SHA256 of a phone number with the server secret (consent proof without the number, part 8 §2.1). */
+export function phoneHash(secret: string, phone: string): string {
+  return createHmac("sha256", secret).update(`phone:${phone}`).digest("hex");
 }
 
 export class FamilyAccounts {
@@ -130,7 +136,8 @@ export class FamilyAccounts {
   async consent(familyId: string, choice: "agree" | "disagree", version: string): Promise<{ needsConsent: boolean; refused: boolean }> {
     if (version !== this.cfg.policyVersion) fail(409, "policy_changed", { policyVersion: this.cfg.policyVersion });
     const now = this.clock.now();
-    await this.db.insert(consentRecords).values({ familyId, choice, policyVersion: version, at: now });
+    const [f] = await this.db.select({ phone: families.phone }).from(families).where(eq(families.id, familyId));
+    await this.db.insert(consentRecords).values({ familyId, choice, policyVersion: version, phoneHash: f ? phoneHash(this.cfg.secret, f.phone) : null, at: now });
     if (choice === "agree") {
       await this.db.update(families).set({ status: "active", consentVersion: version, consentAt: now }).where(eq(families.id, familyId));
       return { needsConsent: false, refused: false };
