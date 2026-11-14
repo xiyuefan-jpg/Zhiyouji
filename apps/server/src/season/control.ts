@@ -13,6 +13,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { calendarDays, children, debates, feed, lands as landRows, opLog, paramVersions, plannedEvents, seasonPlayers, seasons, servers, teamMembers, type Db } from "@zhiyouji/db";
 import {
   activeContestOnLand,
+  finalizeSeason,
   frozenGrain,
   grainOf,
   itemDef,
@@ -325,6 +326,37 @@ export class SeasonControl {
     for (const sv of all) if (!(await this.store.state(sv.id)).final) allFinal = false;
     if (allFinal) await this.db.update(seasons).set({ status: "ended" }).where(eq(seasons.id, server.seasonId));
     return { final: r.state.final, seasonEnded: allFinal };
+  }
+
+  /**
+   * 终局结算预览 (part 7 §9): a dry run of the final settlement with the pool the
+   * admin typed — each team's points by source, the grain conversion, the
+   * ranking and the scholarship — so it can be checked before it is published.
+   */
+  async finalPreview(serverId: string, poolYuan: number) {
+    await this.server(serverId);
+    const st = await this.store.state(serverId);
+    const r = st.final ? null : finalizeSeason(st, { at: +this.clock.now(), poolYuan });
+    if (r && !r.ok) throw new HttpError(409, r.refusal, { message: refusalText(r.refusal) });
+    const after = r?.ok ? r.state : st;
+    const fin = after.final!;
+    return {
+      done: !!st.final,
+      poolYuan: fin.poolYuan,
+      teams: fin.ranking.map((x) => {
+        const bySource: Record<string, number> = {};
+        for (const e of after.ledger) if (e.teamId === x.teamId && e.currency === "points") bySource[e.source] = (bySource[e.source] ?? 0) + e.amount;
+        return {
+          teamId: x.teamId,
+          name: after.teams[x.teamId]?.name ?? "",
+          rank: x.rank,
+          points: x.points,
+          grain: grainOf(st, x.teamId),
+          bySource,
+          yuan: fin.scholarship.find((y) => y.teamId === x.teamId)?.yuan ?? 0,
+        };
+      }),
+    };
   }
 
   /** 奖学金发放表 (part 7 §9): team, rank, points, yuan, members. */

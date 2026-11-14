@@ -116,6 +116,11 @@ export function seasonControlRoutes(app: FastifyInstance, control: SeasonControl
     const by = await admin(req);
     return control.finalize(serverParam.parse(req.params).id, finalizeRequest.parse(req.body).poolYuan, by);
   });
+  app.get("/v1/admin/servers/:id/final-preview", async (req) => {
+    await admin(req);
+    const pool = Number((req.query as { poolYuan?: string }).poolYuan ?? 0);
+    return control.finalPreview(serverParam.parse(req.params).id, finalizeRequest.parse({ poolYuan: pool }).poolYuan);
+  });
   app.get("/v1/admin/servers/:id/scholarship.csv", async (req, reply) => {
     const { user } = await auth.user(req, ["admin"]);
     const { id } = serverParam.parse(req.params);

@@ -150,14 +150,18 @@ export function describe(kind: string, d: Data, names: FeedNames, teamId: string
       return `${C(str(d.by))}更新了战线分配`;
     case "lines_locked":
       return "大团战战线锁定了";
-    case "big_battle_result":
-      return "大团战结果公布了";
     case "season_paused":
       return "赛季暂停了";
     case "season_resumed":
       return "赛季恢复了";
-    case "season_final":
-      return "终局结算公布了";
+    case "season_final": {
+      const top = Array.isArray(d.ranking) ? (d.ranking as { teamId: string; rank: number }[]).slice(0, 3) : [];
+      return top.length ? `终局结算公布了：${top.map((r) => `第 ${r.rank} 名${T(r.teamId)}`).join("，")}` : "终局结算公布了";
+    }
+    case "big_battle_result": {
+      const w = (d.main as { winner?: string } | undefined)?.winner;
+      return w === "a" || w === "b" ? `大团战结果公布了：主战场${w === "a" ? "甲" : "乙"}阵营赢了` : "大团战结果公布了";
+    }
     case "land_owner_set":
       return `管理员把${L(str(d.landId))}的主人改成了${d.to ? T(str(d.to)) : "无主"}`;
     case "item_used": {

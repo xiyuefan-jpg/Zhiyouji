@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { children, families, grainLedger, pointsLedger, reports, seasons } from "@zhiyouji/db";
 import { balanceOf, checkLedger, createRng, grainOf, pointsOf, seasonDayOf, spendableGrain, quoteAttack, type Rng } from "@zhiyouji/engine";
 import { Worker, type PlayCtx } from "../src/index.js";
@@ -31,6 +31,14 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
       const [c] = await t.db.insert(children).values({ familyId: f!.id, nickname: `孩子${i}`, grade: 1 + (i % 10) }).returning();
       kids.push(c!.id);
     }
+    // big-battle prompts: lines in import order, then the main battlefield (content library §7)
+    await s.bank.importMany(
+      [
+        ...[10, 15, 20, 25].map((v, i) => ({ category: "battle_line" as const, title: `战线${i + 1}`, body: `第 ${i + 1} 条线（${v} 分）的题`, rubric: i === 1 ? "D" : null, status: "enabled" as const })),
+        { category: "battle_main" as const, title: "主战场", body: "把四条线整合成一份计划", status: "enabled" as const },
+      ],
+      ADMIN,
+    );
     const season = await s.seasons.create({ name: "S3", opening: OPENING, seed }, ADMIN);
     await s.seasons.openEnrollment(season.id, ADMIN);
     await s.seasons.enroll(season.id, kids.map((childId) => ({ childId })), ADMIN);
@@ -162,7 +170,33 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
     // everything settled on AI scores at the time limits; the admin confirms the final settlement
     let st = await s.store.state(serverId);
     expect(st.bigBattle?.settled).toBe(true);
+    // the big battle page: each line's task, the rules, the results
+    const anyLeader = (await leaderCtx(st.teamOrder[0]!))!;
+    const bbv = await s.play.bigBattle(anyLeader);
+    expect(bbv.formed && bbv.lineTasks.map((x) => x?.title)).toEqual(["战线1", "战线2", "战线3", "战线4"]);
+    expect(bbv.formed && bbv.stakes).toContain("同分时双方各得一半");
+    expect(bbv.formed && bbv.result?.lines.length).toBe(4);
+    // the workshop task of a line work follows the team's line (and that prompt's rubric)
+    const line = st.bigBattle!.final!.a.indexOf(st.bigBattle!.camps.a[0]!);
+    const lineTask = await s.works.task(await leaderCtx(st.bigBattle!.camps.a[0]!).then((c) => c!), "line");
+    expect(lineTask.task?.title).toBe(`战线${line + 1}`);
+    expect(lineTask.rubric.id).toBe(line === 1 ? "D" : "C");
+    // 终局结算预览: the same ranking and scholarship the confirmation then publishes
+    const pv = await s.control.finalPreview(serverId, 10000);
+    expect(pv.done).toBe(false);
+    expect(pv.teams.reduce((a, x) => a + x.yuan, 0)).toBe(10000);
+    expect(pv.teams.every((x) => Object.values(x.bySource).reduce((a, b) => a + b, 0) === x.points)).toBe(true);
     const fin = await s.control.finalize(serverId, 10000, ADMIN);
+    expect(fin.final!.ranking.map((r) => [r.teamId, r.points])).toEqual(pv.teams.map((x) => [x.teamId, x.points]));
+    expect(fin.final!.scholarship.map((r) => r.yuan)).toEqual(pv.teams.map((x) => x.yuan));
+    expect((await s.control.finalPreview(serverId, 0)).done).toBe(true);
+    // the next publication time after the season ended still puts the final settlement into a report
+    t.clock.set(+bj("2027-03-15", 20));
+    await worker.tick();
+    const after = (await t.db.select().from(reports).where(eq(reports.serverId, serverId)).orderBy(asc(reports.publishAt))).filter((r) => +r.publishAt > +end);
+    expect(after.length).toBeGreaterThan(0);
+    const reader = await ctxOf(kids[0]!);
+    expect((await s.reports.get(reader, after[0]!.id)).lines.some((l: { text: string }) => l.text.startsWith("终局结算公布了：第 1 名"))).toBe(true);
     expect(fin.seasonEnded).toBe(true);
     st = await s.store.state(serverId);
     expect((await t.db.select().from(seasons).where(eq(seasons.id, season.id)))[0]!.status).toBe("ended");
@@ -203,6 +237,15 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
     expect((await s.summaries.releaseSeasonReviews(season.id)).released).toBe(32);
     const mine = (await s.summaries.seasonReviewsOf(kids[0]!)).reviews[0]!.content as { rank: number; numbers: { works: number } };
     expect(mine.rank).toBeGreaterThan(0);
+    // 我参与的作品 (once per work, with its task and how it turned out) and the team's highlights
+    type Rv = { highlights: string[]; works: { slot: string; title: string | null; result: string | null }[]; numbers: { works: number } };
+    const all = await Promise.all(kids.map(async (k) => (await s.summaries.seasonReviewsOf(k)).reviews[0]!.content as Rv));
+    const ws = all.flatMap((r) => r.works);
+    expect(ws.length).toBeGreaterThan(0);
+    expect(all.every((r) => new Set(r.works.map((w) => w.slot.replace(/:open$/, ""))).size === r.works.length && r.numbers.works === r.works.length)).toBe(true);
+    expect(ws.filter((w) => !w.slot.startsWith("contest:")).every((w) => w.title)).toBe(true); // (this test's contest prompts are bare ids)
+    expect(ws.filter((w) => w.result).length).toBeGreaterThan(ws.length / 2);
+    expect(all.some((r) => r.highlights.length > 0)).toBe(true);
     const total = st.teamOrder.reduce((n, id) => n + balanceOf(st.ledger, id, "points"), 0);
     expect(total).toBeGreaterThan(0);
     await t.close();

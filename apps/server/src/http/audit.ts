@@ -93,6 +93,7 @@ export const ADMIN_AUDIT: Record<string, AuditPolicy> = {
   "POST /v1/admin/feed/:id/hide": domain("feed_hide"),
   "POST /v1/admin/servers/:id/finalize": domain("finalize"),
   "GET /v1/admin/servers/:id/scholarship.csv": view("scholarship", false),
+  "GET /v1/admin/servers/:id/final-preview": none("小组的分数和奖学金预览，不含孩子的数据"),
 
   // review (part 7 §5–§6)
   "GET /v1/admin/reviews": none("自己的复核队列，盲审，不含孩子的数据"),

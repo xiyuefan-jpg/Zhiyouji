@@ -214,6 +214,7 @@ export class FakeAiSummarizer implements AiSummarizer {
   async summarize(r: SummaryRequest) {
     const period = r.kind === "week" ? "这周" : r.kind === "month" ? "这个月" : "这一季";
     const subjects = [...new Set(r.cards.map((c) => c.tag?.split("/")[0]).filter(Boolean))];
+    if (!r.cards.length) return { model: "fake-summary", text: `${period}你还没有记下知识卡片。` };
     return { model: "fake-summary", text: `${period}你记下了 ${r.cards.length} 张知识卡片，走进了${subjects.join("、") || "新的领域"}。` };
   }
 }

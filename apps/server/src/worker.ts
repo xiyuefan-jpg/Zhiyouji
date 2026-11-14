@@ -105,6 +105,20 @@ export class Worker {
           console.error("report failed", serverId, err);
         }
       }
+      // A season that has just ended still publishes the reports due up to D37 evening, so the
+      // big battle result and the final settlement reach the children (part 3 §1.2).
+      const ended = await this.db
+        .select({ id: servers.id })
+        .from(servers)
+        .innerJoin(seasons, eq(servers.seasonId, seasons.id))
+        .where(eq(seasons.status, "ended"));
+      for (const { id } of ended) {
+        try {
+          report.reports += (await this.reports?.runDue(id)) ?? 0;
+        } catch (err) {
+          console.error("report failed", id, err);
+        }
+      }
       try {
         await this.ops?.publishDue();
         await this.summaries?.runDue();

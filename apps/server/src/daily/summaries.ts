@@ -17,6 +17,8 @@ import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
 import type { Notifier } from "../notify/notifier.js";
 import type { SeasonStore } from "../seasonStore.js";
+import { teamHighlights, workOutcome } from "../season/reviewFacts.js";
+import { workTask } from "../season/taskInfo.js";
 
 type Card = typeof knowledgeCards.$inferSelect;
 
@@ -135,7 +137,17 @@ export class Summaries {
       const cards = await this.db.select().from(knowledgeCards).where(and(eq(knowledgeCards.childId, m.childId), gte(knowledgeCards.day, from), lt(knowledgeCards.day, to)));
       const crossing = await this.crossingOf(cards);
       const hardest = [...cards].sort((a, b) => (crossing.get(b.submissionId) ?? -9) - (crossing.get(a.submissionId) ?? -9) || (b.difficulty ?? 0) - (a.difficulty ?? 0))[0];
-      const mine = (await this.db.select().from(works).where(eq(works.serverId, m.serverId))).filter((w) => (w.members as string[]).includes(m.childId));
+      // Each work the child signed, once per slot (its latest version; part 5 §4.1 我参与的作品).
+      const signed = (await this.db.select().from(works).where(eq(works.serverId, m.serverId))).filter((w) => (w.members as string[]).includes(m.childId));
+      const latest = new Map<string, (typeof signed)[number]>();
+      for (const w of signed) {
+        // A debate's 立论 and 驳论 are one contest: keep the 驳论 when there is one.
+        const key = `${w.teamId}|${w.slot.replace(/:open$/, "")}`;
+        const cur = latest.get(key);
+        const rank = (x: typeof w) => (x.slot.endsWith(":open") ? 0 : 1e6) + x.version;
+        if (!cur || rank(cur) < rank(w)) latest.set(key, w);
+      }
+      const mine = [...latest.values()].sort((a, b) => +a.submittedAt - +b.submittedAt);
       const tasks = await this.db.select({ id: dailySubmissions.id }).from(dailySubmissions).where(and(eq(dailySubmissions.childId, m.childId), eq(dailySubmissions.status, "passed"), gte(dailySubmissions.day, from), lt(dailySubmissions.day, to)));
       const rank = st.final?.ranking.find((r) => r.teamId === m.teamId)?.rank ?? null;
       const ai = await this.ai.summarize({ kind: "season", grade: kid.grade, cards: cards.map((c) => ({ title: c.title, summary: c.summary, tag: c.tag, crossing: crossing.get(c.submissionId) ?? null })) });
@@ -143,6 +155,7 @@ export class Summaries {
         text: ai.text,
         team: st.teams[m.teamId]?.name ?? "",
         rank,
+        highlights: teamHighlights(st, m.teamId),
         // 我的探索地图: the child's knowledge cards plus the works they signed (part 5 §4.1; part 6 T7)
         map: (() => {
           const m = { ...this.stats(cards, crossing).subjects };
@@ -153,7 +166,12 @@ export class Summaries {
           return m;
         })(),
         hardest: hardest ? { title: hardest.title, tag: hardest.tag, crossing: crossing.get(hardest.submissionId) ?? null } : null,
-        works: mine.map((w) => ({ kind: w.kind, slot: w.slot, tags: (w.tags as string[] | null) ?? [] })),
+        works: await Promise.all(
+          mine.map(async (w) => {
+            const task = await workTask(this.db, m.serverId, st, w);
+            return { kind: w.kind, slot: w.slot, tags: (w.tags as string[] | null) ?? [], title: task?.title ?? null, land: task?.landName ?? null, subject: task?.subject ?? null, result: workOutcome(st, w.teamId, w) };
+          }),
+        ),
         numbers: { dailyTasks: tasks.length, cards: cards.length, works: mine.length, aboveGrade: this.stats(cards, crossing).aboveGrade },
       };
       await this.db
