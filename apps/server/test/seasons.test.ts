@@ -138,6 +138,22 @@ describe("seasons, enrollment and grouping (part 3 §2, §4; part 7 §2–§3)",
     expect(conf.servers).toHaveLength(2);
     expect(await t.db.select().from(teamMembers)).toHaveLength(90);
 
+    // §18 双服: two independent servers — map, teams, ledger, used prompts, pauses
+    const [s1, s2] = conf.servers.map((x: { serverId: string }) => x.serverId) as [string, string];
+    const before2 = structuredClone(await t.services.store.state(s2));
+    const st1 = await t.services.store.state(s1);
+    expect(Object.keys(st1.teams).some((tm) => tm in before2.teams)).toBe(false);
+    const team1 = st1.teamOrder[0]!;
+    const at = +t.clock.now();
+    await t.services.store.apply(s1, { type: "adjust_ledger", teamId: team1, currency: "grain", amount: 50, at, by: "admin:test", reason: "测试" }, "admin:test");
+    await t.services.store.apply(s1, { type: "set_land_owner", landId: "E1", teamId: team1, at, by: "admin:test", reason: "测试" }, "admin:test");
+    await t.services.store.apply(s1, { type: "pause", at, reason: "只停一服" }, "admin:test");
+    const after1 = await t.services.store.state(s1);
+    const after2 = await t.services.store.state(s2);
+    expect(after1.paused).toBe(true);
+    expect(after1.lands.E1!.owner).toBe(team1);
+    expect(after2).toEqual(before2);
+
     const r = await t.adminUser("helper@example.com", "reviewer");
     expect((await t.raw("POST", "/v1/admin/seasons", { name: "X", opening: "2027-02-07" }, r.token)).json().error).toBe("forbidden");
     expect((await t.raw("GET", "/v1/admin/seasons", undefined, r.token)).statusCode).toBe(200);

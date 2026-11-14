@@ -8,8 +8,8 @@
 
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { children, families, reports, seasons } from "@zhiyouji/db";
-import { balanceOf, checkLedger, createRng, grainOf, seasonDayOf, spendableGrain, quoteAttack, type Rng } from "@zhiyouji/engine";
+import { children, families, grainLedger, pointsLedger, reports, seasons } from "@zhiyouji/db";
+import { balanceOf, checkLedger, createRng, grainOf, pointsOf, seasonDayOf, spendableGrain, quoteAttack, type Rng } from "@zhiyouji/engine";
 import { Worker, type PlayCtx } from "../src/index.js";
 import { bj, setup } from "./helpers.js";
 
@@ -171,6 +171,15 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
     // the invariants (part 9 §2)
     expect(checkLedger(st.ledger)).toEqual([]);
     for (const id of st.teamOrder) expect(grainOf(st, id)).toBeGreaterThanOrEqual(0);
+    // the database ledgers (what exports and the admin console read) add up to the engine's balances
+    const sum = (rows: { teamId: string; amount: number }[], id: string) => rows.filter((r) => r.teamId === id).reduce((a, r) => a + r.amount, 0);
+    const gRows = await t.db.select().from(grainLedger).where(eq(grainLedger.serverId, serverId));
+    const pRows = await t.db.select().from(pointsLedger).where(eq(pointsLedger.serverId, serverId));
+    expect(gRows.length + pRows.length).toBe(st.ledger.length);
+    for (const id of st.teamOrder) {
+      expect(sum(gRows, id)).toBe(grainOf(st, id));
+      expect(sum(pRows, id)).toBe(pointsOf(st, id));
+    }
     expect(Object.values(st.contests).every((c) => c.status !== "active")).toBe(true);
     expect(Object.values(st.wars).every((w) => w.settled)).toBe(true);
     expect(st.settledDays.length).toBe(st.params.time.seasonDays);
