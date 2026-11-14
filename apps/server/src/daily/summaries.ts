@@ -150,11 +150,13 @@ export class Summaries {
       const mine = [...latest.values()].sort((a, b) => +a.submittedAt - +b.submittedAt);
       const tasks = await this.db.select({ id: dailySubmissions.id }).from(dailySubmissions).where(and(eq(dailySubmissions.childId, m.childId), eq(dailySubmissions.status, "passed"), gte(dailySubmissions.day, from), lt(dailySubmissions.day, to)));
       const rank = st.final?.ranking.find((r) => r.teamId === m.teamId)?.rank ?? null;
+      const scholarshipYuan = st.final ? (st.final.scholarship.find((r) => r.teamId === m.teamId)?.yuan ?? 0) : null;
       const ai = await this.ai.summarize({ kind: "season", grade: kid.grade, cards: cards.map((c) => ({ title: c.title, summary: c.summary, tag: c.tag, crossing: crossing.get(c.submissionId) ?? null })) });
       const content = {
         text: ai.text,
         team: st.teams[m.teamId]?.name ?? "",
         rank,
+        scholarshipYuan,
         highlights: teamHighlights(st, m.teamId),
         // 我的探索地图: the child's knowledge cards plus the works they signed (part 5 §4.1; part 6 T7)
         map: (() => {

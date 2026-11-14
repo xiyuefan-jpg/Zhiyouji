@@ -345,6 +345,7 @@ interface Review {
     text: string;
     team: string;
     rank: number | null;
+    scholarshipYuan?: number | null;
     highlights?: string[];
     map: Record<string, number>;
     hardest: { title: string; tag: string | null; crossing: number | null } | null;
@@ -390,6 +391,7 @@ export function SeasonReviewPage() {
             <div className="panel">
               {r.content.team}
               {r.content.rank ? `，最终第 ${r.content.rank} 名` : ""}
+              {r.content.scholarshipYuan ? `，本组奖学金 ${r.content.scholarshipYuan} 元` : ""}
               {r.content.highlights?.length ? <div className="hint">高光时刻：{r.content.highlights.join("、")}</div> : null}
             </div>
             {r.content.works.length > 0 && (

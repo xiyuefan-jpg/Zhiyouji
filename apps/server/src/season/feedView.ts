@@ -155,8 +155,12 @@ export function describe(kind: string, d: Data, names: FeedNames, teamId: string
     case "season_resumed":
       return "赛季恢复了";
     case "season_final": {
-      const top = Array.isArray(d.ranking) ? (d.ranking as { teamId: string; rank: number }[]).slice(0, 3) : [];
-      return top.length ? `终局结算公布了：${top.map((r) => `第 ${r.rank} 名${T(r.teamId)}`).join("，")}` : "终局结算公布了";
+      // Every team's place and scholarship (round 35: the children see the amounts).
+      const ranking = Array.isArray(d.ranking) ? (d.ranking as { teamId: string; rank: number }[]) : [];
+      const yuan = new Map(((d.scholarship as { teamId: string; yuan: number }[] | undefined) ?? []).map((x) => [x.teamId, x.yuan]));
+      return ranking.length
+        ? `终局结算公布了：${ranking.map((r) => `第 ${r.rank} 名${T(r.teamId)}${yuan.has(r.teamId) ? `（奖学金 ${yuan.get(r.teamId)} 元）` : ""}`).join("，")}`
+        : "终局结算公布了";
     }
     case "big_battle_result": {
       const w = (d.main as { winner?: string } | undefined)?.winner;

@@ -49,6 +49,8 @@ export interface TeamView {
   id: string;
   name: string;
   rank: number | null;
+  /** After the final settlement: this team's scholarship (yuan). */
+  scholarshipYuan?: number | null;
   points: number;
   grain: number;
   frozenGrain: number;
@@ -202,7 +204,8 @@ export interface Transfer {
 export const seasonApi = {
   me: () => request<SeasonMe>("GET", "/v1/season/me"),
   map: () => request<{ lands: LandView[]; teams: { id: string; name: string; mine: boolean }[] }>("GET", "/v1/season/map"),
-  ranking: () => request<{ ranking: { rank: number; teamId: string; name: string; points: number; lands: number; mine: boolean }[] }>("GET", "/v1/season/ranking"),
+  ranking: () =>
+    request<{ final: { poolYuan: number } | null; ranking: { rank: number; teamId: string; name: string; points: number; lands: number; mine: boolean; scholarshipYuan: number | null }[] }>("GET", "/v1/season/ranking"),
   team: () => request<TeamView>("GET", "/v1/season/team"),
   ledger: (currency: "grain" | "points") => request<{ balance: number; entries: { id: string; amount: number; source: string; note: string | null; at: number }[] }>("GET", `/v1/season/ledger?currency=${currency}`),
   claim: (role: "leader" | "deputy") => request<SeasonMe>("POST", "/v1/season/roles/claim", { role }),

@@ -287,9 +287,13 @@ export class SeasonPlay {
 
   async ranking(ctx: PlayCtx) {
     const s = await this.state(ctx);
-    const r = rankingAt(s, this.now());
+    const live = rankingAt(s, this.now());
+    // After the final settlement the published ranking is fixed (ties are not re-drawn) and each
+    // team's scholarship is shown (round 35: the user wants children to see the amounts).
+    const order = s.final ? s.final.ranking.map((f) => ({ ...live.find((x) => x.teamId === f.teamId)!, rank: f.rank, points: f.points })) : live;
     return {
-      ranking: r.map((x) => ({
+      final: s.final ? { poolYuan: s.final.poolYuan } : null,
+      ranking: order.map((x) => ({
         rank: x.rank,
         teamId: x.teamId,
         name: s.teams[x.teamId]!.name,
@@ -297,6 +301,7 @@ export class SeasonPlay {
         warWins: x.warWins,
         lands: s.landOrder.filter((l) => s.lands[l]!.owner === x.teamId).length,
         mine: x.teamId === ctx.teamId,
+        scholarshipYuan: s.final ? (s.final.scholarship.find((y) => y.teamId === x.teamId)?.yuan ?? 0) : null,
       })),
     };
   }
@@ -307,11 +312,12 @@ export class SeasonPlay {
     const s = await this.state(ctx);
     const now = this.now();
     const t = s.teams[ctx.teamId]!;
-    const rank = rankingAt(s, now).find((r) => r.teamId === ctx.teamId)?.rank ?? null;
+    const rank = (s.final ? s.final.ranking : rankingAt(s, now)).find((r) => r.teamId === ctx.teamId)?.rank ?? null;
     return {
       id: t.id,
       name: t.name,
       rank,
+      scholarshipYuan: s.final ? (s.final.scholarship.find((y) => y.teamId === t.id)?.yuan ?? 0) : null,
       points: pointsOf(s, t.id),
       grain: grainOf(s, t.id),
       frozenGrain: frozenGrain(s, t.id),

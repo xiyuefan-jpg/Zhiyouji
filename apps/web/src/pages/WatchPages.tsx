@@ -110,7 +110,15 @@ export function WatchServer() {
 }
 
 /** Ranking rows that open the team's public page (also used on the season's own ranking). */
-export function TeamRanking({ serverId, rows, mine }: { serverId: string; rows: { rank: number; teamId: string; name: string; points: number; lands: number }[] | null; mine?: string }) {
+export function TeamRanking({
+  serverId,
+  rows,
+  mine,
+}: {
+  serverId: string;
+  rows: { rank: number; teamId: string; name: string; points: number; lands: number; scholarshipYuan?: number | null }[] | null;
+  mine?: string;
+}) {
   if (!rows) return <div className="hint">正在加载……</div>;
   return (
     <div className="panel">
@@ -121,7 +129,7 @@ export function TeamRanking({ serverId, rows, mine }: { serverId: string; rows: 
             {r.name}
             {r.teamId === mine ? "（本组）" : ""}
           </span>
-          <span className="hint">{r.lands} 块地</span>
+          {r.scholarshipYuan != null ? <span style={{ color: "var(--vermilion)" }}>{r.scholarshipYuan} 元</span> : <span className="hint">{r.lands} 块地</span>}
           <span style={{ width: 56, textAlign: "right" }}>{points(r.points)}</span>
         </Link>
       ))}

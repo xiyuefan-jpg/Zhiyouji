@@ -253,7 +253,10 @@ export function SeasonTeam() {
             {(m.season.status === "ended" || m.season.status === "archived") && (
               <Link to="/season-review" className="panel row" style={{ textDecoration: "none", color: "inherit", marginBottom: 12, borderColor: "var(--vermilion)" }}>
                 <span className="grow">
-                  <b>赛季结束了{team.data?.rank ? `：本组最终第 ${team.data.rank} 名` : ""}</b>
+                  <b>
+                    赛季结束了{team.data?.rank ? `：本组最终第 ${team.data.rank} 名` : ""}
+                    {team.data?.scholarshipYuan ? `，奖学金 ${team.data.scholarshipYuan} 元` : ""}
+                  </b>
                   <br />
                   <span className="hint">剩下的粮草已经折成团队分。看看这一季你带走了什么。</span>
                 </span>
@@ -464,6 +467,7 @@ export function RankingList() {
   if (me.data?.status !== "playing") return <Empty title="还没有排行榜">赛季开始后，这里显示本服各组的团队分和名次。</Empty>;
   return (
     <>
+      {data.data?.final && <p className="hint">赛季结束了，这是最终排名；每组的奖学金按名次和团队分来分（奖池 {data.data.final.poolYuan} 元）。</p>}
       <TeamRanking serverId={me.data.server.id} rows={data.data?.ranking ?? null} mine={me.data.team.id} />
       <Link to={`/watch/${me.data.server.id}/showcase`} className="panel row" style={{ textDecoration: "none", color: "inherit" }}>
         <span className="grow">作品展</span>

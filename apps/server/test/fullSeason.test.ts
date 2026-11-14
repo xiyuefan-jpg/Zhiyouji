@@ -196,7 +196,13 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
     const after = (await t.db.select().from(reports).where(eq(reports.serverId, serverId)).orderBy(asc(reports.publishAt))).filter((r) => +r.publishAt > +end);
     expect(after.length).toBeGreaterThan(0);
     const reader = await ctxOf(kids[0]!);
-    expect((await s.reports.get(reader, after[0]!.id)).lines.some((l: { text: string }) => l.text.startsWith("终局结算公布了：第 1 名"))).toBe(true);
+    expect((await s.reports.get(reader, after[0]!.id)).lines.some((l: { text: string }) => /^终局结算公布了：第 1 名.+（奖学金 \d+ 元）/.test(l.text))).toBe(true);
+    // the children see the final ranking with every team's scholarship (round 35)
+    const rk = await s.play.ranking(reader);
+    expect(rk.final).toEqual({ poolYuan: 10000 });
+    expect(rk.ranking.map((r) => [r.teamId, r.scholarshipYuan])).toEqual(fin.final!.ranking.map((r) => [r.teamId, fin.final!.scholarship.find((x) => x.teamId === r.teamId)!.yuan]));
+    const myTeam = await s.play.team(reader);
+    expect(myTeam.scholarshipYuan).toBe(rk.ranking.find((r) => r.mine)!.scholarshipYuan);
     expect(fin.seasonEnded).toBe(true);
     st = await s.store.state(serverId);
     expect((await t.db.select().from(seasons).where(eq(seasons.id, season.id)))[0]!.status).toBe("ended");
