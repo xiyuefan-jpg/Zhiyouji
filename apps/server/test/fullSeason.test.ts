@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { asc, eq } from "drizzle-orm";
 import { children, families, grainLedger, pointsLedger, reports, seasons } from "@zhiyouji/db";
-import { balanceOf, checkLedger, createRng, grainOf, pointsOf, seasonDayOf, spendableGrain, quoteAttack, type Rng } from "@zhiyouji/engine";
+import { balanceOf, checkInvariants, checkLedger, createRng, grainOf, pointsOf, seasonDayOf, spendableGrain, quoteAttack, type Rng } from "@zhiyouji/engine";
 import { Worker, type PlayCtx } from "../src/index.js";
 import { bj, setup } from "./helpers.js";
 
@@ -210,6 +210,7 @@ describe("a whole season through the server (part 9 §1 step 4)", () => {
 
     // the invariants (part 9 §2)
     expect(checkLedger(st.ledger)).toEqual([]);
+    expect(checkInvariants(st)).toEqual([]);
     for (const id of st.teamOrder) expect(grainOf(st, id)).toBeGreaterThanOrEqual(0);
     // the database ledgers (what exports and the admin console read) add up to the engine's balances
     const sum = (rows: { teamId: string; amount: number }[], id: string) => rows.filter((r) => r.teamId === id).reduce((a, r) => a + r.amount, 0);

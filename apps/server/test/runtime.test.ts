@@ -152,3 +152,35 @@ describe("pause shift (§16)", () => {
     await close();
   });
 });
+
+describe("every planned event run twice books nothing twice (part 9 §2, part 3 §16)", () => {
+  it("a worker that crashed after applying (row still pending) re-runs every row: same state, same ledger", async () => {
+    const { db, close, store, serverId } = await setup();
+    const clock = new SimClock(at(0, 18));
+    const sched = new Scheduler(db, store, clock);
+    // walk the whole calendar, two hours at a time, like the worker
+    for (let t = +at(0, 18); t <= +at(38, 0); t += 2 * 3_600_000) {
+      clock.set(new Date(t));
+      await sched.runDue(serverId);
+    }
+    const rows = await db.select().from(plannedEvents).where(eq(plannedEvents.serverId, serverId));
+    const kinds = new Set(rows.map((r) => r.kind));
+    expect(kinds.size).toBeGreaterThan(20);
+    const before = JSON.stringify(await store.state(serverId));
+    const ledgerRows = async () =>
+      (await db.select().from(grainLedger).where(eq(grainLedger.serverId, serverId))).length +
+      (await db.select().from(pointsLedger).where(eq(pointsLedger.serverId, serverId))).length;
+    const nLedger = await ledgerRows();
+    const failed = rows.filter((r) => r.status === "failed").map((r) => r.key).sort();
+    // pretend none of the rows was marked done
+    await db.update(plannedEvents).set({ status: "pending" }).where(and(eq(plannedEvents.serverId, serverId), eq(plannedEvents.status, "done")));
+    const rep = await sched.runDue(serverId);
+    expect(rep.ran.filter((x) => !x.ok)).toEqual([]);
+    expect(JSON.stringify(await store.state(serverId))).toBe(before);
+    expect(await ledgerRows()).toBe(nLedger);
+    const after = await db.select().from(plannedEvents).where(eq(plannedEvents.serverId, serverId));
+    expect(after.filter((r) => r.status === "failed").map((r) => r.key).sort()).toEqual(failed);
+    expect(after.filter((r) => r.status === "pending")).toEqual([]);
+    await close();
+  }, 120_000);
+});

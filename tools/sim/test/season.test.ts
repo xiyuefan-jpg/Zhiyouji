@@ -35,6 +35,8 @@ describe("bot seasons (PRD part 9 §2)", () => {
     it(`seed ${seed}: runs to the end with a clean ledger`, () => {
       const r = simulateSeason({ seed });
       expect(r.ledgerProblems).toEqual([]);
+      // checked after every accepted event: one owner and at most one active contest per land, no negative grain, …
+      expect(r.invariantProblems).toEqual([]);
       expect(r.state.final).not.toBeNull();
       expect(r.state.final!.scholarship.reduce((a, b) => a + b.yuan, 0)).toBe(10000);
       expect(r.state.settledDays).toHaveLength(33);

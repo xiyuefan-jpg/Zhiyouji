@@ -12,6 +12,7 @@ import {
   DEFAULT_PARAMS,
   activeContestOnLand,
   applyEvent,
+  checkInvariants,
   checkLedger,
   createRng,
   createSeasonState,
@@ -75,6 +76,8 @@ export interface SimResult {
     dailyTasks: number;
   };
   ledgerProblems: string[];
+  /** Structural invariants broken after some event (checked after every accepted event; empty when sound). */
+  invariantProblems: { at: number; type: string; problems: string[] }[];
 }
 
 interface Step {
@@ -418,6 +421,7 @@ export function simulateSeason(o: SimOptions): SimResult {
   }
 
   // ---- run ----------------------------------------------------------------
+  const invariantProblems: SimResult["invariantProblems"] = [];
   while (queue.length > 0) {
     const step = queue.shift()!;
     for (const ev of step.run(state)) {
@@ -428,6 +432,8 @@ export function simulateSeason(o: SimOptions): SimResult {
         continue;
       }
       state = r.state;
+      const broken = checkInvariants(state);
+      if (broken.length > 0) invariantProblems.push({ at: step.at, type: ev.type, problems: broken });
       for (const n of r.notices) {
         notices.push(n);
         if (n.kind === "contest_started") stats.contests++;
@@ -440,7 +446,7 @@ export function simulateSeason(o: SimOptions): SimResult {
       }
     }
   }
-  return { initial, state, bots, events, notices, refusals, stats, ledgerProblems: checkLedger(state.ledger) };
+  return { initial, state, bots, events, notices, refusals, stats, ledgerProblems: checkLedger(state.ledger), invariantProblems };
 }
 
 function normal(rng: Rng, mean: number, sd: number): number {
