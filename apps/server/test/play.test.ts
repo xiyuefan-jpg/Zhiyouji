@@ -333,6 +333,11 @@ describe("首页 (part 5 §4) and 组长待办 (E2)", () => {
     const fh = await t.services.home.home(free.childIds[0]!);
     expect(fh.status).toBe("none");
     expect(fh.todo.map((x) => x.kind)).toEqual(["daily"]);
+    // 战况精选 (part 5 §4): the live server's top three; no contest yet
+    const f = (fh as { featured: { serverId: string; top: unknown[]; hotContest: unknown } }).featured;
+    expect(f.serverId).toBe(t.serverId);
+    expect(f.top).toHaveLength(3);
+    expect(f.hotContest).toBeNull();
     await t.close();
   });
 });

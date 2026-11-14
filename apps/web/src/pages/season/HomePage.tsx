@@ -25,7 +25,17 @@ interface TodoItem {
 }
 
 type HomeData =
-  | { status: "none" | "waiting"; todo: TodoItem[] }
+  | {
+      status: "none" | "waiting";
+      todo: TodoItem[];
+      /** 本服战况精选 (part 5 §4): one live server's top three and its busiest contest. */
+      featured?: {
+        serverId: string;
+        name: string;
+        top: { rank: number; name: string; points: number }[];
+        hotContest: { land: string; defender: string; attackers: number; deadline: number } | null;
+      } | null;
+    }
   | {
       status: "playing";
       season: { day: number; week: number; days: number; paused: boolean };
@@ -75,6 +85,23 @@ export function HomeBody() {
           ))}
         </div>
         <TodoList items={h.todo} />
+        {h.featured && (
+          <Link to={`/watch/${h.featured.serverId}`} className="panel" style={{ ...link, display: "block", marginTop: 12 }} aria-label="战况精选">
+            <div style={{ fontWeight: 600 }}>战况精选 · {h.featured.name}</div>
+            {h.featured.top.map((x) => (
+              <div key={x.rank} className="row">
+                <span style={{ width: 28 }}>{x.rank}</span>
+                <span className="grow">{x.name}</span>
+                <span>{points(x.points)} 分</span>
+              </div>
+            ))}
+            {h.featured.hotContest && (
+              <div className="hint" style={{ marginTop: 6 }}>
+                最激烈的争夺：{h.featured.hotContest.attackers} 个组在进攻{h.featured.hotContest.defender}的{h.featured.hotContest.land}（{countdown(h.featured.hotContest.deadline)}）
+              </div>
+            )}
+          </Link>
+        )}
       </>
     );
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beijingInstant } from "@zhiyouji/engine";
 import { humanScores, reviewAssignments, settledScores } from "@zhiyouji/db";
@@ -64,6 +64,33 @@ describe("admin console: 改判 (part 7 §5.3)", () => {
     await user.click((await screen.findAllByRole("button", { name: "确 定" })).at(-1)!);
     expect(await screen.findByText(/结果有变化|结果没有变化/)).toBeTruthy();
     await waitFor(async () => expect((await be.db.select().from(settledScores)).map((x) => x.score)).toContain(0));
+    await be.stop();
+  });
+
+  it("an admin reassigns a pending review from the work page (part 7 §6 改派)", async () => {
+    const be = await startBackend();
+    const s = await seasonWithWork(be);
+    await account(be, "r1@example.com", "reviewer");
+    const r2 = await account(be, "r2@example.com", "reviewer");
+    void r2;
+    const { secret } = await account(be, "boss@example.com", "admin");
+    be.clock.set(new Date(beijingInstant("2027-01-15", 21, 1)));
+    await be.services.scoring.runDue(s.serverId);
+    const all = await be.db.select().from(reviewAssignments);
+    const a = all[0];
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderConsole(`/reviews/works/${s.workId}`);
+    await login(be, user, "boss@example.com", secret);
+    expect((await screen.findAllByText(/还没交/)).length).toBeGreaterThan(0);
+    const users = await be.db.query.adminUsers.findMany();
+    // one row per pending review (the first and any spot check); the first row is the first assignment
+    const firstRow = (await screen.findAllByText(/还没交/))[0]!.textContent ?? "";
+    const other = users.find((u) => !firstRow.startsWith(u.name))!;
+    fireEvent.mouseDown(screen.getAllByRole("combobox", { name: "改派给" })[0]!);
+    await user.click((await screen.findAllByText(other.name)).at(-1)!);
+    await waitFor(async () => expect((await be.db.select().from(reviewAssignments)).some((x) => x.status === "pending" && x.reviewerId === other.id)).toBe(true));
+    expect((await be.db.select().from(reviewAssignments)).some((x) => x.status === "reassigned")).toBe(true);
+    void a;
     await be.stop();
   });
 });

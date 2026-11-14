@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Alert, Button, Card, Checkbox, DatePicker, Descriptions, Form, Input, InputNumber, Modal, Radio, Select, Space, Table, Tabs, Tag, Typography, message } from "antd";
 import { TAXONOMY } from "@zhiyouji/shared";
-import { ApiError, request } from "../api";
+import { ApiError, api, request, type AdminUserRow } from "../api";
 import { useAdmin } from "../auth";
 import { Time } from "../time";
 import { useLoad } from "../useLoad";
@@ -443,6 +443,7 @@ interface ReviewerRow {
   pending: number;
   doneOnTime: number;
   timedOutToAi: number;
+  timedOutWorks?: string[];
   averageMinutes: number | null;
   averageGapWithSecond: number | null;
   averageGapWithAi: number | null;
@@ -450,7 +451,7 @@ interface ReviewerRow {
 
 export function ReviewersPage() {
   const me = useAdmin();
-  const d = useLoad(() => request<{ reviewers: ReviewerRow[]; total: { settled: number; timedOutToAi: number } }>("GET", "/v1/admin/reviewers/dashboard"));
+  const d = useLoad(() => request<{ reviewers: ReviewerRow[]; total: { settled: number; timedOutToAi: number; works?: { workId: string; score: number; at: string }[] } }>("GET", "/v1/admin/reviewers/dashboard"));
   if (me.role !== "admin") return null;
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
@@ -461,6 +462,17 @@ export function ReviewersPage() {
         <Typography.Text>
           已结算 {d.data.total.settled} 件，其中超时按 AI 分结算 {d.data.total.timedOutToAi} 件
         </Typography.Text>
+      )}
+      {!!d.data?.total.works?.length && (
+        <Card size="small" title="超时按 AI 分结算的作品（可以点开裁定或改判）">
+          <Space wrap>
+            {d.data.total.works.map((w) => (
+              <Link key={w.workId} to={`/reviews/works/${w.workId}`}>
+                {w.score} 分 · <Time iso={w.at} />
+              </Link>
+            ))}
+          </Space>
+        </Card>
       )}
       <Table<ReviewerRow>
         rowKey="reviewerId"
@@ -473,7 +485,22 @@ export function ReviewersPage() {
           { title: "分到", dataIndex: "assigned" },
           { title: "待交", dataIndex: "pending" },
           { title: "按时完成", dataIndex: "doneOnTime" },
-          { title: "超时按 AI 结算", dataIndex: "timedOutToAi", render: (n: number) => (n ? <Typography.Text type="danger">{n}</Typography.Text> : 0) },
+          {
+            title: "超时按 AI 结算",
+            render: (_, r) =>
+              r.timedOutToAi ? (
+                <Space size={4} wrap>
+                  <Typography.Text type="danger">{r.timedOutToAi}</Typography.Text>
+                  {(r.timedOutWorks ?? []).map((w, i) => (
+                    <Link key={w} to={`/reviews/works/${w}`}>
+                      作品{i + 1}
+                    </Link>
+                  ))}
+                </Space>
+              ) : (
+                0
+              ),
+          },
           { title: "平均用时（分钟）", render: (_, r) => r.averageMinutes ?? "—" },
           { title: "和第二人平均分差", render: (_, r) => r.averageGapWithSecond ?? "—" },
           { title: "和 AI 平均分差", render: (_, r) => r.averageGapWithAi ?? "—" },
@@ -499,7 +526,9 @@ const BASIS: Record<string, string> = { human: "人工复核", ai_timeout: "超�
 /** One work for an admin: rule before settlement, rejudge after (the outcome is worked out again; what to adjust by hand is listed). */
 export function WorkAdminPage() {
   const { id = "" } = useParams();
+  const me = useAdmin();
   const v = useLoad(() => request<WorkAdmin>("GET", `/v1/admin/works/${id}`), [id]);
+  const users = useLoad(() => (me.role === "admin" ? api.users() : Promise.resolve({ users: [] as AdminUserRow[] })));
   const [score, setScore] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [result, setResult] = useState<{ changed: boolean; automatic: boolean; suggestions: string[] } | null>(null);
@@ -556,6 +585,22 @@ export function WorkAdminPage() {
             {d.pending.map((p) => (
               <div key={p.assignmentId}>
                 {p.reviewer} 还没交（时限 <Time iso={p.dueAt} />）
+                {me.role === "admin" && (
+                  <Select
+                    size="small"
+                    aria-label="改派给"
+                    placeholder="改派给"
+                    virtual={false}
+                    style={{ width: 160, marginLeft: 8 }}
+                    options={(users.data?.users ?? []).filter((u) => u.status === "active" && u.name !== p.reviewer).map((u) => ({ value: u.id, label: u.name }))}
+                    onChange={(reviewerId: string) =>
+                      void request("POST", `/v1/admin/reviews/${p.assignmentId}/reassign`, { reviewerId }).then(
+                        () => (message.success("已改派，对方会收到消息"), v.reload()),
+                        (e) => message.error(errText(e)),
+                      )
+                    }
+                  />
+                )}
               </div>
             ))}
             {d.settled.map((x, i) => (

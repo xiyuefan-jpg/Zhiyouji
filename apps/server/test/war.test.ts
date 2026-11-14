@@ -14,6 +14,9 @@ describe("weekly war cards and work reminders (part 3 §11; part 5 §3.5; part 8
     expect(w1).toMatchObject({ week: 1, gift: false, theme: { title: "家里的一个小麻烦" }, offered: [] });
     expect(w1.received.text).toContain("预算 ≤30 元");
     expect(w1.opponent.grades.length).toBeGreaterThan(0);
+    // nobody did the questionnaire and nothing is public yet: empty, not missing (§3.5 step 2)
+    expect(w1.opponent.styles).toEqual([]);
+    expect(w1.opponent.recentWorks).toEqual([]);
     // what is at stake (loser's chest odds in the open), when it is due and how it is judged
     expect(w1.stakes).toMatch(/赢了 \+15 分；输了 -5 分，再开一个败者宝箱：从 5 件常规凡品（.+）里随机得 1 件，每件的机会都是 20%/);
     expect(w1.deadline).toBe(+bj("2027-02-14", 21)); // Sunday of week 1

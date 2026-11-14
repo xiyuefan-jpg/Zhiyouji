@@ -97,6 +97,33 @@ export function SeasonDetailPage() {
   const { id = "" } = useParams();
   const s = useLoad(() => request<{ season: Season; servers: { id: string; name: string }[] }>("GET", `/v1/admin/seasons/${id}`), [id]);
   const d = s.data;
+  // part 7 §2 "名称、开营日期" (the opening date only before the grouping is locked; a Sunday)
+  const edit = (season: Season) => {
+    let name = season.name;
+    let opening = season.opening;
+    Modal.confirm({
+      title: "改赛季名称和开营日",
+      content: (
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Input aria-label="赛季名称" defaultValue={name} onChange={(e) => (name = e.target.value)} />
+          <Input aria-label="开营日" defaultValue={opening} disabled={season.groupingLocked} placeholder="YYYY-MM-DD（星期日）" onChange={(e) => (opening = e.target.value.trim())} />
+          {season.groupingLocked && <Typography.Text type="secondary">分组锁定以后不能改开营日。</Typography.Text>}
+        </Space>
+      ),
+      okText: "保存",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await request("PATCH", `/v1/admin/seasons/${id}`, { name: name.trim(), ...(season.groupingLocked || opening === season.opening ? {} : { opening }) });
+          message.success("已保存");
+          s.reload();
+        } catch (e) {
+          message.error(errText(e));
+          throw e;
+        }
+      },
+    });
+  };
   const act = async (path: string, ok: string) => {
     try {
       await request("POST", `/v1/admin/seasons/${id}/${path}`);
@@ -128,6 +155,9 @@ export function SeasonDetailPage() {
               </Popconfirm>
             )}
             <Link to={`/players/${id}`}>玩家与分组 →</Link>
+            <Button size="small" onClick={() => edit(d.season)}>
+              改名称 / 开营日
+            </Button>
           </Space>
           {d.servers.length > 0 && (
             <Space wrap>

@@ -12,8 +12,8 @@
  * Children who are not season players get only the daily task.
  */
 
-import { and, asc, eq, gt } from "drizzle-orm";
-import { children, dailySubmissions, plannedEvents, type Db } from "@zhiyouji/db";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { children, dailySubmissions, lands, plannedEvents, seasons, servers, type Db } from "@zhiyouji/db";
 import { beijingDate, DAY, frozenGrain, grainOf, itemDef, nextPublicationAfter, pointsOf, rankingAt, seasonDayOf, shopClosesAt, shopOpensAt, seasonWeekOf, spendableGrain } from "@zhiyouji/engine";
 import type { Clock } from "../clock.js";
 import type { SeasonStore } from "../seasonStore.js";
@@ -103,6 +103,36 @@ export class Home {
     return Date.parse(`${d}T00:00:00+08:00`) + DAY;
   }
 
+  /**
+   * Part 5 §4 免费用户 "本服战况精选：前三名、今天最激烈的一场争夺": one live server (the
+   * first one in its season), its top three and the contest with the most attackers. No items,
+   * no names of children.
+   */
+  private async featured(now: number) {
+    const [sv] = await this.db
+      .select({ id: servers.id, name: servers.name, season: seasons.name })
+      .from(servers)
+      .innerJoin(seasons, eq(servers.seasonId, seasons.id))
+      .where(inArray(seasons.status, ["running", "big_battle"]))
+      .orderBy(asc(servers.name))
+      .limit(1);
+    if (!sv) return null;
+    const st = await this.store.state(sv.id);
+    const top = rankingAt(st, now)
+      .slice(0, 3)
+      .map((r) => ({ rank: r.rank, name: st.teams[r.teamId]?.name ?? "", points: r.points }));
+    const hot = Object.values(st.contests)
+      .filter((c) => c.status === "active")
+      .sort((a, b) => b.attackers.length - a.attackers.length || b.startedAt - a.startedAt)[0];
+    const [land] = hot ? await this.db.select({ name: lands.name }).from(lands).where(and(eq(lands.serverId, sv.id), eq(lands.code, hot.landId))) : [];
+    return {
+      serverId: sv.id,
+      name: `${sv.season} · ${sv.name}`,
+      top,
+      hotContest: hot ? { land: land?.name ?? hot.landId, defender: st.teams[hot.defender]?.name ?? "", attackers: hot.attackers.length, deadline: hot.deadline } : null,
+    };
+  }
+
   async home(childId: string) {
     const now = this.now();
     const l = await this.play.lookup(childId);
@@ -113,6 +143,7 @@ export class Home {
       return {
         status: l.kind,
         todo: [{ kind: "daily", title: "每日任务", deadline: this.endOfToday(now), done: passed, leaderOnly: false, link: "/daily" }] as TodoItem[],
+        featured: await this.featured(now),
       };
     }
     const ctx = l.ctx;

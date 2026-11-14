@@ -8,11 +8,11 @@
  * - The choosing page shows "对手情报": the opponent's grade spread.
  */
 
-import { and, eq } from "drizzle-orm";
-import { plannedEvents, warCards, type Db } from "@zhiyouji/db";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { plannedEvents, surveyAnswers, warCards, works, type Db } from "@zhiyouji/db";
 import { ITEMS, REGULAR_COMMON_ITEMS, createRng, seedFromString, warDeadline, type SeasonState } from "@zhiyouji/engine";
 import { rubricWithGuide, workRequirements } from "./rubrics.js";
-import { GRADE_LABELS, WAR_CARDS, WAR_THEMES } from "@zhiyouji/shared";
+import { GRADE_LABELS, PLAY_STYLES, WAR_CARDS, WAR_THEMES } from "@zhiyouji/shared";
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
 import type { Notifier } from "../notify/notifier.js";
@@ -138,7 +138,7 @@ export class WarWords {
       theme: WAR_THEMES[week] ? { title: WAR_THEMES[week].title, task: WAR_THEMES[week].task } : null,
       gift: this.isGift(st, week),
       giftDeadline: dl?.runAt.toISOString() ?? null,
-      opponent: opponent ? { id: opponent, name: st.teams[opponent]!.name, grades: grades(opponent) } : null,
+      opponent: opponent ? { id: opponent, name: st.teams[opponent]!.name, grades: grades(opponent), styles: await this.styles(st, opponent), recentWorks: await this.recentWorks(ctx.serverId, opponent) } : null,
       bye: w!.bye === ctx.teamId,
       offered: ((row?.offered as string[]) ?? []).map(cardText),
       chosen: cardText(row?.chosen ?? null),
@@ -150,6 +150,25 @@ export class WarWords {
       rubric: rubricWithGuide("C"),
       requirements: workRequirements("war"),
     };
+  }
+
+  /** §3.5 step 2 "对方组员的游戏风格分布": counts per style from the questionnaire (no names). */
+  private async styles(st: SeasonState, teamId: string) {
+    const ids = st.teams[teamId]!.members.filter((m) => m.active).map((m) => m.childId);
+    const rows = ids.length ? await this.db.select({ childId: surveyAnswers.childId, style: surveyAnswers.style }).from(surveyAnswers).where(inArray(surveyAnswers.childId, ids)) : [];
+    const latest = new Map(rows.map((r) => [r.childId, r.style]));
+    return PLAY_STYLES.map((p) => ({ style: p.id, text: p.text, count: [...latest.values()].filter((x) => x === p.id).length })).filter((x) => x.count > 0);
+  }
+
+  /** §3.5 step 2 "最近的作品": the opponent's latest public works (settled and past the content check). */
+  private async recentWorks(serverId: string, teamId: string) {
+    const rows = await this.db
+      .select({ id: works.id, kind: works.kind, slot: works.slot, submittedAt: works.submittedAt })
+      .from(works)
+      .where(and(eq(works.serverId, serverId), eq(works.teamId, teamId), eq(works.safety, "pass")))
+      .orderBy(desc(works.submittedAt))
+      .limit(3);
+    return rows.map((r) => ({ id: r.id, kind: r.kind, submittedAt: r.submittedAt.toISOString() }));
   }
 
   /** Teams that have not chosen yet (for the 3-hour reminder). */

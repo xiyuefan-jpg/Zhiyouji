@@ -51,7 +51,15 @@ interface WarView {
   theme: { title: string; task: string } | null;
   gift: boolean;
   giftDeadline: string | null;
-  opponent: { id: string; name: string; grades: { grade: number; gradeLabel: string; count: number }[] } | null;
+  opponent: {
+    id: string;
+    name: string;
+    grades: { grade: number; gradeLabel: string; count: number }[];
+    /** From the questionnaire: how many members chose each play style (no names). */
+    styles?: { style: string; text: string; count: number }[];
+    /** The opponent's latest public works (作品展). */
+    recentWorks?: { id: string; kind: string; submittedAt: string }[];
+  } | null;
   bye: boolean;
   offered: Card[];
   chosen: Card | null;
@@ -129,6 +137,17 @@ export function WarWeekPage() {
               <div className="panel">
                 {v.bye ? <div>本周轮空，不用交作品。</div> : <div>对手：{v.opponent?.name ?? "还没配对"}</div>}
                 {v.opponent && v.opponent.grades.length > 0 && <div className="hint">对方的年级：{v.opponent.grades.map((g) => `${g.gradeLabel} ${g.count} 人`).join("、")}</div>}
+                {v.opponent && !!v.opponent.styles?.length && <div className="hint">对方的游戏风格：{v.opponent.styles.map((x) => `${x.text} ${x.count} 人`).join("、")}</div>}
+                {v.opponent && !!v.opponent.recentWorks?.length && (
+                  <div className="hint">
+                    对方最近的作品：
+                    {v.opponent.recentWorks.map((w, i) => (
+                      <Link key={w.id} to={`/watch/${m.server.id}/works/${w.id}`} style={{ marginRight: 8 }}>
+                        作品 {i + 1}
+                      </Link>
+                    ))}
+                  </div>
+                )}
                 {result && (
                   <div style={{ marginTop: 6, fontWeight: 600 }}>
                     {OUTCOME_TEXT[result.outcome]}，{result.points >= 0 ? "+" : ""}
