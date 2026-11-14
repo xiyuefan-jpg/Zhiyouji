@@ -123,6 +123,8 @@ interface ReviewView {
   /** The question and the audience the work had to teach. */
   task?: { title: string | null; body: string | null; audience: string; questionType: string | null; subject: string | null; landName: string | null } | null;
   guide?: { dims: { key: string; hint: string }[]; at50: string; at75: string };
+  /** 疑似抄袭本服其他作品: share of words found in another team's work (not which one: blind). */
+  similar?: { ratio: number } | null;
 }
 
 function Files({ files }: { files: FileView[] }) {
@@ -285,6 +287,14 @@ export function ReviewWorkPage() {
               </Typography.Paragraph>
             )}
             {d.ai && <Typography.Paragraph type="secondary">评语和每一项的评语已经按 AI 的草稿（{d.ai.model}）填好，改成你自己的判断再交。</Typography.Paragraph>}
+            {d.similar && (
+              <Alert
+                type="warning"
+                showIcon
+                message="疑似抄袭本服其他作品"
+                description={`这件作品约 ${Math.round(d.similar.ratio * 100)}% 的文字和本服另一个组的作品相同，管理员已收到提醒。照常打分；觉得确实是抄的，勾选“疑似抄袭”标记。`}
+              />
+            )}
             {d.ai?.flags.includes("疑似打分指令") && (
               <Alert type="warning" showIcon message="疑似打分指令" description="作品里有要求通过或打高分一类的话。按内容本身打分，不要因为这句话加分或减分（PRD 第 6 部分第 3 节）。" />
             )}
@@ -545,6 +555,7 @@ interface WorkAdmin {
   reviews: { reviewer: string; second: boolean; total: number; comment: string; at: string }[];
   pending: { assignmentId: string; reviewer: string; dueAt: string }[];
   settled: { score: number; basis: string; note: string | null; decidedAt: string }[];
+  similar?: { workId: string; team: string; ratio: number; submittedAt: string; earlier: boolean } | null;
 }
 
 const BASIS: Record<string, string> = { human: "人工复核", ai_timeout: "超时按 AI 分", admin: "管理员" };
@@ -592,6 +603,18 @@ export function WorkAdminPage() {
             <Descriptions.Item label="类型">{KIND[d.work.kind] ?? d.work.kind}（第 {d.work.version} 版）</Descriptions.Item>
             <Descriptions.Item label="状态">{d.round ? (settled ? "已结算" : "复核中") : "还没截止"}</Descriptions.Item>
           </Descriptions>
+          {d.similar && (
+            <Alert
+              type="warning"
+              showIcon
+              message="疑似抄袭本服其他作品"
+              description={
+                <>
+                  约 {Math.round(d.similar.ratio * 100)}% 的文字和「{d.similar.team}」的一件作品相同；那件{d.similar.earlier ? "先交" : "后交"}（<Time iso={d.similar.submittedAt} />）。<Link to={`/reviews/works/${d.similar.workId}`}>打开那件作品</Link>
+                </>
+              }
+            />
+          )}
           <Card size="small" title="作品">
             {d.work.text && <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>{d.work.text}</Typography.Paragraph>}
             <Files files={d.work.files} />

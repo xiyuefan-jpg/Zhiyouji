@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { messages, reviewAssignments, viewLog } from "@zhiyouji/db";
+import { aiScores, messages, reviewAssignments, viewLog, works } from "@zhiyouji/db";
+import { PLAGIARISM_FLAG } from "../src/season/similarity.js";
 import type { FakeAiScorer } from "../src/index.js";
 import { bj } from "./helpers.js";
 import { contestSetup } from "./seasonHelpers.js";
@@ -100,6 +101,37 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
     expect(dash.total.timedOutToAi).toBe(1);
     expect(dash.reviewers.find((r: { reviewerId: string }) => r.reviewerId === other.reviewerId)).toMatchObject({ assigned: 1, timedOutToAi: 1, timedOutWorks: [w2.id] });
     expect(dash.reviewers.find((r: { reviewerId: string }) => r.reviewerId === mine.reviewerId)).toMatchObject({ doneOnTime: 1, averageGapWithAi: 4 });
+    await t.close();
+  });
+
+  it("a work that copies another team's work on the server is flagged for the reviewer and the admins are told (part 6 §4.5)", async () => {
+    const t = await scoringSetup(0);
+    const text =
+      "火焰山之所以这么热，是因为吐鲁番盆地的地势很低，四周的山挡住了冷空气，太阳照下来的热量散不出去。再加上红色的砂岩吸收热量很快，白天地表温度可以超过七十度，所以看起来就像山在燃烧一样。";
+    // the defender's war work, handed in earlier
+    const [theirs] = await t.db
+      .insert(works)
+      .values({ serverId: t.serverId, teamId: t.defender, kind: "war", slot: "war:1", version: 1, submittedBy: t.a1, submittedAt: bj("2027-02-08", 12), mediaKind: "text", text, members: [] })
+      .returning();
+    const w1 = (await t.a1api("POST", `/v1/season/works/contest:${t.contestId}`, { mediaKind: "text", text: text.replace("这么热", "特别热").replace("所以", "因此"), members: [t.a1] })).json().work;
+    t.clock.set(bj("2027-02-12", 21, 1));
+    await t.services.scoring.runDue(t.serverId);
+    const [ai] = await t.db.select().from(aiScores).where(eq(aiScores.workId, w1.id));
+    expect(ai!.flags).toContain(PLAGIARISM_FLAG);
+    const told = await t.db.select().from(messages).where(eq(messages.type, "plagiarism"));
+    expect(told).toHaveLength(1);
+    expect(told[0]!.body).toMatch(/有 \d+% 的文字相同/);
+    expect(told[0]!.link).toBe(`/reviews/works/${w1.id}`);
+
+    // the reviewer sees how much is shared, not with whom (blind)
+    const [a] = await t.db.select().from(reviewAssignments).where(eq(reviewAssignments.workId, w1.id));
+    const reviewer = a!.reviewerId === t.r1.id ? t.r1 : t.r2;
+    const view = (await t.call("GET", `/v1/admin/reviews/${a!.id}`, undefined, await reviewer.relogin())).json();
+    expect(view.similar.ratio).toBeGreaterThan(0.5);
+    expect(JSON.stringify(view)).not.toContain(theirs!.id);
+    // the admin sees which work it is and which came first
+    const admin = (await t.call("GET", `/v1/admin/works/${w1.id}`, undefined, await t.boss.relogin())).json();
+    expect(admin.similar).toMatchObject({ workId: theirs!.id, earlier: true });
     await t.close();
   });
 

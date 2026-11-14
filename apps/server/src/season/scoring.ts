@@ -51,6 +51,7 @@ import type { ObjectStorage } from "../storage.js";
 import { refusalText } from "./refusals.js";
 import { checkDims, RUBRIC_GUIDE, RUBRICS, rubricFor, rubricWithGuide, type RubricId } from "./rubrics.js";
 import { workRubric, workTask } from "./taskInfo.js";
+import { mostSimilar, PLAGIARISM_FLAG } from "./similarity.js";
 
 const HOUR = 3_600_000;
 type WorkRow = typeof works.$inferSelect;
@@ -186,11 +187,55 @@ export class Scoring {
     return { scores: rows.map((r) => ({ total: r.total, model: r.model, official: r.official, createdAt: r.createdAt.toISOString() })) };
   }
 
+  /**
+   * 疑似抄袭本服其他作品 (part 6 §4.5): the other team's work on this server whose
+   * words this one shares most, when at or above the flag line. Compared with
+   * the latest version of every other team's work, except a debate rebuttal's
+   * own opponents' openings (a rebuttal quotes them on purpose).
+   */
+  async similarWork(w: WorkRow): Promise<{ work: WorkRow; ratio: number } | null> {
+    const all = await this.db
+      .select()
+      .from(works)
+      .where(and(eq(works.serverId, w.serverId), inArray(works.kind, ["contest", "war", "line", "main"])))
+      .orderBy(asc(works.version));
+    const latest = new Map<string, WorkRow>();
+    for (const x of all) if (x.teamId !== w.teamId) latest.set(`${x.teamId}|${x.slot}`, x);
+    const quoted = w.kind === "contest" && !w.slot.endsWith(":open") ? `${w.slot}:open` : null;
+    const others = [...latest.values()].filter((x) => x.slot !== quoted);
+    const fileIds = [...new Set([w, ...others].flatMap((x) => (x.fileIds as string[]) ?? []))];
+    const fs = fileIds.length ? await this.db.select({ id: files.id, transcript: files.transcript }).from(files).where(inArray(files.id, fileIds)) : [];
+    const t = new Map(fs.map((f) => [f.id, f.transcript]));
+    const words = (x: WorkRow) => [x.text, ...((x.fileIds as string[]) ?? []).map((id) => t.get(id))].filter(Boolean).join("\n");
+    const best = mostSimilar(
+      words(w),
+      others.map((x) => ({ id: x.id, words: words(x), row: x })),
+    );
+    return best ? { work: best.other.row, ratio: best.ratio } : null;
+  }
+
+  /** Tell the admins once per pair of works. */
+  private async tellSimilar(st: SeasonState, w: WorkRow, s: { work: WorkRow; ratio: number }): Promise<void> {
+    const [first, second] = +s.work.submittedAt <= +w.submittedAt ? [s.work, w] : [w, s.work];
+    const name = (x: WorkRow) => st.teams[x.teamId]?.name ?? "一个组";
+    await this.notifier.notifyAdmins({
+      kind: "plagiarism",
+      title: "疑似抄袭本服其他作品",
+      body: `「${name(w)}」的作品和「${name(s.work)}」的一件作品有 ${Math.round(s.ratio * 100)}% 的文字相同（「${name(first)}」先交，「${name(second)}」后交）。请打开两件作品比较，必要时裁定或改判。`,
+      link: `/reviews/works/${w.id}`,
+      dedupeKey: `plagiarism:${[w.id, s.work.id].sort().join(":")}`,
+      roles: ["admin"],
+    });
+  }
+
   private async aiScore(serverId: string, st: SeasonState, w: WorkRow, official = true): Promise<void> {
     const rubric = RUBRICS[await this.rubricOf(serverId, st, w)];
     const ids = (w.fileIds as string[]) ?? [];
     // speech-to-text, key frames and document text first (part 6 §2); a file still not ready is left out
     await this.media?.ensure(ids).catch(() => undefined);
+    // copied from another team? (the admins hear about it even when the AI fails)
+    const similar = official ? await this.similarWork(w) : null;
+    if (similar) await this.tellSimilar(st, w, similar);
     const fs = ids.length ? await this.db.select().from(files).where(inArray(files.id, ids)) : [];
     const transcript = fs.map((f) => f.transcript).filter(Boolean).join("\n") || null;
     const now = this.now();
@@ -228,7 +273,7 @@ export class Scoring {
         total: Math.max(0, Math.min(100, Math.round(r.total))),
         dims: r.dims,
         comment: r.comment,
-        flags: r.flags,
+        flags: similar && !r.flags.includes(PLAGIARISM_FLAG) ? [...r.flags, PLAGIARISM_FLAG] : r.flags,
         official,
         createdAt: this.clock.now(),
       });
@@ -413,6 +458,8 @@ export class Scoring {
             model: ai.model,
           }
         : null,
+      /** 疑似抄袭本服其他作品: how much is shared (blind review: not with whom). */
+      similar: await this.similarWork(w).then((x) => (x ? { ratio: Math.round(x.ratio * 100) / 100 } : null)),
       /** Children whose data this is (for the view log). */
       members: w.members as string[],
     };
@@ -585,6 +632,9 @@ export class Scoring {
       reviews: humans.map((x) => ({ reviewer: x.name, second: x.second, total: x.h.total, dims: x.h.dims, comment: x.h.comment, flags: x.h.flags, at: x.h.at.toISOString() })),
       pending: pending.map((x) => ({ assignmentId: x.a.id, reviewer: x.name, dueAt: x.a.dueAt.toISOString() })),
       settled: settled.map((x) => ({ score: x.score, basis: x.basis, note: x.note, decidedBy: x.decidedBy, decidedAt: x.decidedAt.toISOString() })),
+      similar: await this.similarWork(w!).then((x) =>
+        x ? { workId: x.work.id, team: st.teams[x.work.teamId]?.name ?? "", ratio: Math.round(x.ratio * 100) / 100, submittedAt: x.work.submittedAt.toISOString(), earlier: +x.work.submittedAt <= +w!.submittedAt } : null,
+      ),
     };
   }
 
