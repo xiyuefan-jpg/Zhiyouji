@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "dev": "tsx src/main.ts",
     "invite-admin": "tsx src/cli/inviteAdmin.ts",
-    "revoke-sessions": "tsx src/cli/revokeSessions.ts"
+    "revoke-sessions": "tsx src/cli/revokeSessions.ts",
+    "demo": "tsx src/dev/demo.ts"
   },
   "dependencies": {
     "@zhiyouji/db": "0.1.0",
