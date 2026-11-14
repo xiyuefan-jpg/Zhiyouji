@@ -147,6 +147,17 @@ npm run revoke-sessions -w @zhiyouji/server -- all "原因"               # 出�
 | POST | `/v1/admin/teams/:id/qr/ticket` → PUT → POST `/teams/:id/qr` | 小组微信群二维码 `{ key }` |
 | POST | `/v1/admin/servers/:id/camps/:camp/qr/ticket` → PUT → POST `/servers/:id/camps/:camp/qr` | 阵营微信群二维码 |
 | GET | `/v1/admin/daily/exceptions`；POST `/daily/:id/decide` | 每日任务异常队列（管理员和复核员） |
+| GET / POST | `/v1/admin/rubrics`、`/rubrics/:id` | 评分族的版本（POST 保存为新版本，之后截止的作品按它打分；复核员只读） |
+| GET / PUT | `/v1/admin/content/war-cards`、`/content/daily-templates` | 约束词条（每张可用的周）、6 个每日任务模板的说法 |
+| GET / POST / PATCH | `/v1/admin/content/todos`、`/content/todos/:id`；POST `/content/todos/seed-defaults` | 待补清单（截止前 7 天、1 天提醒；`{ done: true }` 勾掉） |
+| GET / POST | `/v1/admin/calibration/samples`、`/samples/:id/score`、`/calibration/run`、GET `/calibration/report` | 校准：样例、每人各自打分、AI 配置跑一遍、按评分族的差距 |
+| GET / PUT | `/v1/admin/ai/config`、`/ai/config/:task`；`/ai/prompts/:task`；`/ai/prices`、`/ai/prices/:model`；GET `/ai/stats` | AI 配置（8 个任务）、提示词版本（0 = 内置初版）、价格表、看板（按天、按任务和模型） |
+| POST | `/v1/admin/ai/try/:task` | 试跑：`{ targetId, prompt?, model? }`（作品或每日任务），只返回结果 |
+| GET | `/v1/admin/servers/:id/supply`、`/supply/:supplyId/teams/:teamId`；POST `…/regrade` | 军需：各组分数和档位、抽查、改档 `{ grain, reason }` |
+| POST | `/v1/admin/push` | 手动推送 `{ scope: "team" \| "server" \| "all", teamId?, serverId?, title, body }`（只进消息中心，每人每天 2 条） |
+| GET / PUT | `/v1/admin/about` | 关于与 AI 公示（网站读 `GET /v1/about`） |
+| GET / POST | `/v1/admin/art`、`/art/ticket` → PUT → POST `/art`；POST `/art/:id/enable`、`/art/disable` | 美术资源（网站读 `GET /v1/art`：正在用的图片和作者） |
+| GET | `/v1/admin/children/:id`；POST `/v1/admin/seasons/:id/players/match` | 孩子档案；表格批量开通的逐行核对 |
 
 ### 开发用的存储
 
@@ -170,7 +181,8 @@ npm run revoke-sessions -w @zhiyouji/server -- all "原因"               # 出�
 4. 偏好、战线截止前 3 小时的提醒；
 5. 每日任务的重试和异常、军需任务的提醒和打分、辩论的持方和立论交换、公告、二维码提醒；
 6. 到期的删除申请、连续 2 年不登录的清理；每小时清一次过期的日志（登录验证码、结束的登录、发过的短信 183 天；操作日志和查看记录 400 天；AI 调用记录里的孩子内容 90 天）；
-7. 发到点的短信提醒：夜间 21:30–07:00 不发，顺延到 07:00；同一手机号、同一种提醒还没发出去时合并；每个手机号每天最多 5 条。
+7. 发到点的短信提醒：夜间 21:30–07:00 不发，顺延到 07:00；同一手机号、同一种提醒还没发出去时合并；每个手机号每天最多 5 条；
+8. 待补清单的截止提醒；给管理员和复核员发邮件（复核分派和快到时限、复核超时、每日任务异常、内容安全、转给管理员、计划事件和结算失败；只有标题和链接，失败重试 3 次；现在是假的邮件服务 `FakeEmail`）。
 
 ## 操作日志和查看记录（PRD 第 8 部分 3.1、3.4）
 
