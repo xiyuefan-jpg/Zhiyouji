@@ -11,6 +11,18 @@ import type { FamilyAuth } from "./familyRoutes.js";
 const idParam = z.object({ id: z.uuid() });
 const campParam = z.object({ id: z.uuid(), camp: z.enum(["a", "b"]) });
 const childBody = z.object({ childId: z.uuid() });
+const pushBody = z.object({
+  scope: z.enum(["team", "server", "all"]),
+  teamId: z.uuid().optional(),
+  serverId: z.uuid().optional(),
+  title: z.string().trim().min(1).max(40),
+  body: z.string().trim().min(1).max(500),
+});
+const disclosuresBody = z.object({
+  ai: z
+    .array(z.object({ purpose: z.string().trim().min(1).max(40), model: z.string().trim().min(1).max(80), provider: z.string().trim().min(1).max(40), filingNo: z.string().trim().max(80).nullable().optional() }))
+    .max(30),
+});
 
 export function opsRoutes(app: FastifyInstance, ops: Operations, play: SeasonPlay, family: FamilyAuth, admin: AdminAuth): void {
   const by = async (req: FastifyRequest) => `admin:${(await admin.user(req, ["admin"])).user.id}`;
@@ -30,6 +42,26 @@ export function opsRoutes(app: FastifyInstance, ops: Operations, play: SeasonPla
     return ops.withdraw(idParam.parse(req.params).id);
   });
   app.get("/v1/announcements", async (req) => ops.forChild((await family.child(req)).child.id));
+
+  // 手动推送 (part 7 §8)
+  app.post("/v1/admin/push", async (req) => {
+    const who = await by(req);
+    return ops.push(pushBody.parse(req.body), who);
+  });
+
+  // 关于与 AI 公示 (part 5 §8; part 7 §8): the website reads it, the admins keep it
+  app.get("/v1/about", async (req) => {
+    await family.child(req);
+    return ops.disclosures();
+  });
+  app.get("/v1/admin/about", async (req) => {
+    await admin.user(req);
+    return ops.disclosures();
+  });
+  app.put("/v1/admin/about", async (req) => {
+    const who = await by(req);
+    return ops.setDisclosures(disclosuresBody.parse(req.body).ai, who);
+  });
 
   // QR codes: ticket → PUT the image → set
   app.post("/v1/admin/teams/:id/qr/ticket", async (req) => {

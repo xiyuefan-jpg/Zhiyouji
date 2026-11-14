@@ -176,6 +176,13 @@
       "when": 1794660924209,
       "tag": "0024_supply_regrade",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794661386338,
+      "tag": "0025_ai_disclosures",
+      "breakpoints": true
     }
   ]
 }

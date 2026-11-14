@@ -11,9 +11,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, lte } from "drizzle-orm";
-import { announcements, campQrCodes, children, envoys, seasonPlayers, seasons, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
-import { campOf, type Camp } from "@zhiyouji/engine";
+import { and, asc, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { aiDisclosures, announcements, campQrCodes, children, envoys, messages, seasonPlayers, seasons, servers, teamMembers, teams, type Db } from "@zhiyouji/db";
+import { beijingDate, beijingInstant, campOf, type Camp } from "@zhiyouji/engine";
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
 import type { Notifier } from "../notify/notifier.js";
@@ -33,6 +33,9 @@ export interface AnnouncementInput {
   body: string;
   publishAt: Date;
 }
+
+/** 手动推送: messages a child gets from the admins per day at most (part 7 §8 "每天有次数上限"). */
+export const MANUAL_PUSH_PER_CHILD_PER_DAY = 2;
 
 export class Operations {
   constructor(
@@ -118,6 +121,62 @@ export class Operations {
   // ---- WeChat group QR codes ----------------------------------------------------------------------
 
   /** Upload ticket for a team's or a camp's QR code (an image). */
+  // ---- 手动推送 (part 7 §8) ------------------------------------------------------------------------------
+
+  /**
+   * A message from the admins to one team, one server or everyone, now. No
+   * app push in v1 (part 8 §1.2), so it goes to the message center only; a
+   * child gets at most `MANUAL_PUSH_PER_CHILD_PER_DAY` a day (Beijing date),
+   * the others are skipped and counted.
+   */
+  async push(i: { scope: "team" | "server" | "all"; teamId?: string; serverId?: string; title: string; body: string }, by: string) {
+    let kids: string[];
+    let serverId: string | null = null;
+    if (i.scope === "team") {
+      if (!i.teamId) fail(400, "bad_request");
+      const [team] = await this.db.select().from(teams).where(eq(teams.id, i.teamId!));
+      if (!team) fail(404, "not_found");
+      serverId = team!.serverId;
+      kids = (await this.db.select({ c: teamMembers.childId }).from(teamMembers).where(and(eq(teamMembers.teamId, i.teamId!), eq(teamMembers.active, true)))).map((r) => r.c);
+    } else if (i.scope === "server") {
+      if (!i.serverId) fail(400, "bad_request");
+      serverId = i.serverId!;
+      kids = (await this.db.select({ c: teamMembers.childId }).from(teamMembers).innerJoin(teams, eq(teamMembers.teamId, teams.id)).where(and(eq(teams.serverId, i.serverId!), eq(teamMembers.active, true)))).map((r) => r.c);
+    } else kids = (await this.db.select({ id: children.id }).from(children).where(eq(children.status, "active"))).map((r) => r.id);
+    kids = [...new Set(kids)];
+    const now = +this.clock.now();
+    const dayStart = new Date(beijingInstant(beijingDate(now), 0));
+    const today = kids.length
+      ? await this.db
+          .select({ r: messages.recipientId })
+          .from(messages)
+          .where(and(eq(messages.recipientKind, "child"), eq(messages.type, "push"), inArray(messages.recipientId, kids), gte(messages.createdAt, dayStart)))
+      : [];
+    const count = new Map<string, number>();
+    for (const r of today) count.set(r.r, (count.get(r.r) ?? 0) + 1);
+    const send = kids.filter((k) => (count.get(k) ?? 0) < MANUAL_PUSH_PER_CHILD_PER_DAY);
+    const id = randomUUID();
+    const r = await this.notifier.notify({ kind: "push", childIds: send, serverId, title: i.title, body: i.body, link: null, dedupeKey: `push:${id}` });
+    return { id, sent: r.messages, skipped: kids.length - send.length, by };
+  }
+
+  // ---- 关于与 AI 公示 (part 5 §8; part 7 §8) -----------------------------------------------------------
+
+  async disclosures() {
+    const rows = await this.db.select().from(aiDisclosures).orderBy(asc(aiDisclosures.sort), asc(aiDisclosures.purpose));
+    return { ai: rows.map((r) => ({ purpose: r.purpose, model: r.model, provider: r.provider, filingNo: r.filingNo, updatedAt: r.updatedAt.toISOString() })) };
+  }
+
+  /** Replace the whole list (it is short and edited as one table). */
+  async setDisclosures(list: { purpose: string; model: string; provider: string; filingNo?: string | null }[], by: string) {
+    const now = this.clock.now();
+    await this.db.transaction(async (tx) => {
+      await tx.delete(aiDisclosures);
+      if (list.length) await tx.insert(aiDisclosures).values(list.map((x, i) => ({ purpose: x.purpose, model: x.model, provider: x.provider, filingNo: x.filingNo || null, sort: i, updatedBy: by, updatedAt: now })));
+    });
+    return this.disclosures();
+  }
+
   async qrTicket(target: { teamId?: string; serverId?: string; camp?: Camp }, contentType: string, size: number) {
     if (!["image/png", "image/jpeg", "image/webp"].includes(contentType)) fail(400, "file_type");
     if (size > QR_MAX_BYTES) fail(400, "file_too_big");

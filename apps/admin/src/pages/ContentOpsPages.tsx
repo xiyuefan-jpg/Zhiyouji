@@ -316,8 +316,126 @@ export function OpsPage() {
           ...(me.role === "admin" ? [{ key: "ann", label: "公告", children: <Announcements /> }] : []),
           { key: "safety", label: "内容安全", children: <SafetyQueue isAdmin={me.role === "admin"} /> },
           ...(me.role === "admin" ? [{ key: "ai", label: "AI 配置", children: <AiConfig /> }] : []),
+          ...(me.role === "admin" ? [{ key: "push", label: "手动推送", children: <ManualPush /> }] : []),
+          ...(me.role === "admin" ? [{ key: "about", label: "关于与 AI 公示", children: <AboutAi /> }] : []),
         ]}
       />
+    </Space>
+  );
+}
+
+/** 手动推送 (part 7 §8): to a team, a server or everyone, now; message center only, at most 2 a day per child. */
+function ManualPush() {
+  const seasons = useLoad(() => request<{ seasons: { id: string; name: string; status: string }[] }>("GET", "/v1/admin/seasons"));
+  const [form] = Form.useForm();
+  const scope = Form.useWatch("scope", form) as string | undefined;
+  const serverId = Form.useWatch("serverId", form) as string | undefined;
+  const [seasonId, setSeasonId] = useState<string | undefined>();
+  const servers = useLoad(
+    () => (seasonId ? request<{ servers: { id: string; name: string }[] }>("GET", `/v1/admin/seasons/${seasonId}`).catch(() => ({ servers: [] })) : Promise.resolve({ servers: [] })),
+    [seasonId],
+  );
+  const teams = useLoad(
+    () => (serverId ? request<{ teams: { id: string; name: string }[] }>("GET", `/v1/admin/servers/${serverId}`).catch(() => ({ teams: [] })) : Promise.resolve({ teams: [] })),
+    [serverId],
+  );
+  const [last, setLast] = useState<{ sent: number; skipped: number } | null>(null);
+  const send = async () => {
+    const v = await form.validateFields();
+    Modal.confirm({
+      title: "现在发出去？",
+      content: "消息进孩子的消息中心（不发短信）。每个孩子每天最多收到 2 条手动推送，超过的会跳过。",
+      okText: "发送",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          const r = await request<{ sent: number; skipped: number }>("POST", "/v1/admin/push", { scope: v.scope, teamId: v.teamId, serverId: v.serverId, title: v.title, body: v.body });
+          setLast(r);
+          message.success(`已发给 ${r.sent} 个孩子`);
+          form.resetFields(["title", "body"]);
+        } catch (e) {
+          message.error(errText(e));
+        }
+      },
+    });
+  };
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      <Form form={form} layout="vertical" initialValues={{ scope: "team" }} style={{ maxWidth: 560 }}>
+        <Form.Item name="scope" label="发给">
+          <Select options={[{ value: "team", label: "一个组" }, { value: "server", label: "一个服" }, { value: "all", label: "所有孩子" }]} />
+        </Form.Item>
+        {scope !== "all" && (
+          <>
+            <Form.Item label="赛季">
+              <Select aria-label="赛季" value={seasonId} onChange={setSeasonId} options={(seasons.data?.seasons ?? []).map((x) => ({ value: x.id, label: x.name }))} />
+            </Form.Item>
+            <Form.Item name="serverId" label="服" rules={[{ required: true }]}>
+              <Select options={(servers.data?.servers ?? []).map((x) => ({ value: x.id, label: x.name }))} />
+            </Form.Item>
+          </>
+        )}
+        {scope === "team" && (
+          <Form.Item name="teamId" label="组" rules={[{ required: true }]}>
+            <Select options={(teams.data?.teams ?? []).map((x) => ({ value: x.id, label: x.name }))} />
+          </Form.Item>
+        )}
+        <Form.Item name="title" label="标题" rules={[{ required: true, max: 40 }]}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="body" label="内容" rules={[{ required: true, max: 500 }]}>
+          <Input.TextArea rows={4} />
+        </Form.Item>
+        <Button type="primary" onClick={() => void send()}>
+          发送
+        </Button>
+      </Form>
+      {last && <Alert type="success" message={`上一次：发给 ${last.sent} 个孩子${last.skipped ? `，${last.skipped} 个今天已经收到 2 条，跳过了` : ""}`} />}
+    </Space>
+  );
+}
+
+interface Disclosure {
+  purpose: string;
+  model: string;
+  provider: string;
+  filingNo: string | null;
+}
+
+/** 关于与 AI 公示 (part 5 §8; part 7 §8): what the website lists; update it whenever a model changes. */
+function AboutAi() {
+  const d = useLoad(() => request<{ ai: Disclosure[] }>("GET", "/v1/admin/about"));
+  const [rows, setRows] = useState<Disclosure[] | null>(null);
+  const list = rows ?? d.data?.ai ?? [];
+  const set = (i: number, k: keyof Disclosure, v: string) => setRows(list.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const save = () =>
+    run(() => request("PUT", "/v1/admin/about", { ai: list.filter((r) => r.purpose.trim() && r.model.trim() && r.provider.trim()) }), "已保存，网站上的“关于与 AI 公示”已更新", () => {
+      setRows(null);
+      d.reload();
+    });
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary">网站“我 → 关于与 AI 公示”里列的就是这张表：每个用途用的模型、提供方和备案号（或登记编号）。在“AI 配置”里换了模型，请同时改这里。</Typography.Paragraph>
+      <Table
+        rowKey={(_, i) => String(i)}
+        size="small"
+        pagination={false}
+        dataSource={list}
+        locale={{ emptyText: "还没有填。没填时网站显示“正式上线前公布在这里”。" }}
+        columns={[
+          { title: "用途", render: (_, r, i) => <Input aria-label={`用途 ${i + 1}`} value={r.purpose} onChange={(e) => set(i, "purpose", e.target.value)} placeholder="例如：作品初评、每日任务审核" /> },
+          { title: "模型", render: (_, r, i) => <Input aria-label={`模型 ${i + 1}`} value={r.model} onChange={(e) => set(i, "model", e.target.value)} placeholder="例如：通义千问 VL" /> },
+          { title: "提供方", render: (_, r, i) => <Input aria-label={`提供方 ${i + 1}`} value={r.provider} onChange={(e) => set(i, "provider", e.target.value)} placeholder="例如：阿里云" /> },
+          { title: "备案号或登记编号", render: (_, r, i) => <Input aria-label={`编号 ${i + 1}`} value={r.filingNo ?? ""} onChange={(e) => set(i, "filingNo", e.target.value)} /> },
+          { title: "", render: (_, _r, i) => <Button size="small" onClick={() => setRows(list.filter((_, j) => j !== i))}>删除</Button> },
+        ]}
+      />
+      <Space>
+        <Button onClick={() => setRows([...list, { purpose: "", model: "", provider: "", filingNo: null }])}>加一行</Button>
+        <Button type="primary" disabled={rows === null} onClick={() => void save()}>
+          保存
+        </Button>
+      </Space>
     </Space>
   );
 }

@@ -62,6 +62,7 @@ const REVIEWER = new Set([
   "POST /v1/admin/safety/:id/forward",
   "GET /v1/admin/ai/config",
   "GET /v1/admin/ai/prompts/:task",
+  "GET /v1/admin/about",
 ]);
 
 let routeKeys: string[] = [];

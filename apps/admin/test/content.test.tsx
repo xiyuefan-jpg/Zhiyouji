@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { aiConfigs, aiPrices, announcements, landTemplates, promptTemplates, prompts } from "@zhiyouji/db";
+import { aiConfigs, aiDisclosures, aiPrices, announcements, landTemplates, promptTemplates, prompts } from "@zhiyouji/db";
 import { startBackend } from "./backend";
 import { account, login, renderConsole, seasonWithWork } from "./helpers";
 
@@ -79,6 +79,22 @@ describe("admin console: 题库, 公告, 看板 (part 7 §1, §4, §8)", () => {
     await user.type(within(dialog).getByLabelText("输入：元 / 百万 token"), "3");
     await user.click(within(dialog).getByRole("button", { name: "保 存" }));
     await waitFor(async () => expect((await be.db.select().from(aiPrices)).map((p) => [p.model, p.inPerMillion])).toEqual([["qwen-vl-max", 30000]]));
+    await be.stop();
+  });
+
+  it("关于与 AI 公示: the admin fills the table the website shows (part 5 §8)", async () => {
+    const be = await startBackend();
+    const { secret } = await account(be, "boss@example.com", "admin");
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderConsole("/ops");
+    await login(be, user, "boss@example.com", secret);
+    await user.click(await screen.findByRole("tab", { name: "关于与 AI 公示" }));
+    await user.click(await screen.findByRole("button", { name: "加一行" }));
+    await user.type(screen.getByLabelText("用途 1"), "作品初评");
+    await user.type(screen.getByLabelText("模型 1"), "通义千问");
+    await user.type(screen.getByLabelText("提供方 1"), "阿里云");
+    await user.click(screen.getByRole("button", { name: "保 存" }));
+    await waitFor(async () => expect((await be.db.select().from(aiDisclosures)).map((d) => [d.purpose, d.model, d.provider])).toEqual([["作品初评", "通义千问", "阿里云"]]));
     await be.stop();
   });
 });

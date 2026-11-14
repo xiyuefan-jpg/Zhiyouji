@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Dialog, List, Selector, Switch } from "antd-mobile";
-import { api } from "../api";
+import { api, request } from "../api";
+import { useLoad } from "./season/useSeason";
 import { Avatar, AUTO_READ_KEY, canSpeak, PageHeader } from "../components/ui";
 import { useChild, useMe, useSession } from "../session";
 import { DOCS } from "./Gate";
@@ -166,6 +167,36 @@ export function PrivacyPage() {
   );
 }
 
+/** Which model does what, with its filing number (part 5 §8); kept in the admin console. */
+function AiList() {
+  const d = useLoad(() => request<{ ai: { purpose: string; model: string; provider: string; filingNo: string | null }[] }>("GET", "/v1/about"));
+  if (!d.data) return <div className="panel">{d.error ?? "正在加载……"}</div>;
+  if (d.data.ai.length === 0)
+    return (
+      <div className="panel">
+        <p style={{ margin: 0 }}>打分、审核、转写和生成知识卡片分别使用哪个模型，以及模型的备案号或登记编号，正式上线前公布在这里。</p>
+      </div>
+    );
+  return (
+    <div className="panel">
+      {d.data.ai.map((x, i) => (
+        <div key={i} className="row" style={{ alignItems: "flex-start" }}>
+          <span className="grow">{x.purpose}</span>
+          <span className="hint" style={{ textAlign: "right" }}>
+            {x.provider} · {x.model}
+            {x.filingNo && (
+              <>
+                <br />
+                {x.filingNo}
+              </>
+            )}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function AboutPage() {
   return (
     <>
@@ -177,9 +208,7 @@ export function AboutPage() {
         </div>
       </div>
       <div className="field-label">使用的 AI 模型</div>
-      <div className="panel">
-        <p style={{ margin: 0 }}>打分、审核、转写和生成知识卡片分别使用哪个模型，以及模型的备案号或登记编号，正式上线前公布在这里。</p>
-      </div>
+      <AiList />
       <div className="field-label">插画作者</div>
       <div className="panel">
         <p style={{ margin: 0 }}>插画上线后，每幅画的作者会列在这里。</p>

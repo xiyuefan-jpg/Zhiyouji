@@ -128,6 +128,9 @@ export const ADMIN_AUDIT: Record<string, AuditPolicy> = {
   // content and operations (part 7 §8)
   "GET /v1/admin/announcements": READ,
   "POST /v1/admin/announcements": route("announcement_create", "announcements"),
+  "POST /v1/admin/push": route("manual_push", "push"),
+  "GET /v1/admin/about": READ,
+  "PUT /v1/admin/about": route("about_ai_set", "about"),
   "POST /v1/admin/announcements/:id/withdraw": route("announcement_withdraw", "announcement:{id}"),
   "POST /v1/admin/teams/:id/qr/ticket": TICKET,
   "POST /v1/admin/teams/:id/qr": route("qr_set", "team:{id}"),

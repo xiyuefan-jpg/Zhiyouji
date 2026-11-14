@@ -19,6 +19,7 @@ export const NOTIFY_KINDS = [
   "season_enabled", // 赛季资格开通
   "grouped", // 分组公布
   "announcement", // 公告
+  "push", // 管理员手动发的消息（管理端"手动推送"，每人每天有上限）
   "system", // 其他系统消息
 ] as const;
 export type NotifyKind = (typeof NOTIFY_KINDS)[number];

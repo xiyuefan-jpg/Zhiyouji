@@ -1130,6 +1130,26 @@ export const aiPrices = pgTable("ai_prices", {
   updatedAt: ts("updated_at").notNull(),
 });
 
+/**
+ * 关于与 AI 公示 (PRD part 5 §8, part 7 §8): which model does what, with its
+ * filing or registration number, as the website shows it. Kept by the admins
+ * (update it when a model changes, part 6 §8).
+ */
+export const aiDisclosures = pgTable("ai_disclosures", {
+  id: id(),
+  /** What it is used for, e.g. "作品初评" */
+  purpose: text("purpose").notNull(),
+  /** The model's public name, e.g. "通义千问" */
+  model: text("model").notNull(),
+  /** Who provides it, e.g. "阿里云" */
+  provider: text("provider").notNull(),
+  /** 备案号或登记编号 */
+  filingNo: text("filing_no"),
+  sort: integer("sort").notNull().default(0),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: ts("updated_at").notNull(),
+});
+
 /** Every AI call (append-only): input, output, model, version, time, cost. */
 export const aiCalls = pgTable(
   "ai_calls",
