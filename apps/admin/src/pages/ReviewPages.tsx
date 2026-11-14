@@ -105,6 +105,8 @@ interface FileView {
   id: string;
   kind: string;
   contentType: string;
+  /** Length of a video or audio file, once known. */
+  durationSec?: number | null;
   transcript: string | null;
   url: string;
 }
@@ -138,6 +140,12 @@ function Files({ files }: { files: FileView[] }) {
             <a href={f.url} target="_blank" rel="noreferrer">
               打开文件
             </a>
+          )}
+          {f.durationSec != null && (
+            <Typography.Text type="secondary">
+              {" "}
+              时长 {Math.floor(f.durationSec / 60)} 分 {f.durationSec % 60} 秒
+            </Typography.Text>
           )}
           {f.transcript && <Typography.Paragraph type="secondary">转写：{f.transcript}</Typography.Paragraph>}
         </div>

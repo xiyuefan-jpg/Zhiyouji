@@ -303,7 +303,7 @@ export class Scoring {
         opening = {
           text: o.text,
           mediaKind: o.mediaKind,
-          files: await Promise.all(ofs.map(async (f) => ({ id: f.id, kind: f.kind, contentType: f.contentType, transcript: f.transcript, url: await this.storage.downloadUrl(f.storageKey, now) }))),
+          files: await Promise.all(ofs.map(async (f) => ({ id: f.id, kind: f.kind, contentType: f.contentType, durationSec: f.durationSec, transcript: f.transcript, url: await this.storage.downloadUrl(f.storageKey, now) }))),
         };
       }
     }
@@ -326,7 +326,7 @@ export class Scoring {
         aiNote: w.aiNote,
         submittedAt: w.submittedAt.toISOString(),
         files: await Promise.all(
-          fs.map(async (f) => ({ id: f.id, kind: f.kind, contentType: f.contentType, transcript: f.transcript, url: await this.storage.downloadUrl(f.storageKey, now) })),
+          fs.map(async (f) => ({ id: f.id, kind: f.kind, contentType: f.contentType, durationSec: f.durationSec, transcript: f.transcript, url: await this.storage.downloadUrl(f.storageKey, now) })),
         ),
       },
       rubric,
@@ -485,7 +485,7 @@ export class Scoring {
         text: w!.text,
         aiNote: w!.aiNote,
         submittedAt: w!.submittedAt.toISOString(),
-        files: await Promise.all(fs.map(async (f) => ({ id: f.id, kind: f.kind, contentType: f.contentType, transcript: f.transcript, url: await this.storage.downloadUrl(f.storageKey, now) }))),
+        files: await Promise.all(fs.map(async (f) => ({ id: f.id, kind: f.kind, contentType: f.contentType, durationSec: f.durationSec, transcript: f.transcript, url: await this.storage.downloadUrl(f.storageKey, now) }))),
       },
       round: round ? { key: round.key, status: round.status } : null,
       ai: ai.map((r) => ({ total: r.total, dims: r.dims, comment: r.comment, model: r.model, official: r.official, createdAt: r.createdAt.toISOString() })),
