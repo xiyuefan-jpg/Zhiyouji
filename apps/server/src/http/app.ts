@@ -266,7 +266,7 @@ export function buildApp(d: AppDeps, services = buildServices(d)): { app: Fastif
   workRoutes(app, services.works, services.play, services.scoring, services.familyAuth);
   reviewRoutes(app, services.scoring, services.admin, services.adminAuth);
   dataRoutes(app, d.db, services.dataRights, services.familyAuth, services.adminAuth);
-  bankRoutes(app, services.bank, services.adminAuth);
+  bankRoutes(app, services.bank, services.adminAuth, d.db, () => d.clock.now());
   opsRoutes(app, services.ops, services.play, services.familyAuth, services.adminAuth);
   watchRoutes(app, services.showcase, services.familyAuth, services.adminAuth);
   aiRoutes(app, services.gateway, services.scoring, services.daily, services.adminAuth);

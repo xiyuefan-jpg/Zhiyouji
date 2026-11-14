@@ -1179,6 +1179,30 @@ export const aiDisclosures = pgTable("ai_disclosures", {
   updatedAt: ts("updated_at").notNull(),
 });
 
+/**
+ * Rubric families A–E, saved versions (PRD part 6 §4.2–§4.3; part 7 §4 评分族):
+ * dimensions with points and hints, the 50 and 75 point anchors. Version 1 is
+ * the built-in copy (content library §3); every save is a new version, the
+ * latest is live, and a work keeps the version it was scored with.
+ */
+export const rubricVersions = pgTable(
+  "rubric_versions",
+  {
+    id: id(),
+    family: text("family").notNull(),
+    version: integer("version").notNull(),
+    name: text("name").notNull(),
+    /** [{ key, name, max, hint }] — maxima add up to 100 */
+    dims: jsonb("dims").notNull(),
+    at50: text("at50").notNull(),
+    at75: text("at75").notNull(),
+    note: text("note"),
+    createdBy: text("created_by").notNull(),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("rubric_versions_family_version").on(t.family, t.version)],
+);
+
 /** Every AI call (append-only): input, output, model, version, time, cost. */
 export const aiCalls = pgTable(
   "ai_calls",

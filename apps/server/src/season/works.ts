@@ -22,7 +22,7 @@ import type { ObjectStorage } from "../storage.js";
 import { refuse, type PlayCtx } from "./play.js";
 import type { Debates } from "./debates.js";
 import type { Operations } from "./operations.js";
-import { rubricWithGuide, workRequirements } from "./rubrics.js";
+import { liveRubricWithGuide, workRequirements } from "./rubrics.js";
 import { workRubric, workTask } from "./taskInfo.js";
 
 export type FileKind = "video" | "audio" | "image" | "pdf";
@@ -237,7 +237,7 @@ export class Works {
     const w = { kind: s!.kind, slot, teamId: ctx.teamId };
     return {
       task: await workTask(this.db, ctx.serverId, st, w),
-      rubric: rubricWithGuide(await workRubric(this.db, ctx.serverId, st, w)),
+      rubric: await liveRubricWithGuide(this.db, await workRubric(this.db, ctx.serverId, st, w)),
       requirements: workRequirements(s!.kind, s!.stage ?? null),
     };
   }

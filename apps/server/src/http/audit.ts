@@ -118,6 +118,8 @@ export const ADMIN_AUDIT: Record<string, AuditPolicy> = {
   "POST /v1/admin/daily/:id/ai-rerun": route("daily_ai_rerun", "daily:{id}"),
 
   // question bank (part 7 §4)
+  "GET /v1/admin/rubrics": READ,
+  "POST /v1/admin/rubrics/:id": route("rubric_save", "rubric:{id}"),
   "GET /v1/admin/land-templates": READ,
   "POST /v1/admin/land-templates/seed-defaults": domain("land_templates_seed"),
   "PATCH /v1/admin/land-templates/:id": domain("land_template_update"),

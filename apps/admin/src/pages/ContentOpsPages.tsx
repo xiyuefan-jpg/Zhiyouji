@@ -77,10 +77,112 @@ export function ContentPage() {
           { key: "templates", label: "地块模板", children: <Templates canEdit={me.role === "admin"} /> },
           ...(me.role === "admin" ? [{ key: "low", label: "题库不足", children: <LowStock /> }] : []),
           ...(me.role === "admin" ? [{ key: "tags", label: "新标签建议", children: <TagSuggestions /> }] : []),
+          { key: "rubrics", label: "评分族", children: <Rubrics canEdit={me.role === "admin"} /> },
           // part 7 §0: reviewers read the AI configuration and prompts, only admins change them
           { key: "ai", label: "AI 配置", children: <AiConfig canEdit={me.role === "admin"} /> },
         ]}
       />
+    </Space>
+  );
+}
+
+interface RubricVersionView {
+  version: number;
+  name: string;
+  dims: { key: string; name: string; max: number; hint?: string }[];
+  at50: string;
+  at75: string;
+  note: string | null;
+  createdAt: string | null;
+}
+
+/**
+ * 评分族 (part 7 §4; part 6 §4.2): the five families with their dimensions,
+ * points, hints and the 50 / 75 point anchors. Saving makes a new version that
+ * is live for rounds closed from now on; works keep the version they were scored with.
+ */
+function Rubrics({ canEdit }: { canEdit: boolean }) {
+  const l = useLoad(() => request<{ rubrics: { id: string; live: number; versions: RubricVersionView[] }[] }>("GET", "/v1/admin/rubrics"));
+  const [fam, setFam] = useState("A");
+  const r = l.data?.rubrics.find((x) => x.id === fam);
+  const live = r?.versions.find((v) => v.version === r.live);
+  const [draft, setDraft] = useState<(RubricVersionView & { note: string }) | null>(null);
+  const sum = draft ? draft.dims.reduce((n, d) => n + (Number(d.max) || 0), 0) : 0;
+  const setDim = (i: number, k: "name" | "max" | "hint", v: string | number) => draft && setDraft({ ...draft, dims: draft.dims.map((d, j) => (j === i ? { ...d, [k]: v } : d)) });
+  const save = () =>
+    draft &&
+    run(
+      () => request("POST", `/v1/admin/rubrics/${fam}`, { name: draft.name, dims: draft.dims.map((d) => ({ ...d, max: Number(d.max) })), at50: draft.at50, at75: draft.at75, note: draft.note || null }),
+      "已保存为新版本，之后截止的作品按新版本打分",
+      () => {
+        setDraft(null);
+        l.reload();
+      },
+    );
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      <Space wrap>
+        <Select aria-label="评分族" value={fam} style={{ width: 200 }} onChange={(v) => (setFam(v), setDraft(null))} options={(l.data?.rubrics ?? []).map((x) => ({ value: x.id, label: `${x.id} ${x.versions.at(-1)?.name ?? ""}` }))} />
+        {r && <Tag color="green">正在用：第 {r.live} 版</Tag>}
+        {canEdit && live && !draft && (
+          <Button type="primary" onClick={() => setDraft({ ...live, dims: live.dims.map((d) => ({ ...d })), note: "" })}>
+            在正在用的版本上改
+          </Button>
+        )}
+      </Space>
+      {live && !draft && (
+        <>
+          <Table
+            rowKey="key"
+            size="small"
+            pagination={false}
+            dataSource={live.dims}
+            columns={[
+              { title: "维度", dataIndex: "name" },
+              { title: "满分", dataIndex: "max" },
+              { title: "看什么", render: (_, d) => d.hint ?? "" },
+            ]}
+          />
+          <Typography.Paragraph>
+            <b>50 分的样子</b>：{live.at50}
+            <br />
+            <b>75 分的样子</b>：{live.at75}
+          </Typography.Paragraph>
+          <Typography.Text type="secondary">
+            历史版本：{r!.versions.map((v) => `第 ${v.version} 版${v.note ? `（${v.note}）` : ""}`).join("、")}
+          </Typography.Text>
+        </>
+      )}
+      {draft && (
+        <Card size="small" title={`新版本：${fam} ${draft.name}`}>
+          <Space direction="vertical" style={{ width: "100%" }}>
+            <Input aria-label="评分族名称" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            <Table
+              rowKey="key"
+              size="small"
+              pagination={false}
+              dataSource={draft.dims}
+              columns={[
+                { title: "代号", dataIndex: "key" },
+                { title: "维度", render: (_, d, i) => <Input aria-label={`维度名 ${d.key}`} value={d.name} onChange={(e) => setDim(i, "name", e.target.value)} /> },
+                { title: "满分", render: (_, d, i) => <InputNumber aria-label={`满分 ${d.key}`} min={1} max={100} value={d.max} onChange={(v) => setDim(i, "max", v ?? 0)} /> },
+                { title: "看什么", render: (_, d, i) => <Input aria-label={`提示 ${d.key}`} value={d.hint ?? ""} onChange={(e) => setDim(i, "hint", e.target.value)} /> },
+              ]}
+            />
+            <Typography.Text type={sum === 100 ? "secondary" : "danger"}>满分合计 {sum}（要等于 100）</Typography.Text>
+            <Input.TextArea aria-label="50 分的样子" rows={2} value={draft.at50} onChange={(e) => setDraft({ ...draft, at50: e.target.value })} />
+            <Input.TextArea aria-label="75 分的样子" rows={2} value={draft.at75} onChange={(e) => setDraft({ ...draft, at75: e.target.value })} />
+            <Input aria-label="这一版改了什么" placeholder="这一版改了什么（例如：校准后）" value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} />
+            <Typography.Text type="secondary">保存后，之后截止的作品（AI 初评和复核）都按新版本；已经在复核的作品还按它当时的版本。</Typography.Text>
+            <Space>
+              <Button onClick={() => setDraft(null)}>取消</Button>
+              <Button type="primary" disabled={sum !== 100} onClick={() => void save()}>
+                保存为新版本
+              </Button>
+            </Space>
+          </Space>
+        </Card>
+      )}
     </Space>
   );
 }

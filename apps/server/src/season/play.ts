@@ -11,7 +11,7 @@
  */
 
 import { battlePrompts, contestTask, landInfo } from "./taskInfo.js";
-import { rubricFor, rubricWithGuide, workRequirements } from "./rubrics.js";
+import { liveRubricWithGuide, rubricFor, workRequirements } from "./rubrics.js";
 import { itemGuide } from "./itemGuide.js";
 import { randomBytes } from "node:crypto";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
@@ -583,7 +583,7 @@ export class SeasonPlay {
       /** The question, the audience, the land's subject and question type, what little teammates can do. */
       task,
       /** How the work is judged: dimensions with what they look at, and the 50 / 75 point lines. */
-      rubric: rubricWithGuide(rubricId),
+      rubric: await liveRubricWithGuide(this.db, rubricId),
       requirements: workRequirements("contest", /辩论/.test(task.questionType ?? "") ? "opening" : null),
       id: c!.id,
       landId: c!.landId,

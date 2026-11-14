@@ -11,7 +11,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { plannedEvents, surveyAnswers, warCards, works, type Db } from "@zhiyouji/db";
 import { ITEMS, REGULAR_COMMON_ITEMS, createRng, seedFromString, warDeadline, type SeasonState } from "@zhiyouji/engine";
-import { rubricWithGuide, workRequirements } from "./rubrics.js";
+import { liveRubricWithGuide, workRequirements } from "./rubrics.js";
 import { GRADE_LABELS, PLAY_STYLES, WAR_CARDS, WAR_THEMES } from "@zhiyouji/shared";
 import type { Clock } from "../clock.js";
 import { fail } from "../http/errors.js";
@@ -146,7 +146,7 @@ export class WarWords {
       /** What winning and losing are worth, with the loser chest's odds (constitution 5: every random mechanism shows its odds). */
       stakes: warStakes(st),
       deadline: warDeadline(st, week),
-      rubric: rubricWithGuide("C"),
+      rubric: await liveRubricWithGuide(this.db, "C"),
       requirements: workRequirements("war"),
     };
   }

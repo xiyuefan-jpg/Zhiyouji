@@ -1,8 +1,13 @@
 /**
  * Rubric families A–E (content library §3): dimensions and points. The real
- * wording, anchors and prompt texts are edited in the admin console later
- * (PRD part 6 §4.2); this is the machine's default copy.
+ * wording, anchors and prompt texts are edited in the admin console (PRD part 6
+ * §4.2, part 7 §4 评分族): `RUBRICS` / `RUBRIC_GUIDE` are version 1, the
+ * built-in copy; `rubricBook(db)` gives the live version and any saved one.
  */
+
+import { and, asc, desc, eq } from "drizzle-orm";
+import { rubricVersions, type Db } from "@zhiyouji/db";
+import { fail } from "../http/errors.js";
 
 export type RubricId = "A" | "B" | "C" | "D" | "E";
 
@@ -179,4 +184,111 @@ export function rubricFor(kind: string, landName: string | null): RubricId {
 /** Score (0–100) is valid for a rubric's dimensions. */
 export function checkDims(r: Rubric, dims: Record<string, number>): boolean {
   return r.dims.every((d) => Number.isInteger(dims[d.key]) && dims[d.key]! >= 0 && dims[d.key]! <= d.max) && Object.keys(dims).length === r.dims.length;
+}
+
+// ---- saved versions (part 7 §4 评分族) ------------------------------------------------------------------
+
+export const RUBRIC_IDS: readonly RubricId[] = ["A", "B", "C", "D", "E"];
+
+export interface RubricGuide {
+  hints: Record<string, string>;
+  at50: string;
+  at75: string;
+}
+
+export interface RubricEdit {
+  name: string;
+  dims: { key: string; name: string; max: number; hint?: string }[];
+  at50: string;
+  at75: string;
+}
+
+/** Problems with an edited rubric (empty: fine). */
+export function rubricProblems(e: RubricEdit): string[] {
+  const out: string[] = [];
+  if (e.dims.length < 2 || e.dims.length > 8) out.push("维度要有 2–8 个");
+  const keys = e.dims.map((d) => d.key);
+  if (new Set(keys).size !== keys.length) out.push("维度代号不能重复");
+  if (keys.some((k) => !/^[a-z][a-z_]{0,19}$/.test(k))) out.push("维度代号只能用小写英文字母和下划线");
+  if (e.dims.some((d) => !Number.isInteger(d.max) || d.max < 1)) out.push("每个维度的满分是正整数");
+  const sum = e.dims.reduce((n, d) => n + d.max, 0);
+  if (sum !== 100) out.push(`各维度满分加起来要等于 100（现在是 ${sum}）`);
+  if (!e.name.trim() || !e.at50.trim() || !e.at75.trim()) out.push("名称和 50 分、75 分的样子都要填");
+  return out;
+}
+
+class RubricBook {
+  private cache = new Map<string, { rubric: Rubric; guide: RubricGuide }>();
+  constructor(private readonly db: Db) {}
+
+  private builtin(id: RubricId) {
+    return { rubric: RUBRICS[id], guide: RUBRIC_GUIDE[id] };
+  }
+
+  private fromRow(r: typeof rubricVersions.$inferSelect) {
+    const dims = r.dims as { key: string; name: string; max: number; hint?: string }[];
+    return {
+      rubric: { id: r.family as RubricId, name: r.name, version: r.version, dims: dims.map((d) => ({ key: d.key, name: d.name, max: d.max })) },
+      guide: { hints: Object.fromEntries(dims.map((d) => [d.key, d.hint ?? ""])), at50: r.at50, at75: r.at75 },
+    };
+  }
+
+  /** The live version: the latest saved, or the built-in one. */
+  async live(id: RubricId): Promise<{ rubric: Rubric; guide: RubricGuide }> {
+    const hit = this.cache.get(`${id}@live`);
+    if (hit) return hit;
+    const [row] = await this.db.select().from(rubricVersions).where(eq(rubricVersions.family, id)).orderBy(desc(rubricVersions.version)).limit(1);
+    const v = row ? this.fromRow(row) : this.builtin(id);
+    this.cache.set(`${id}@live`, v);
+    return v;
+  }
+
+  /** A given version ("A@2" as stored with a score); unknown → the live one. */
+  async version(id: RubricId, version: number | null | undefined): Promise<{ rubric: Rubric; guide: RubricGuide }> {
+    if (!version) return this.live(id);
+    if (version === 1) return this.builtin(id);
+    const k = `${id}@${version}`;
+    const hit = this.cache.get(k);
+    if (hit) return hit;
+    const [row] = await this.db.select().from(rubricVersions).where(and(eq(rubricVersions.family, id), eq(rubricVersions.version, version)));
+    if (!row) return this.live(id);
+    const v = this.fromRow(row);
+    this.cache.set(k, v);
+    return v;
+  }
+
+  async history(id: RubricId) {
+    const rows = await this.db.select().from(rubricVersions).where(eq(rubricVersions.family, id)).orderBy(asc(rubricVersions.version));
+    const b = this.builtin(id);
+    return [
+      { version: 1, name: b.rubric.name, dims: b.rubric.dims.map((d) => ({ ...d, hint: b.guide.hints[d.key] ?? "" })), at50: b.guide.at50, at75: b.guide.at75, note: "内置初版（内容库第 3 节）", createdBy: "system", createdAt: null as string | null },
+      ...rows.map((r) => ({ version: r.version, name: r.name, dims: r.dims as RubricEdit["dims"], at50: r.at50, at75: r.at75, note: r.note, createdBy: r.createdBy, createdAt: r.createdAt.toISOString() })),
+    ];
+  }
+
+  /** Save as a new version (never overwrites); it is live from now on. */
+  async save(id: RubricId, e: RubricEdit, note: string | null, by: string, at: Date) {
+    const problems = rubricProblems(e);
+    if (problems.length) fail(400, "bad_rubric", { problems, message: problems.join("；") });
+    const [last] = await this.db.select({ v: rubricVersions.version }).from(rubricVersions).where(eq(rubricVersions.family, id)).orderBy(desc(rubricVersions.version)).limit(1);
+    const version = (last?.v ?? 1) + 1;
+    await this.db.insert(rubricVersions).values({ family: id, version, name: e.name.trim(), dims: e.dims.map((d) => ({ key: d.key, name: d.name.trim(), max: d.max, hint: d.hint?.trim() ?? "" })), at50: e.at50.trim(), at75: e.at75.trim(), note, createdBy: by, createdAt: at });
+    this.cache.delete(`${id}@live`);
+    return { version };
+  }
+}
+
+const books = new WeakMap<Db, RubricBook>();
+
+/** The rubric versions of this database (cached in the process; saving refreshes it). */
+export function rubricBook(db: Db): RubricBook {
+  let b = books.get(db);
+  if (!b) books.set(db, (b = new RubricBook(db)));
+  return b;
+}
+
+/** `rubricWithGuide` for the live version (or a given one). */
+export async function liveRubricWithGuide(db: Db, id: RubricId, version?: number | null) {
+  const { rubric, guide } = await rubricBook(db).version(id, version);
+  return { id: rubric.id, name: rubric.name, version: rubric.version, dims: rubric.dims.map((d) => ({ ...d, hint: guide.hints[d.key] ?? "" })), at50: guide.at50, at75: guide.at75 };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { aiConfigs, aiDisclosures, aiPrices, announcements, landTemplates, promptTemplates, prompts } from "@zhiyouji/db";
+import { aiConfigs, aiDisclosures, aiPrices, announcements, rubricVersions, landTemplates, promptTemplates, prompts } from "@zhiyouji/db";
 import { startBackend } from "./backend";
 import { account, login, renderConsole, seasonWithWork } from "./helpers";
 
@@ -97,4 +97,25 @@ describe("admin console: 题库, 公告, 看板 (part 7 §1, §4, §8)", () => {
     await waitFor(async () => expect((await be.db.select().from(aiDisclosures)).map((d) => [d.purpose, d.model, d.provider])).toEqual([["作品初评", "通义千问", "阿里云"]]));
     await be.stop();
   });
+
+  it("评分族: a new version with other points; the sum must be 100 (part 7 §4)", async () => {
+    const be = await startBackend();
+    const { secret } = await account(be, "boss@example.com", "admin");
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderConsole("/content");
+    await login(be, user, "boss@example.com", secret);
+    await user.click(await screen.findByRole("tab", { name: "评分族" }));
+    await user.click(await screen.findByRole("button", { name: "在正在用的版本上改" }));
+    const teach = await screen.findByLabelText("满分 teach");
+    await user.clear(teach);
+    await user.type(teach, "35");
+    expect(await screen.findByText("满分合计 105（要等于 100）")).toBeTruthy();
+    const pres = screen.getByLabelText("满分 presentation");
+    await user.clear(pres);
+    await user.type(pres, "5");
+    await user.click(screen.getByRole("button", { name: "保存为新版本" }));
+    await waitFor(async () => expect((await be.db.select().from(rubricVersions)).map((r) => [r.family, r.version])).toEqual([["A", 2]]));
+    expect(await screen.findByText("正在用：第 2 版")).toBeTruthy();
+    await be.stop();
+  }, 120_000);
 });

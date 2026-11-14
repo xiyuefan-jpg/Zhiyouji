@@ -154,6 +154,44 @@ describe("from deadline to settlement (part 3 §10.5; part 7 §5–§6)", () => 
     await t.close();
   });
 
+  it("评分族 versions (part 7 §4; part 6 §4.2): a saved version is live for works closed afterwards; the reviewer scores with it", async () => {
+    const t = await scoringSetup(0);
+    const token = await t.boss.relogin();
+    const list = (await t.call("GET", "/v1/admin/rubrics", undefined, token)).json().rubrics;
+    const a = list.find((r: { id: string }) => r.id === "A");
+    expect(a).toMatchObject({ live: 1 });
+    const v1 = a.versions[0];
+    // move 5 points from 呈现 to 教会受众; a bad sum is refused
+    const dims = v1.dims.map((d: { key: string; max: number }) => (d.key === "teach" ? { ...d, max: 35 } : d.key === "presentation" ? { ...d, max: 5 } : d));
+    expect((await t.call("POST", "/v1/admin/rubrics/A", { ...v1, dims: dims.map((d: { max: number }, i: number) => (i === 0 ? { ...d, max: 1 } : d)) }, token)).json()).toMatchObject({ error: "bad_rubric" });
+    expect((await t.call("POST", "/v1/admin/rubrics/A", { name: v1.name, dims, at50: v1.at50, at75: "校准后改写的 75 分样子。", note: "校准后" }, token)).json()).toEqual({ version: 2 });
+    // reviewers read, do not write
+    const rev = await t.r1.relogin();
+    expect((await t.call("GET", "/v1/admin/rubrics", undefined, rev)).statusCode).toBe(200);
+    expect((await t.call("POST", "/v1/admin/rubrics/A", { name: v1.name, dims, at50: v1.at50, at75: v1.at75 }, rev)).statusCode).toBe(403);
+
+    const w = (await t.a1api("POST", `/v1/season/works/contest:${t.contestId}`, { mediaKind: "text", text: "我们的讲解", members: [t.a1] })).json().work;
+    t.clock.set(bj("2027-02-12", 21, 1));
+    await t.services.scoring.runDue(t.serverId);
+    const [ai] = await t.db.select().from(aiScores).where(eq(aiScores.workId, w.id));
+    expect(ai!.rubric).toBe("A@2");
+    expect((ai!.dims as { key: string; max: number }[]).find((d) => d.key === "teach")!.max).toBe(35);
+    const [as] = await t.db.select().from(reviewAssignments).where(eq(reviewAssignments.workId, w.id));
+    const reviewer = as!.reviewerId === t.r1.id ? t.r1 : t.r2;
+    const rt = await reviewer.relogin();
+    const view = (await t.call("GET", `/v1/admin/reviews/${as!.id}`, undefined, rt)).json();
+    expect(view.rubric).toMatchObject({ id: "A", version: 2 });
+    expect(view.guide.at75).toBe("校准后改写的 75 分样子。");
+    // a version 1 score (teach over 30) is fine now, 36 is not
+    expect((await t.call("POST", `/v1/admin/reviews/${as!.id}`, { dims: { accuracy: 20, teach: 36, depth: 15, presentation: 5, ai: 5 }, comment: "x" }, rt)).json().error).toBe("bad_dims");
+    expect((await t.call("POST", `/v1/admin/reviews/${as!.id}`, { dims: { accuracy: 20, teach: 33, depth: 15, presentation: 5, ai: 5 }, comment: "讲得清楚。" }, rt)).json().total).toBe(78);
+    // a later version does not change this work's rubric
+    await t.call("POST", "/v1/admin/rubrics/A", { name: v1.name, dims: v1.dims, at50: v1.at50, at75: v1.at75, note: "改回去" }, await t.boss.relogin());
+    const res = (await t.a1api("GET", `/v1/season/works/contest:${t.contestId}/result`)).json();
+    expect(res.mine.dims.find((d: { name: string }) => d.name === "教会受众")).toMatchObject({ max: 35, score: 33 });
+    await t.close();
+  });
+
   it("a second reviewer far from the first alerts the admins; the admin's ruling settles; reassigning and leave", async () => {
     const t = await scoringSetup(1);
     const w = (await t.a1api("POST", `/v1/season/works/contest:${t.contestId}`, { mediaKind: "text", text: "作品", members: [t.a1] })).json().work;

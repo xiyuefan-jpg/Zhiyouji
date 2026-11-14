@@ -49,7 +49,7 @@ import type { Notifier } from "../notify/notifier.js";
 import type { SeasonStore } from "../seasonStore.js";
 import type { ObjectStorage } from "../storage.js";
 import { refusalText } from "./refusals.js";
-import { checkDims, RUBRIC_GUIDE, RUBRICS, rubricFor, rubricWithGuide, type RubricId } from "./rubrics.js";
+import { checkDims, liveRubricWithGuide, rubricBook, rubricFor, type Rubric, type RubricGuide, type RubricId } from "./rubrics.js";
 import { workRubric, workTask } from "./taskInfo.js";
 import { mostSimilar, PLAGIARISM_FLAG } from "./similarity.js";
 
@@ -236,14 +236,13 @@ export class Scoring {
 
   /** What the AI is given for a work (part 6 §4.2): question, audience, rubric and anchors, the work's words and pictures. */
   private async scoreRequest(serverId: string, st: SeasonState, w: WorkRow): Promise<ScoreRequest> {
-    const rubric = RUBRICS[await this.rubricOf(serverId, st, w)];
+    const { rubric, guide } = await rubricBook(this.db).live(await this.rubricOf(serverId, st, w));
     const ids = (w.fileIds as string[]) ?? [];
     const fs = ids.length ? await this.db.select().from(files).where(inArray(files.id, ids)) : [];
     const transcript = fs.map((f) => f.transcript).filter(Boolean).join("\n") || null;
     const now = this.now();
     const imageKeys = [...fs.filter((f) => f.kind === "image" && f.status !== "deleted").map((f) => f.storageKey), ...fs.flatMap((f) => (f.frames as string[]) ?? [])];
     const images = await Promise.all(imageKeys.slice(0, 40).map((k) => this.storage.downloadUrl(k, now)));
-    const guide = RUBRIC_GUIDE[rubric.id as RubricId];
     return {
       workId: w.id,
       rubric,
@@ -275,15 +274,17 @@ export class Scoring {
   }
 
   private async aiScore(serverId: string, st: SeasonState, w: WorkRow, official = true): Promise<void> {
-    const rubric = RUBRICS[await this.rubricOf(serverId, st, w)];
     const ids = (w.fileIds as string[]) ?? [];
     // speech-to-text, key frames and document text first (part 6 §2); a file still not ready is left out
     await this.media?.ensure(ids).catch(() => undefined);
     // copied from another team? (the admins hear about it even when the AI fails)
     const similar = official ? await this.similarWork(w) : null;
     if (similar) await this.tellSimilar(st, w, similar);
+    let rubric: Rubric | null = null;
     try {
-      const r = await this.ai.score(await this.scoreRequest(serverId, st, w));
+      const req = await this.scoreRequest(serverId, st, w);
+      rubric = req.rubric;
+      const r = await this.ai.score(req);
       // T7: the work's knowledge tags (for the season review's exploration map, part 5 §4.1)
       if (official) {
         const tags = (r.tags ?? []).filter(isKnownTag).slice(0, 3);
@@ -292,7 +293,7 @@ export class Scoring {
       }
       await this.db.insert(aiScores).values({
         workId: w.id,
-        rubric: `${rubric.id}@${rubric.version}`,
+        rubric: `${rubric!.id}@${rubric!.version}`,
         model: r.model,
         total: Math.max(0, Math.min(100, Math.round(r.total))),
         dims: r.dims,
@@ -372,6 +373,17 @@ export class Scoring {
     return out;
   }
 
+  /**
+   * The rubric version a work is scored with: the one its official AI score
+   * recorded ("A@2"; the version live when its round closed), else the live one.
+   */
+  private async workRubricVersion(serverId: string, st: SeasonState, w: WorkRow): Promise<{ rubric: Rubric; guide: RubricGuide }> {
+    const id = await this.rubricOf(serverId, st, w);
+    const ai = await this.officialAi(w.id);
+    const v = ai && ai.rubric.startsWith(`${id}@`) ? Number(ai.rubric.split("@")[1]) : null;
+    return rubricBook(this.db).version(id, v);
+  }
+
   private async officialAi(workId: string) {
     const [r] = await this.db
       .select()
@@ -424,7 +436,7 @@ export class Scoring {
   async reviewView(reviewerId: string, assignmentId: string) {
     const { a, w } = await this.assignment(reviewerId, assignmentId);
     const st = await this.store.state(w.serverId);
-    const rubric = RUBRICS[await this.rubricOf(w.serverId, st, w)];
+    const { rubric } = await this.workRubricVersion(w.serverId, st, w);
     const ids = (w.fileIds as string[]) ?? [];
     const fs = ids.length ? await this.db.select().from(files).where(inArray(files.id, ids)) : [];
     const ai = await this.officialAi(w.id);
@@ -453,7 +465,7 @@ export class Scoring {
       opening,
       /** The question and the audience the work had to teach (the reviewer cannot judge 教会受众 without them). */
       task: await workTask(this.db, w.serverId, st, w),
-      guide: rubricWithGuide(rubricId),
+      guide: await liveRubricWithGuide(this.db, rubric.id, rubric.version),
       assignmentId: a.id,
       status: a.status,
       second: a.second,
@@ -494,7 +506,7 @@ export class Scoring {
     const { a, w } = await this.assignment(reviewerId, assignmentId);
     if (a.status !== "pending") fail(409, a.status === "timeout" ? "review_timeout" : "review_done");
     const st = await this.store.state(w.serverId);
-    const rubric = RUBRICS[await this.rubricOf(w.serverId, st, w)];
+    const { rubric } = await this.workRubricVersion(w.serverId, st, w);
     if (!checkDims(rubric, b.dims)) fail(400, "bad_dims");
     const total = Object.values(b.dims).reduce((s, v) => s + v, 0);
     const now = this.clock.now();
@@ -860,7 +872,7 @@ export class Scoring {
         .innerJoin(reviewAssignments, eq(humanScores.assignmentId, reviewAssignments.id))
         .where(and(eq(humanScores.workId, mine.id), eq(reviewAssignments.second, false)));
       const ai = await this.officialAi(mine.id);
-      const rubric = RUBRICS[await this.rubricOf(serverId, st, mine)];
+      const { rubric } = await this.workRubricVersion(serverId, st, mine);
       const dims = rubric.dims.map((d) => ({
         name: d.name,
         max: d.max,
